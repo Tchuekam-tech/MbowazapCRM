@@ -30,6 +30,48 @@ The bot's `/bridge/*` API answers `503 bridge_not_configured` until
 `MBOWAZAP_SECRET` is set. Without `WACRM_URL` the bot runs standalone
 and sends no events.
 
+The bot's own web console (`/`, `/pair`, `/qr`, `/api/*`) can send as
+the linked number and unlink it, so it asks for HTTP Basic auth:
+`DASHBOARD_PASSWORD`, or `MBOWAZAP_SECRET` when that is unset (any
+username). `/health`, `/bridge/*` and `/tally-webhook` are not behind it.
+
+### Pairing from the settings page
+
+- **Pairing code:** `POST /api/mbowazap/pair` with the number. The bot
+  opens a fresh socket for it, waits for WhatsApp's pairing window,
+  and returns the 8-character code. `GET /api/mbowazap/poll` asks the
+  bot directly while the page waits, so the page turns Connected as
+  soon as the phone confirms, even if the `connection` event is late.
+- **QR:** `POST /api/mbowazap/pair` returns the first QR;
+  `POST /api/mbowazap/qr { pairingRef }` returns the current one. The
+  page calls it every 15 s while the QR is shown, because WhatsApp
+  rotates it about every 20 s. After the scan WhatsApp restarts the
+  socket (515); the bot moves the link from `temp_qr` to the scanner's
+  number and reports `connected` with the pairing ref.
+- A number is linked when its creds have `registered` (pairing code)
+  **or** `account` (QR; Baileys never sets `registered` for a QR link).
+
+## Deploying on Railway
+
+Two services from this repo, same project:
+
+| Service   | Root directory           | Variables                                                                                    |
+| --------- | ------------------------ | -------------------------------------------------------------------------------------------- |
+| wacrm     | `wacrm`                  | existing ones, plus `MBOWAZAP_BOT_URL` (the bot's public URL) and `MBOWAZAP_SECRET`          |
+| TchuekBot | `antisnowflake-bot-main` | `MBOWAZAP_SECRET` (same value), `WACRM_URL` (wacrm's public URL), your AI keys from `.env.example` |
+
+- The bot builds from its `Dockerfile` (`railway.json`) and answers
+  `/health`. Give it a public domain; that URL is `MBOWAZAP_BOT_URL`.
+- **Attach a volume to the bot at `/app/data`.** Sessions, the event
+  outbox and Davila switches live there; without a volume every deploy
+  unlinks WhatsApp. The image seeds an empty volume with its data files.
+- Keep the bot at one replica: two containers on one WhatsApp session
+  knock each other off (440).
+- Generate the secret with
+  `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+- Settings → MboWazap shows the missing variables, and whether the bot
+  answers a signed ping (wrong URL, bot down, or secrets that differ).
+
 ## Signing
 
 Every request, in both directions, carries:

@@ -99,6 +99,56 @@ const pairingCode = false; // Pairing code trigger is dynamic via Web API
 const useMobile = process.argv.includes("--mobile");
 const PAIRING_INIT_BUFFER_MS = 3000;
 
+const TEMP_QR_SESSION = 'temp_qr';
+// A pairing code must be requested within the window WhatsApp opens for
+// an unlinked socket (the first QR ref). Waiting longer than this means
+// the socket never got that far.
+const PAIRING_READY_TIMEOUT_MS = 25_000;
+
+// The WhatsApp Web version is looked up once per process: every socket
+// start used to wait on a GitHub round trip, which ate into the few
+// seconds wacrm gives a pairing request.
+let waVersionPromise = null;
+function getWaVersion() {
+    if (!waVersionPromise) {
+        waVersionPromise = fetchLatestBaileysVersion()
+            .then((v) => v?.version || null)
+            .catch(() => null)
+            .then((version) => {
+                if (!version) waVersionPromise = null; // try again on the next start
+                return version || [2, 3000, 1015901307];
+            });
+    }
+    return waVersionPromise;
+}
+
+/**
+ * Stops a session's socket for good: timers cleared, listeners removed
+ * first (so its close can't schedule a reconnect or write creds), then
+ * dropped from the session map.
+ */
+function closeSessionSocket(phoneNumber) {
+    const sock = sessionManager.getSocket(phoneNumber);
+    if (!sock) return;
+    if (sock.watchdogInterval) clearInterval(sock.watchdogInterval);
+    if (sock.heartbeatInterval) clearInterval(sock.heartbeatInterval);
+    if (sock._presenceTimeout) clearTimeout(sock._presenceTimeout);
+    try { sock.ev?.removeAllListeners(); } catch (_) {}
+    try { sock.end(); } catch (_) {}
+    try { sock.ws?.close(); } catch (_) {}
+    sessionManager.deleteSocket(phoneNumber);
+}
+
+/** Whether the creds saved on disk for a session are a linked device. */
+function hasLinkedCredsOnDisk(phoneNumber) {
+    try {
+        const raw = fs.readFileSync(path.join('./data/sessions', phoneNumber, 'creds.json'), 'utf8').trim();
+        return raw.length > 0 && sessionManager.isLinked(JSON.parse(raw));
+    } catch (_) {
+        return false;
+    }
+}
+
 /**
  * Folder copying utility for QR linking migration
  */
@@ -111,10 +161,64 @@ function copyFolderSync(from, to) {
 }
 
 /**
+ * Moves a just-scanned temp_qr link into the scanner's own session:
+ * creds saved and copied to data/sessions/<number>, the wacrm pairing ref
+ * handed over, and the session started there (its 'open' reports the
+ * connect to wacrm). The next QR request starts a clean temp_qr socket.
+ */
+let tempQrMigration = null;
+function migrateTempQrSession(sock, saveCreds) {
+    if (tempQrMigration) return tempQrMigration;
+    tempQrMigration = (async () => {
+        const jid = sock.authState?.creds?.me?.id || sock.user?.id || '';
+        const loggedIn = String(jid).split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        if (!loggedIn) {
+            console.error('[QR] Scan completed but the linked number is unknown; ask for a new QR.');
+            return;
+        }
+        console.log(chalk.yellow(`[QR] Scanned by ${loggedIn}. Moving the link to its own session...`));
+
+        // The 515 can arrive before the async creds.update write lands.
+        try { await saveCreds(); } catch (e) { console.error('[QR] Saving creds failed:', e.message); }
+
+        if (sessionManager.getSocket(TEMP_QR_SESSION) === sock) {
+            closeSessionSocket(TEMP_QR_SESSION);
+        } else {
+            try { sock.ev?.removeAllListeners(); } catch (_) {}
+            try { sock.end(); } catch (_) {}
+        }
+        // An older socket for the same number would race the new creds.
+        closeSessionSocket(loggedIn);
+
+        const tempPath = `./data/sessions/${TEMP_QR_SESSION}`;
+        const destPath = `./data/sessions/${loggedIn}`;
+        try {
+            copyFolderSync(tempPath, destPath);
+            fs.rmSync(tempPath, { recursive: true, force: true });
+        } catch (e) {
+            console.error('[QR] Moving the scanned credentials failed:', e.message);
+            return;
+        }
+
+        // The wacrm pairing that asked for this QR now belongs to the
+        // number that scanned it; its connect report must carry it.
+        try {
+            require('./lib/bridge/state').movePairingRef(TEMP_QR_SESSION, loggedIn);
+        } catch (_) {}
+
+        reconnectAttemptsMap.delete(loggedIn);
+        await startXeonBotInc(loggedIn);
+    })()
+        .catch((err) => console.error('[QR] Migration failed:', err.message))
+        .finally(() => { tempQrMigration = null; });
+    return tempQrMigration;
+}
+
+/**
  * Handles reconnect schedule per business phone number with production resilience
  */
 function scheduleReconnect(phoneNumber, delayOverride = null) {
-    if (phoneNumber === 'temp_qr') return; // Ephemeral QR socket doesn't auto-reconnect
+    if (phoneNumber === TEMP_QR_SESSION) return; // Ephemeral QR socket doesn't auto-reconnect
 
     if (isReconnectingMap.get(phoneNumber)) {
         console.log(chalk.cyan(`[reconnect] [${phoneNumber}] Reconnect already in flight or scheduled.`));
@@ -196,25 +300,12 @@ async function startXeonBotInc(phoneNumber = ownerNum) {
 
 async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
     // 1. Pre-flight Ghost Socket Cleanup: prevent duplicate sockets and Code 440 (Conflict)
-    const existingSock = sessionManager.getSocket(phoneNumber);
-    if (existingSock) {
-        if (existingSock.watchdogInterval) clearInterval(existingSock.watchdogInterval);
-        if (existingSock.heartbeatInterval) clearInterval(existingSock.heartbeatInterval);
-        if (existingSock._presenceTimeout) clearTimeout(existingSock._presenceTimeout);
-        try { existingSock.ev?.removeAllListeners(); } catch (_) {}
-        try { existingSock.end(); } catch (_) {}
-        try { existingSock.ws?.close(); } catch (_) {}
-        sessionManager.deleteSocket(phoneNumber);
-    }
+    closeSessionSocket(phoneNumber);
 
     verifyAndRestoreSession(phoneNumber);
 
     const sessionDir = `./data/sessions/${phoneNumber}`;
-    let version = [2, 3000, 1015901307];
-    try {
-        const v = await fetchLatestBaileysVersion();
-        if (v?.version) version = v.version;
-    } catch (_) {}
+    const version = await getWaVersion();
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     const msgRetryCounterCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
@@ -369,40 +460,10 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             const loggedIn = XeonBotInc.user.id.split(':')[0].replace(/[^0-9]/g, '');
             console.log(chalk.green(`✅ WhatsApp session connected successfully for [${phoneNumber}] as user [${loggedIn}]`));
 
-            // Dynamic QR Renaming handshake
-            if (phoneNumber === 'temp_qr') {
-                console.log(chalk.yellow(`[Boot] Temp QR connected as ${loggedIn}. Migrating authentication credentials...`));
-
-                XeonBotInc.ev.removeAllListeners();
-                try { XeonBotInc.end(); } catch (_) {}
-                try { XeonBotInc.ws.close(); } catch (_) {}
-                sessionManager.deleteSocket('temp_qr');
-
-                const tempPath = `./data/sessions/temp_qr`;
-                const destPath = `./data/sessions/${loggedIn}`;
-
-                try {
-                    copyFolderSync(tempPath, destPath);
-                    fs.rmSync(tempPath, { recursive: true, force: true });
-                } catch (e) {
-                    console.error('[Boot] Error copying credentials on scan:', e.message);
-                }
-
-                // The wacrm pairing that asked for this QR now belongs to the
-                // number that scanned it; its connect report must carry it.
-                try {
-                    require('./lib/bridge/state').movePairingRef('temp_qr', loggedIn);
-                } catch (_) {}
-
-                // Restart the session in its final permanent folder
-                await startXeonBotInc(loggedIn);
-
-                // Spawn a new clean temp QR socket for subsequent scans
-                setTimeout(async () => {
-                    console.log('[Boot] Re-creating ephemeral temp QR session...');
-                    await startXeonBotInc('temp_qr');
-                }, 5000);
-
+            // Dynamic QR Renaming handshake (normally done on the 515
+            // restart below; this covers a socket that opens directly).
+            if (phoneNumber === TEMP_QR_SESSION) {
+                await migrateTempQrSession(XeonBotInc, saveCreds);
                 return;
             }
 
@@ -484,17 +545,33 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
 
             const statusCode = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.statusCode;
             const reason = lastDisconnect?.error?.message || 'unknown';
-            const isRegistered = !!XeonBotInc.authState?.creds?.registered;
-            console.log(chalk.yellow(`[reconnect] [${phoneNumber}] Connection closed. Code: ${statusCode} | Registered: ${isRegistered} | Reason: ${reason}`));
+            // Linked = registered (pairing code) OR has a signed account
+            // (QR). Baileys never sets `registered` on a QR link, so
+            // checking it alone treated every QR-linked number as unpaired.
+            const isRegistered = sessionManager.isLinked(XeonBotInc);
+            const isRestart = statusCode === DisconnectReason.restartRequired || statusCode === 515;
+            console.log(chalk.yellow(`[reconnect] [${phoneNumber}] Connection closed. Code: ${statusCode} | Linked: ${isRegistered} | Reason: ${reason}`));
 
-            try {
-                const { getReporter } = require('./lib/bridge/reporter');
-                const isLoggedOut = (statusCode === DisconnectReason.loggedOut || statusCode === 401) && isRegistered;
-                getReporter().reportConnection(phoneNumber, isLoggedOut ? 'logged_out' : 'disconnected', null, null, reason);
-            } catch (_) {}
+            // A 515 is WhatsApp asking for a fresh socket right after a link,
+            // not a disconnect: reporting it would flip wacrm's pairing to
+            // "disconnected" a second before "connected".
+            if (!isRestart) {
+                try {
+                    const { getReporter } = require('./lib/bridge/reporter');
+                    const isLoggedOut = (statusCode === DisconnectReason.loggedOut || statusCode === 401) && isRegistered;
+                    getReporter().reportConnection(phoneNumber, isLoggedOut ? 'logged_out' : 'disconnected', null, null, reason);
+                } catch (_) {}
+            }
 
             // 1. RESTART REQUIRED (Code 515) - Normal companion registration & handshake event!
-            if (statusCode === DisconnectReason.restartRequired || statusCode === 515) {
+            if (isRestart) {
+                if (phoneNumber === TEMP_QR_SESSION) {
+                    // The QR was just scanned. scheduleReconnect never
+                    // restarts temp_qr, so without this the link was
+                    // abandoned here and the scan never completed.
+                    if (isRegistered) await migrateTempQrSession(XeonBotInc, saveCreds);
+                    return;
+                }
                 console.log(chalk.cyan(`[reconnect] [${phoneNumber}] Companion registration requires restart (Code 515). Reconnecting in 1s...`));
                 scheduleReconnect(phoneNumber, 1000);
                 return;
@@ -590,7 +667,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
     });
 
     const isCliPairing = process.argv.includes('--pairing-code');
-    if (!state.creds.registered && phoneNumber !== 'temp_qr' && isCliPairing) {
+    if (!sessionManager.isLinked(state.creds) && phoneNumber !== TEMP_QR_SESSION && isCliPairing) {
         const cleanNumber = String(phoneNumber || '').replace(/[^0-9]/g, '');
         if (cleanNumber.length >= 8 && cleanNumber.length <= 15) {
             setTimeout(async () => {
@@ -617,60 +694,98 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
 }
 
 /**
- * Unified, single-source-of-truth Pairing Code Generator for Web UI and API.
- * Eliminates duplicate sockets, prevents session wipes, and ensures message handlers are attached.
+ * Resolves once WhatsApp has opened the pairing window on an unlinked
+ * socket — the moment it sends the first QR ref. A pairing code asked for
+ * before that is refused ("Connection Closed" / 428), which is why a
+ * fixed 1.5 s wait after start-up failed on slow boots.
  */
-async function requestPairingCodeForNumber(phoneNumber) {
+function waitForPairingWindow(sock, timeoutMs = PAIRING_READY_TIMEOUT_MS) {
+    if (sock.lastQR && !sessionManager.isSocketClosed(sock)) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+        const onUpdate = (update) => {
+            if (update?.qr) {
+                done();
+                resolve();
+            } else if (update?.connection === 'close') {
+                const code = update.lastDisconnect?.error?.output?.statusCode;
+                done();
+                reject(new Error(`WhatsApp closed the connection before pairing (code ${code || 'unknown'})`));
+            }
+        };
+        const timer = setTimeout(() => {
+            done();
+            reject(new Error('WhatsApp did not open a pairing window in time. Try again.'));
+        }, timeoutMs);
+        function done() {
+            clearTimeout(timer);
+            try { sock.ev.off('connection.update', onUpdate); } catch (_) {}
+        }
+        sock.ev.on('connection.update', onUpdate);
+    });
+}
+
+const pairingInFlight = new Map();
+
+/**
+ * Unified, single-source-of-truth Pairing Code Generator for Web UI and API.
+ *
+ * Returns { code } for a fresh 8-character code, or { isConnected: true }
+ * when the number is already linked. Every new code comes from a clean
+ * socket: an unlinked socket that already closed (its pairing window ran
+ * out) or holds creds from an abandoned attempt can't produce a working
+ * code, and reusing it is what made a second "Connect" fail until restart.
+ */
+function requestPairingCodeForNumber(phoneNumber) {
     const cleanNumber = String(phoneNumber || '').replace(/[^0-9]/g, '');
     if (cleanNumber.length < 8 || cleanNumber.length > 15) {
-        throw new Error('Invalid phone number. Provide full international number without + or spaces.');
+        return Promise.reject(new Error('Invalid phone number. Provide full international number without + or spaces.'));
     }
+    // Two clicks (or wacrm retrying) must not tear down each other's socket.
+    if (pairingInFlight.has(cleanNumber)) return pairingInFlight.get(cleanNumber);
+    const attempt = requestPairingCodeUnlocked(cleanNumber).finally(() => pairingInFlight.delete(cleanNumber));
+    pairingInFlight.set(cleanNumber, attempt);
+    return attempt;
+}
 
+async function requestPairingCodeUnlocked(cleanNumber) {
     let sock = sessionManager.getSocket(cleanNumber);
-    if (sock?.user && sock?.authState?.creds?.registered) {
+    if (sock && sessionManager.isLinked(sock)) {
         return { code: null, error: 'Bot is already linked/connected!', isConnected: true };
     }
 
-    // 1. If active socket already has a fresh code (< 50s old), return immediately
-    if (sock?.currentPairingCode && sock?.pairingCodeTimestamp && (Date.now() - sock.pairingCodeTimestamp < 50_000)) {
+    // A code handed out moments ago on a live socket is still the one the
+    // phone expects: return it instead of invalidating it with a new one.
+    if (sock && !sessionManager.isSocketClosed(sock) && sock.currentPairingCode
+        && Date.now() - (sock.pairingCodeTimestamp || 0) < 50_000) {
         return { code: sock.currentPairingCode, isConnected: false };
     }
 
-    // 2. If no socket exists, start one
-    if (!sock) {
-        console.log(chalk.cyan(`[pairing] Spawning production bot socket for ${cleanNumber}...`));
-        sock = await startXeonBotInc(cleanNumber);
-        // Brief 1.5s pause to allow Baileys WebSocket handshake
-        await new Promise(r => setTimeout(r, 1500));
+    if (!sock && hasLinkedCredsOnDisk(cleanNumber)) {
+        // Linked on disk but not running: resume it rather than overwrite it.
+        await startXeonBotInc(cleanNumber);
+        return { code: null, error: 'Bot is already linked/connected!', isConnected: true };
     }
 
-    // 3. If socket now has a fresh code, return it
-    if (sock?.currentPairingCode && sock?.pairingCodeTimestamp && (Date.now() - sock.pairingCodeTimestamp < 50_000)) {
-        return { code: sock.currentPairingCode, isConnected: false };
-    }
+    // Fresh pairing: drop the stale socket and its unlinked creds.
+    closeSessionSocket(cleanNumber);
+    try { fs.rmSync(`./data/sessions/${cleanNumber}`, { recursive: true, force: true }); } catch (_) {}
+    reconnectAttemptsMap.delete(cleanNumber);
 
-    // 4. Request directly on the socket
+    console.log(chalk.cyan(`[pairing] Starting a pairing socket for ${cleanNumber}...`));
+    sock = await startXeonBotInc(cleanNumber);
+    await waitForPairingWindow(sock);
+
+    let code;
     try {
-        let code = await sock.requestPairingCode(cleanNumber);
-        code = code?.match(/.{1,4}/g)?.join('-') || code;
-        sock.currentPairingCode = code;
-        sock.pairingCodeTimestamp = Date.now();
-        console.log(chalk.green(`[pairing] Generated direct pairing code for ${cleanNumber}: ${code}`));
-        return { code, isConnected: false };
+        code = await sock.requestPairingCode(cleanNumber);
     } catch (err) {
-        // If socket was still establishing connection, retry once after 2 seconds
-        if (err.message && (err.message.includes('Connection') || err.message.includes('not open') || err.message.includes('closed'))) {
-            console.log(chalk.yellow(`[pairing] Retrying pairing code request for ${cleanNumber} after socket warmup...`));
-            await new Promise(r => setTimeout(r, 2000));
-            sock = sessionManager.getSocket(cleanNumber) || sock;
-            let code = await sock.requestPairingCode(cleanNumber);
-            code = code?.match(/.{1,4}/g)?.join('-') || code;
-            sock.currentPairingCode = code;
-            sock.pairingCodeTimestamp = Date.now();
-            return { code, isConnected: false };
-        }
         throw new Error(`Failed to request pairing code: ${err.message}`);
     }
+    code = code?.match(/.{1,4}/g)?.join('-') || code;
+    sock.currentPairingCode = code;
+    sock.pairingCodeTimestamp = Date.now();
+    console.log(chalk.green(`[pairing] Pairing code for ${cleanNumber}: ${code}`));
+    return { code, isConnected: false };
 }
 
 // Global bindings for healthCheck and pairServer integration
@@ -695,8 +810,11 @@ module.exports = { startXeonBotInc, requestPairingCodeForNumber };
                         const raw = fs.readFileSync(credsFile, 'utf8').trim();
                         if (raw.length > 0) {
                             const creds = JSON.parse(raw);
-                            if (!creds.registered && folder !== 'temp_qr') {
-                                console.log(chalk.red(`[boot] Removing unregistered stale session folder: ${folder}`));
+                            // isLinked, not creds.registered: QR links never set
+                            // `registered`, so this used to wipe every QR-linked
+                            // number on each restart or deploy.
+                            if (!sessionManager.isLinked(creds)) {
+                                console.log(chalk.red(`[boot] Removing unlinked stale session folder: ${folder}`));
                                 fs.rmSync(folderPath, { recursive: true, force: true });
                             }
                         } else {
@@ -732,12 +850,16 @@ module.exports = { startXeonBotInc, requestPairingCodeForNumber };
             }
         }
 
-        // Spawn owner number session if no sessions folder exists (preserving defaults)
-        const ownerClean = ownerNum.replace(/[^0-9]/g, '');
-        const ownerPath = path.join(sessionsRoot, ownerClean);
-        if (!fs.existsSync(ownerPath)) {
-            console.log(`[Boot] Initializing default owner session for ${ownerClean}...`);
-            await startXeonBotInc(ownerClean);
+        // No socket is started for an unlinked number here: it would only
+        // hold a pairing window open until WhatsApp times it out, and then
+        // sit dead in the session map. Numbers are linked on demand from
+        // wacrm (pairing code or QR), the web console, or --pairing-code.
+        if (process.argv.includes('--pairing-code')) {
+            const ownerClean = ownerNum.replace(/[^0-9]/g, '');
+            if (!sessionManager.getSocket(ownerClean)) {
+                console.log(`[Boot] CLI pairing for owner number ${ownerClean}...`);
+                await startXeonBotInc(ownerClean);
+            }
         }
 
     } catch (error) {

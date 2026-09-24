@@ -1,0 +1,16 @@
+.git
+node_modules
+session
+data/sessions
+data/session_backup
+data/bridge
+data/memory
+data/config
+tmp
+temp
+scratch
+baileys_store.json
+*.log
+.env
+.env.*
+!.env.example

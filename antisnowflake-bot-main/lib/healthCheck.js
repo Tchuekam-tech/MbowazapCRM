@@ -14,6 +14,7 @@
  */
 
 const http = require('http');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
@@ -24,6 +25,27 @@ const { getTempQrDataUrl } = require('./qrSession');
 const { createBridgeHandler } = require('./bridge/server');
 
 let lastActiveTime = Date.now();
+
+// The console routes (dashboard, /pair, /qr, /api/*) act as the linked
+// number: they send messages, unlink it and pair new ones. On a public
+// host they need a password — DASHBOARD_PASSWORD, else MBOWAZAP_SECRET
+// (any username). With neither set (local use) they stay open.
+const CONSOLE_PATHS = /^\/(?:$|pair$|qr$|api\/)/;
+
+function consolePassword() {
+    return (process.env.DASHBOARD_PASSWORD || process.env.MBOWAZAP_SECRET || '').trim() || null;
+}
+
+function isConsoleAuthorized(req) {
+    const password = consolePassword();
+    if (!password) return true;
+    const match = /^Basic\s+(.+)$/i.exec(req.headers.authorization || '');
+    if (!match) return false;
+    const decoded = Buffer.from(match[1], 'base64').toString('utf8');
+    const supplied = decoded.slice(decoded.indexOf(':') + 1);
+    const digest = (value) => crypto.createHash('sha256').update(value).digest();
+    return crypto.timingSafeEqual(digest(supplied), digest(password));
+}
 
 function updateActiveTime() {
     lastActiveTime = Date.now();
@@ -52,6 +74,16 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
         // ──────────────────────────────────────────────
         if (pathname.startsWith('/bridge/')) {
             await handleBridgeRequest(req, res);
+            return;
+        }
+
+        if (CONSOLE_PATHS.test(pathname) && !isConsoleAuthorized(req)) {
+            req.resume();
+            res.writeHead(401, {
+                'Content-Type': 'application/json',
+                'WWW-Authenticate': 'Basic realm="TchuekBot console", charset="UTF-8"',
+            });
+            res.end(JSON.stringify({ error: 'Authentication required' }));
             return;
         }
 
@@ -103,7 +135,7 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
 
             const cleanNumber = number.replace(/[^0-9]/g, '');
             const sock = sessionManager.getSocket(cleanNumber);
-            const isConnected = !!(sock?.user && sock?.authState?.creds?.registered);
+            const isConnected = !!(sock?.user && sessionManager.isLinked(sock) && sessionManager.isSocketOpen(sock));
 
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({

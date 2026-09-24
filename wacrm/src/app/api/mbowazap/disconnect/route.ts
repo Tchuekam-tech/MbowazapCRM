@@ -9,7 +9,9 @@ export async function POST() {
 
     const { data: config, error: configError } = await ctx.supabase
       .from('whatsapp_config')
-      .select('id, mbowazap_session, mbowazap_state')
+      .select(
+        'id, provider, mbowazap_session, mbowazap_state, phone_number_id, access_token'
+      )
       .eq('account_id', ctx.accountId)
       .maybeSingle();
 
@@ -20,37 +22,68 @@ export async function POST() {
       );
     }
 
+    if (!config || config.provider !== 'mbowazap') {
+      return NextResponse.json({ ok: true, disconnected: true });
+    }
+
     // Sever Baileys socket and cleanup credentials on the bot
+    let botLogout: 'ok' | 'failed' | 'skipped' = 'skipped';
     const envResult = readMbowazapEnv();
-    if (envResult.ok && config?.mbowazap_session) {
+    if (envResult.ok && config.mbowazap_session) {
       try {
         const client = createMbowazapClient(envResult.env);
         await client.logout(config.mbowazap_session);
+        botLogout = 'ok';
       } catch (err) {
+        botLogout = 'failed';
         console.warn('[mbowazap/disconnect] remote logout warning:', err);
       }
     }
 
-    const { error: updateError } = await ctx.supabase
-      .from('whatsapp_config')
-      .update({
-        mbowazap_state: 'disconnected',
-        status: 'disconnected',
-        mbowazap_session: null,
-        mbowazap_pairing_ref: null,
-        mbowazap_display_name: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('account_id', ctx.accountId);
+    // Migration 043's provider-shape CHECK: a 'mbowazap' row must keep a
+    // session or a pairing ref, so the row can't just be blanked. A row
+    // that still carries Cloud API credentials goes back to Meta
+    // (disconnected); otherwise the account simply has no connection.
+    const hasMetaCredentials = Boolean(
+      config.phone_number_id && config.access_token
+    );
+    const { error: updateError } = hasMetaCredentials
+      ? await ctx.supabase
+          .from('whatsapp_config')
+          .update({
+            provider: 'meta',
+            status: 'disconnected',
+            mbowazap_state: null,
+            mbowazap_session: null,
+            mbowazap_pairing_ref: null,
+            mbowazap_display_name: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('account_id', ctx.accountId)
+      : await ctx.supabase
+          .from('whatsapp_config')
+          .delete()
+          .eq('account_id', ctx.accountId);
 
     if (updateError) {
       return NextResponse.json(
-        { ok: false, error: `Failed to disconnect session: ${updateError.message}` },
+        {
+          ok: false,
+          error: `Failed to disconnect session: ${updateError.message}`,
+        },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ ok: true, disconnected: true });
+    return NextResponse.json({
+      ok: true,
+      disconnected: true,
+      botLogout,
+      warning:
+        botLogout === 'failed'
+          ? 'Disconnected in wacrm, but TchuekBot could not be reached to unlink the device. Remove it from WhatsApp → Linked devices on the phone.'
+          : undefined,
+    });
   } catch (err) {
     return toErrorResponse(err);
   }

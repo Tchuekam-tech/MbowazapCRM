@@ -56,6 +56,21 @@ function isSocketOpen(sock) {
     return ws.readyState === 1;
 }
 
+/**
+ * Whether these credentials belong to a linked WhatsApp device. Accepts
+ * a socket or a creds object.
+ *
+ * Baileys sets `creds.registered` only on the pairing-code path; a QR
+ * link leaves it false forever. Both paths end in pair-success, which
+ * stores the signed `account` identity, so either flag means linked.
+ * (`creds.me` is no signal: requestPairingCode sets it before the phone
+ * has confirmed anything.)
+ */
+function isLinked(sockOrCreds) {
+    const creds = sockOrCreds?.authState?.creds || sockOrCreds;
+    return Boolean(creds && (creds.registered || creds.account));
+}
+
 /** Whether the socket's WebSocket is closing or closed (i.e. dead, not merely still connecting). */
 function isSocketClosed(sock) {
     const ws = sock?.ws;
@@ -114,6 +129,7 @@ module.exports = {
     getAllSockets,
     findSocketForClient,
     normalizeSessionKey,
+    isLinked,
     isSocketOpen,
     isSocketClosed
 };

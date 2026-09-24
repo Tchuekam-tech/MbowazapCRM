@@ -5,9 +5,16 @@
  * fresh temp_qr socket for the next scan.
  */
 
+const fs = require('fs');
+const path = require('path');
 const sessionManager = require('./sessionManager');
 
 const TEMP_QR_SESSION = 'temp_qr';
+const TEMP_QR_DIR = path.join(__dirname, '../data/sessions', TEMP_QR_SESSION);
+// A cold start (socket + noise handshake + first pair-device) takes a few
+// seconds, longer on a busy host. wacrm allows 45 s for the whole call.
+const QR_WAIT_MS = 20_000;
+const QR_POLL_MS = 500;
 
 function closeSocketQuietly(sock) {
     if (!sock) return;
@@ -28,15 +35,24 @@ async function getTempQrDataUrl() {
         console.log('[QR] Initializing clean ephemeral temp_qr socket...');
         if (sock) closeSocketQuietly(sock);
         sessionManager.deleteSocket(TEMP_QR_SESSION);
+        // Start from fresh creds unless a scan already linked them (its
+        // migration to the scanner's number is then still due).
+        if (!sock || !sessionManager.isLinked(sock)) {
+            try { fs.rmSync(TEMP_QR_DIR, { recursive: true, force: true }); } catch (_) {}
+        }
 
         if (typeof global.startXeonBotInc === 'function') {
             await global.startXeonBotInc(TEMP_QR_SESSION);
-            for (let i = 0; i < 15; i++) {
-                await new Promise(r => setTimeout(r, 500));
-                sock = sessionManager.getSocket(TEMP_QR_SESSION);
-                if (sock?.lastQR) break;
-            }
         }
+        // Never fall back to the dead socket's last (expired) QR.
+        sock = sessionManager.getSocket(TEMP_QR_SESSION);
+    }
+
+    // Also covers a socket another request just started: wait for its QR.
+    for (let waited = 0; !sock?.lastQR && waited < QR_WAIT_MS; waited += QR_POLL_MS) {
+        await new Promise(r => setTimeout(r, QR_POLL_MS));
+        sock = sessionManager.getSocket(TEMP_QR_SESSION);
+        if (!sock) break;
     }
 
     if (!sock) {
@@ -45,6 +61,10 @@ async function getTempQrDataUrl() {
 
     if (!sock.lastQR) {
         return { status: 200, qr: null, error: 'QR code not generated yet. Please wait 5 seconds and refresh.' };
+    }
+    if (sessionManager.isLinked(sock)) {
+        // Scanned: the link is moving to the scanner's own session.
+        return { status: 200, qr: null, error: 'QR code was just scanned; finishing the link.' };
     }
 
     try {

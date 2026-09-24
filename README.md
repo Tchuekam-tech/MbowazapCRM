@@ -50,3 +50,19 @@ In `antisnowflake-bot-main/.env`:
 WACRM_URL=http://localhost:3000
 MBOWAZAP_SECRET=your_32_plus_character_secure_secret_here
 ```
+
+## Deploying on Railway
+
+Run each app as its own Railway service from this repo:
+
+1. **wacrm**: root directory `wacrm`. Add `MBOWAZAP_BOT_URL` (the bot's
+   public URL, no path) and `MBOWAZAP_SECRET` to its variables.
+2. **TchuekBot**: root directory `antisnowflake-bot-main` (builds from its
+   Dockerfile via `railway.json`). Variables: `MBOWAZAP_SECRET` (same value),
+   `WACRM_URL` (wacrm's public URL, no path), and the AI keys from
+   `.env.example`. Generate a public domain for it.
+3. **Attach a volume to TchuekBot mounted at `/app/data`**, or every deploy
+   unlinks WhatsApp. Keep it at one replica.
+4. Open wacrm → Settings → MboWazap and pair with a code or a QR.
+
+Details: [`wacrm/docs/mbowazap-bridge.md`](wacrm/docs/mbowazap-bridge.md).

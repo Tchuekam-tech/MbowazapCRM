@@ -1,11 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account';
 import { readMbowazapEnv } from '@/lib/mbowazap/env';
-import { createMbowazapClient } from '@/lib/mbowazap/client';
+import {
+  createMbowazapClient,
+  MbowazapBridgeError,
+  type MbowazapClient,
+} from '@/lib/mbowazap/client';
+import { bridgeErrorMessage, PAIRING_TTL_MS } from '@/lib/mbowazap/pairing';
 
 export const dynamic = 'force-dynamic';
 
-const PAIRING_EXPIRY_MS = 120_000; // 2 minutes TTL for pairing attempts
+const PAIRING_EXPIRY_MS = PAIRING_TTL_MS;
+
+export interface BotReachability {
+  reachable: boolean;
+  error: string | null;
+  code: string | null;
+}
+
+/**
+ * Whether TchuekBot answers a signed ping: catches a wrong
+ * MBOWAZAP_BOT_URL, a bot that is down, or secrets that differ, before
+ * the admin clicks Connect and waits on a timeout.
+ */
+async function probeBot(client: MbowazapClient): Promise<BotReachability> {
+  try {
+    await client.ping();
+    return { reachable: true, error: null, code: null };
+  } catch (err) {
+    if (err instanceof MbowazapBridgeError) {
+      return { reachable: false, error: bridgeErrorMessage(err), code: err.code };
+    }
+    return { reachable: false, error: 'TchuekBot ping failed', code: 'internal_error' };
+  }
+}
 
 export type NormalizedMbowazapStatus =
   | 'disconnected'
@@ -32,7 +60,11 @@ export async function GET(req: NextRequest) {
       query = query.eq('mbowazap_pairing_ref', refParam);
     }
 
-    const { data: config, error: configError } = await query.maybeSingle();
+    const client = envResult.ok ? createMbowazapClient(envResult.env) : null;
+    const [{ data: config, error: configError }, bot] = await Promise.all([
+      query.maybeSingle(),
+      client ? probeBot(client) : Promise.resolve(null),
+    ]);
 
     if (configError) {
       console.error('[mbowazap/status] error loading config:', configError);
@@ -48,6 +80,7 @@ export async function GET(req: NextRequest) {
         status: 'disconnected',
         configured: envResult.ok,
         configIssues: envResult.ok ? [] : envResult.problems,
+        bot,
         provider: config?.provider ?? 'meta',
         phone: null,
         displayName: null,
@@ -67,9 +100,8 @@ export async function GET(req: NextRequest) {
     if (rawState === 'connected') {
       normalizedStatus = 'connected';
       // Verify live telemetry if bot bridge is reachable
-      if (envResult.ok && config.mbowazap_session) {
+      if (client && bot?.reachable && config.mbowazap_session) {
         try {
-          const client = createMbowazapClient(envResult.env);
           liveTelemetry = await client.getSession(config.mbowazap_session);
           if (liveTelemetry?.status === 'reconnecting') {
             normalizedStatus = 'connecting';
@@ -108,6 +140,7 @@ export async function GET(req: NextRequest) {
       status: normalizedStatus,
       configured: envResult.ok,
       configIssues: envResult.ok ? [] : envResult.problems,
+      bot,
       provider: 'mbowazap',
       phone: formatPhone(config.mbowazap_session),
       rawPhone: config.mbowazap_session,

@@ -57,6 +57,7 @@ async function startBridge(t, overrides = {}) {
         getSocket: (session) => sockets.get(session),
         deleteSocket: (session) => sockets.delete(session),
         isSocketOpen: (sock) => sock.open === true,
+        isSocketClosed: (sock) => sock.closed === true,
         requestPairingCode: async (phone) => {
             pairingCalls.push(phone);
             return { code: 'ABCD-EFGH', isConnected: false };
@@ -188,6 +189,42 @@ test('session status covers connected, reconnecting, pairing and disconnected', 
     assert.equal((await call('GET', '/bridge/sessions/237600000004')).json.status, 'disconnected');
     assert.equal((await call('GET', '/bridge/sessions/temp_qr')).json.status, 'disconnected');
     assert.equal((await call('GET', '/bridge/sessions/12')).status, 400);
+});
+
+test('a QR-linked number is connected even though Baileys never sets creds.registered for QR', async (t) => {
+    const { call, sockets } = await startBridge(t);
+    // pair-success stores the signed `account`; only the pairing-code path sets `registered`.
+    const sock = fakeSocket({ registered: false });
+    sock.authState.creds.account = { details: 'signed' };
+    sock.user = { id: `${SESSION}:3@s.whatsapp.net`, name: 'Tchuek-Tech' };
+    sockets.set(SESSION, sock);
+
+    const { json } = await call('GET', `/bridge/sessions/${SESSION}`);
+    assert.equal(json.status, 'connected');
+    assert.deepEqual(json.me, { phone: SESSION, name: 'Tchuek-Tech' });
+
+    const res = await call('POST', '/bridge/send', {
+        session: SESSION,
+        to: { phone: CUSTOMER },
+        kind: 'text',
+        origin: 'agent',
+        text: 'Bonjour',
+    });
+    assert.equal(res.status, 200);
+    assert.equal(sock.sent.length, 1);
+});
+
+test('an unlinked socket whose pairing window closed is disconnected, not pairing', async (t) => {
+    const { call, sockets } = await startBridge(t);
+    const sock = fakeSocket({ registered: false, open: false });
+    sock.closed = true;
+    sockets.set(SESSION, sock);
+
+    assert.equal((await call('GET', `/bridge/sessions/${SESSION}`)).json.status, 'disconnected');
+    // …and it doesn't block a fresh pairing-code request for the number.
+    const res = await call('POST', '/bridge/pair', { pairingRef: REF, method: 'code', phone: SESSION });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.code, 'ABCD-EFGH');
 });
 
 test('logout unlinks the number and deletes its session files', async (t) => {

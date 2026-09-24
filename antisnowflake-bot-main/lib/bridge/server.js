@@ -64,6 +64,8 @@ function productionDeps() {
         getSocket: (session) => sessionManager.getSocket(session),
         deleteSocket: (session) => sessionManager.deleteSocket(session),
         isSocketOpen: (sock) => sessionManager.isSocketOpen(sock),
+        isSocketClosed: (sock) => sessionManager.isSocketClosed(sock),
+        isLinked: (sock) => sessionManager.isLinked(sock),
         requestPairingCode: (phone) => {
             const request = global.requestPairingCodeForNumber || require('../pairServer').generatePairCode;
             return request(phone);
@@ -169,12 +171,16 @@ function createBridgeHandler(overrides = {}) {
 
     function sessionStatus(sock) {
         if (!sock) return 'disconnected';
-        if (!sock.authState?.creds?.registered) return 'pairing';
+        if (!d.isLinked(sock)) {
+            // An unlinked socket whose pairing window ran out (QR refs
+            // ended) stays in the session map, closed; it pairs nothing.
+            return d.isSocketClosed(sock) ? 'disconnected' : 'pairing';
+        }
         return d.isSocketOpen(sock) ? 'connected' : 'reconnecting';
     }
 
     function describeMe(sock) {
-        if (!sock?.user?.id || !sock.authState?.creds?.registered) return null;
+        if (!sock?.user?.id || !d.isLinked(sock)) return null;
         return {
             phone: contactKeyFromJid(sock.user.id),
             name: sock.user.name || sock.user.verifiedName || sock.user.notify || null,

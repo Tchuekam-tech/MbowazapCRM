@@ -17,6 +17,7 @@ const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
+const { isLinked } = require('./sessionManager');
 
 const TEMP_SESSION_DIR = path.join(__dirname, '..', 'tmp', 'pair_sessions');
 const BUSINESS_SESSION_DIR = path.join(__dirname, '..', 'data', 'sessions');
@@ -125,7 +126,7 @@ async function generatePairCode(phoneNumber) {
             };
 
             const requestCode = async () => {
-                if (requested || sock.authState.creds.registered) return;
+                if (requested || isLinked(sock)) return;
                 requested = true;
 
                 try {
@@ -179,7 +180,7 @@ async function generatePairCode(phoneNumber) {
 
         const cleanupTimer = setTimeout(() => {
             const entry = activePairingSessions.get(cleanNumber);
-            if (entry?.sock === sock && !sock.authState.creds.registered) {
+            if (entry?.sock === sock && !isLinked(sock)) {
                 closeSocket(sock);
                 activePairingSessions.delete(cleanNumber);
                 cleanupSession(sessionDir);

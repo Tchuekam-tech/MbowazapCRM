@@ -11,11 +11,13 @@ const h = vi.hoisted(() => {
       account: { id: 'acct-1', name: 'Acme Corp' },
     },
     clientMock: {
+      ping: vi.fn(),
       getSession: vi.fn(),
       pair: vi.fn(),
       setBrain: vi.fn(),
       logout: vi.fn(),
     },
+    upsertError: null as { code?: string; message: string } | null,
   };
 });
 
@@ -53,6 +55,7 @@ import { POST as postPair } from './pair/route';
 import { GET as getPoll } from './poll/route';
 import { PUT as putBrain } from './brain/route';
 import { POST as postDisconnect } from './disconnect/route';
+import { POST as postQr } from './qr/route';
 
 describe('MboWazap Gateway Control Routes', () => {
   let storedConfig: Record<string, any> | null = null;
@@ -96,9 +99,16 @@ describe('MboWazap Gateway Control Routes', () => {
             }),
           }),
           upsert: async (patch: any) => {
+            if (h.upsertError) return { error: h.upsertError };
             storedConfig = { ...(storedConfig || {}), ...patch };
             return { error: null };
           },
+          delete: () => ({
+            eq: () => {
+              storedConfig = null;
+              return Promise.resolve({ error: null });
+            },
+          }),
           update: (patch: any) => ({
             eq: (_col: string, _val: string) => {
               storedConfig = { ...(storedConfig || {}), ...patch };
@@ -110,6 +120,8 @@ describe('MboWazap Gateway Control Routes', () => {
     };
 
     vi.clearAllMocks();
+    h.upsertError = null;
+    h.clientMock.ping.mockResolvedValue({ protocol: '1', time: Date.now() });
   });
 
   afterEach(() => {
@@ -182,6 +194,12 @@ describe('MboWazap Gateway Control Routes', () => {
     });
 
     it('rejects pairing when already connected', async () => {
+      h.clientMock.getSession.mockResolvedValueOnce({
+        session: '237653683174',
+        status: 'connected',
+        me: null,
+        davila: true,
+      });
       const req = new NextRequest('http://localhost/api/mbowazap/pair', {
         method: 'POST',
         body: JSON.stringify({ method: 'code', phone: '+237 653 683 174' }),
@@ -190,6 +208,106 @@ describe('MboWazap Gateway Control Routes', () => {
       expect(res.status).toBe(409);
       const json = await res.json();
       expect(json.code).toBe('already_connected');
+      expect(h.clientMock.pair).not.toHaveBeenCalled();
+    });
+
+    it('pairs again when the stored connection no longer exists on the bot', async () => {
+      h.clientMock.getSession.mockResolvedValueOnce({
+        session: '237653683174',
+        status: 'disconnected',
+        me: null,
+        davila: true,
+      });
+      h.clientMock.pair.mockResolvedValueOnce({
+        method: 'qr',
+        qr: 'data:image/png;base64,fresh',
+        session: 'temp_qr',
+      });
+      const req = new NextRequest('http://localhost/api/mbowazap/pair', {
+        method: 'POST',
+        body: JSON.stringify({ method: 'qr' }),
+      });
+      const res = await postPair(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.qr).toBe('data:image/png;base64,fresh');
+      expect(storedConfig?.mbowazap_state).toBe('pairing');
+      expect(storedConfig?.mbowazap_session).toBeNull();
+    });
+
+    it('refuses while the Cloud API connection is live', async () => {
+      storedConfig = { provider: 'meta', status: 'connected', phone_number_id: '1', access_token: 'x' };
+      const req = new NextRequest('http://localhost/api/mbowazap/pair', {
+        method: 'POST',
+        body: JSON.stringify({ method: 'qr' }),
+      });
+      const res = await postPair(req);
+      expect(res.status).toBe(409);
+      expect((await res.json()).code).toBe('provider_conflict');
+      expect(h.clientMock.pair).not.toHaveBeenCalled();
+    });
+
+    it('explains a secret mismatch and leaves no pairing open', async () => {
+      storedConfig!.mbowazap_state = 'disconnected';
+      h.clientMock.pair.mockRejectedValueOnce(
+        new MbowazapBridgeError('unauthorized', 'Invalid or missing bridge signature', 401)
+      );
+      const req = new NextRequest('http://localhost/api/mbowazap/pair', {
+        method: 'POST',
+        body: JSON.stringify({ method: 'code', phone: '237653683174' }),
+      });
+      const res = await postPair(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe('unauthorized');
+      expect(json.error).toMatch(/MBOWAZAP_SECRET must be identical/);
+      expect(storedConfig?.mbowazap_state).toBe('disconnected');
+    });
+
+    it('reports a number linked to another account', async () => {
+      storedConfig = null;
+      h.upsertError = { code: '23505', message: 'duplicate key value' };
+      const req = new NextRequest('http://localhost/api/mbowazap/pair', {
+        method: 'POST',
+        body: JSON.stringify({ method: 'code', phone: '237653683174' }),
+      });
+      const res = await postPair(req);
+      expect(res.status).toBe(409);
+      expect((await res.json()).code).toBe('already_linked_elsewhere');
+    });
+
+    it("takes back this account's number when the bot still holds its link", async () => {
+      storedConfig!.mbowazap_state = 'disconnected';
+      h.clientMock.pair.mockRejectedValueOnce(
+        new MbowazapBridgeError('already_connected', '237653683174 is already linked', 409)
+      );
+      const req = new NextRequest('http://localhost/api/mbowazap/pair', {
+        method: 'POST',
+        body: JSON.stringify({ method: 'code', phone: '237653683174' }),
+      });
+      const res = await postPair(req);
+      expect(res.status).toBe(200);
+      expect((await res.json()).status).toBe('connected');
+      expect(storedConfig?.mbowazap_state).toBe('connected');
+      expect(h.clientMock.logout).not.toHaveBeenCalled();
+    });
+
+    it('unlinks an orphaned link on the bot before pairing a new number', async () => {
+      storedConfig = null;
+      h.clientMock.pair
+        .mockRejectedValueOnce(
+          new MbowazapBridgeError('already_connected', '237600000009 is already linked', 409)
+        )
+        .mockResolvedValueOnce({ method: 'code', code: 'WXYZ-9876', session: '237600000009' });
+      h.clientMock.logout.mockResolvedValueOnce({ session: '237600000009', status: 'disconnected' });
+      const req = new NextRequest('http://localhost/api/mbowazap/pair', {
+        method: 'POST',
+        body: JSON.stringify({ method: 'code', phone: '237600000009' }),
+      });
+      const res = await postPair(req);
+      expect(res.status).toBe(200);
+      expect((await res.json()).code).toBe('WXYZ-9876');
+      expect(h.clientMock.logout).toHaveBeenCalledWith('237600000009');
     });
 
     it('successfully initiates pairing code with TchuekBot', async () => {
@@ -239,7 +357,90 @@ describe('MboWazap Gateway Control Routes', () => {
     });
   });
 
+  describe('POST /api/mbowazap/qr', () => {
+    const REF = '00000000-0000-4000-8000-000000000001';
+    const qrRequest = (pairingRef: string) =>
+      new NextRequest('http://localhost/api/mbowazap/qr', {
+        method: 'POST',
+        body: JSON.stringify({ pairingRef }),
+      });
+
+    it('returns a fresh QR and extends the pairing', async () => {
+      storedConfig = {
+        ...storedConfig,
+        mbowazap_state: 'pairing',
+        mbowazap_session: null,
+        updated_at: new Date(Date.now() - 100_000).toISOString(),
+      };
+      h.clientMock.pair.mockResolvedValueOnce({
+        method: 'qr',
+        qr: 'data:image/png;base64,rotated',
+        session: 'temp_qr',
+      });
+      const res = await postQr(qrRequest(REF));
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.qr).toBe('data:image/png;base64,rotated');
+      expect(h.clientMock.pair).toHaveBeenCalledWith({ pairingRef: REF, method: 'qr' });
+      expect(Date.parse(storedConfig!.updated_at)).toBeGreaterThan(Date.now() - 5_000);
+    });
+
+    it('refuses a pairing that was replaced', async () => {
+      const res = await postQr(qrRequest('00000000-0000-4000-8000-00000000abcd'));
+      expect(res.status).toBe(409);
+      expect((await res.json()).code).toBe('pairing_superseded');
+      expect(h.clientMock.pair).not.toHaveBeenCalled();
+    });
+
+    it('says connected once the scan has linked the number', async () => {
+      const res = await postQr(qrRequest(REF));
+      expect(res.status).toBe(200);
+      expect((await res.json()).status).toBe('connected');
+    });
+
+    it('validates the pairing ref', async () => {
+      const res = await postQr(qrRequest('not-a-uuid'));
+      expect(res.status).toBe(400);
+    });
+  });
+
   describe('GET /api/mbowazap/poll', () => {
+    it('marks the pairing connected when the bot already reports the link', async () => {
+      storedConfig = { ...storedConfig, mbowazap_state: 'pairing', status: 'disconnected' };
+      h.clientMock.getSession.mockResolvedValueOnce({
+        session: '237653683174',
+        status: 'connected',
+        me: { phone: '237653683174', name: 'Biz' },
+        davila: true,
+      });
+      const req = new NextRequest(
+        'http://localhost/api/mbowazap/poll?ref=00000000-0000-4000-8000-000000000001'
+      );
+      const res = await getPoll(req);
+      const json = await res.json();
+      expect(json.connected).toBe(true);
+      expect(json.displayName).toBe('Biz');
+      expect(storedConfig?.mbowazap_state).toBe('connected');
+      expect(storedConfig?.status).toBe('connected');
+    });
+
+    it('keeps waiting while the bot is still pairing', async () => {
+      storedConfig = { ...storedConfig, mbowazap_state: 'pairing', status: 'disconnected' };
+      h.clientMock.getSession.mockResolvedValueOnce({
+        session: '237653683174',
+        status: 'pairing',
+        me: null,
+        davila: true,
+      });
+      const req = new NextRequest(
+        'http://localhost/api/mbowazap/poll?ref=00000000-0000-4000-8000-000000000001'
+      );
+      const json = await (await getPoll(req)).json();
+      expect(json.connected).toBe(false);
+      expect(json.state).toBe('pairing');
+      expect(storedConfig?.mbowazap_state).toBe('pairing');
+    });
+
     it('returns connected true when pairing succeeds', async () => {
       const req = new NextRequest(
         'http://localhost/api/mbowazap/poll?ref=00000000-0000-4000-8000-000000000001'
@@ -323,8 +524,34 @@ describe('MboWazap Gateway Control Routes', () => {
       expect(json.ok).toBe(true);
       expect(json.disconnected).toBe(true);
       expect(h.clientMock.logout).toHaveBeenCalledWith('237653683174');
-      expect(storedConfig?.mbowazap_state).toBe('disconnected');
+      // No Cloud API credentials on the row: the connection is removed
+      // (blanking it would violate the provider-shape CHECK).
+      expect(storedConfig).toBeNull();
+    });
+
+    it('hands the row back to saved Cloud API credentials', async () => {
+      storedConfig = { ...storedConfig, phone_number_id: '1098765', access_token: 'enc' };
+      h.clientMock.logout.mockResolvedValueOnce({
+        session: '237653683174',
+        status: 'disconnected',
+      });
+      const res = await postDisconnect();
+      expect(res.status).toBe(200);
+      expect(storedConfig?.provider).toBe('meta');
+      expect(storedConfig?.status).toBe('disconnected');
       expect(storedConfig?.mbowazap_session).toBeNull();
+      expect(storedConfig?.mbowazap_pairing_ref).toBeNull();
+    });
+
+    it('warns when the bot could not unlink the device', async () => {
+      h.clientMock.logout.mockRejectedValueOnce(
+        new MbowazapBridgeError('network_error', 'Could not reach TchuekBot')
+      );
+      const res = await postDisconnect();
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.botLogout).toBe('failed');
+      expect(json.warning).toMatch(/Linked devices/);
     });
   });
 
@@ -354,6 +581,18 @@ describe('MboWazap Gateway Control Routes', () => {
       const json = await res.json();
       expect(json.ok).toBe(true);
       expect(json.status).toBe('disconnected');
+    });
+
+    it('reports a bot that does not answer', async () => {
+      h.clientMock.ping.mockRejectedValueOnce(
+        new MbowazapBridgeError('unauthorized', 'Invalid or missing bridge signature', 401)
+      );
+      const req = new NextRequest('http://localhost/api/mbowazap/status');
+      const json = await (await getStatus(req)).json();
+      expect(json.bot.reachable).toBe(false);
+      expect(json.bot.code).toBe('unauthorized');
+      expect(json.bot.error).toMatch(/MBOWAZAP_SECRET/);
+      expect(h.clientMock.getSession).not.toHaveBeenCalled();
     });
 
     it('normalizes expired pairing sessions', async () => {

@@ -9,8 +9,14 @@
 // Explicit 4-state lifecycle:
 //   1. Disconnected: "Not connected" → [Connect WhatsApp]
 //   2. Pairing: "Connecting..." → Code / QR + live countdown + poll
+//      (the QR is re-fetched while on screen: WhatsApp rotates it ~20 s)
 //   3. Connected: "Connected" → +237... + Online + Brain selector + [Disconnect]
-//   4. Failed / Expired: "Connection failed" → Reason + [Try again]
+//      (also while the bot reconnects a linked number)
+//   4. Failed: "Connection failed" → Reason + [Try again]
+//
+// Only this page's own attempt drives the pairing card; a pairing the
+// server still has open (e.g. after a reload) shows the connect form with
+// a notice, and the page keeps checking whether it completed.
 // ============================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -22,7 +28,6 @@ import {
   CheckCircle2,
   Clock,
   Copy,
-  ExternalLink,
   Info,
   Loader2,
   QrCode,
@@ -84,6 +89,8 @@ interface StatusResponse {
     expiresAt: string;
   } | null;
   failureReason?: string | null;
+  /** Signed ping result; null when the bridge isn't configured. */
+  bot?: { reachable: boolean; error: string | null; code: string | null } | null;
 }
 
 interface ActivePairingSession {
@@ -93,6 +100,17 @@ interface ActivePairingSession {
   pairingRef: string;
   expiresAt: string;
 }
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
+/** Re-fetch the QR before WhatsApp rotates it (every ~20 s). */
+const QR_REFRESH_MS = 15_000;
+/** How long a QR pairing keeps refreshing before it gives up. */
+const QR_SESSION_MS = 5 * 60_000;
+/** Checks for a pairing the server has open that this page didn't start. */
+const SERVER_PAIRING_POLL_MS = 4_000;
 
 export function MboWazapConfig() {
   const canEdit = useCan('edit-settings');
@@ -113,6 +131,11 @@ export function MboWazapConfig() {
     reason: string;
   } | null>(null);
 
+  const [qrRefreshing, setQrRefreshing] = useState(false);
+  // Pairings the admin cancelled here: the server keeps them open until
+  // they expire, but they shouldn't be announced as still pending.
+  const [dismissedRefs, setDismissedRefs] = useState<string[]>([]);
+
   const [copiedCode, setCopiedCode] = useState(false);
   const [switchingBrain, setSwitchingBrain] = useState(false);
 
@@ -130,17 +153,16 @@ export function MboWazapConfig() {
       const data: StatusResponse = await res.json();
       if (data.ok) {
         setStatusData(data);
-        if (data.status === 'connected') {
+        // A stale or expired pairing on record is not an error to show on
+        // arrival; only this page's own attempt reports failures.
+        if (data.status === 'connected' || data.status === 'connecting') {
           setActivePairing(null);
           setErrorState(null);
-        } else if (data.status === 'failed' || data.status === 'expired') {
-          setErrorState({
-            failed: true,
-            reason: data.failureReason || 'Pairing session ended or timed out.',
-          });
         }
       } else {
-        toast.error((data as any).error || 'Failed to fetch WhatsApp status');
+        toast.error(
+          (data as { error?: string }).error || 'Failed to fetch WhatsApp status'
+        );
       }
     } catch (err) {
       console.error('[MboWazapConfig] fetch error:', err);
@@ -203,25 +225,34 @@ export function MboWazapConfig() {
       try {
         const res = await fetch(`/api/mbowazap/poll?ref=${encodeURIComponent(ref)}`);
         const json = await res.json();
-        if (json.ok && json.connected) {
-          toast.success('WhatsApp connected successfully!');
-          setActivePairing(null);
-          setErrorState(null);
+        const stopPolling = () => {
           if (pollTimerRef.current) {
             clearInterval(pollTimerRef.current);
             pollTimerRef.current = null;
           }
+        };
+        if (json.ok && json.connected) {
+          toast.success('WhatsApp connected successfully!');
+          setActivePairing(null);
+          setErrorState(null);
+          stopPolling();
           fetchStatus();
-        } else if (json.ok && json.state === 'failed') {
+        } else if (json.ok && (json.state === 'failed' || json.state === 'logged_out')) {
           setErrorState({
             failed: true,
             reason: 'WhatsApp connection attempt was rejected or closed by the device.',
           });
           setActivePairing(null);
-          if (pollTimerRef.current) {
-            clearInterval(pollTimerRef.current);
-            pollTimerRef.current = null;
-          }
+          stopPolling();
+        } else if (json.ok && json.state === 'expired') {
+          // The account's pairing ref changed under us: another pairing
+          // was started (another tab or admin), or it was disconnected.
+          setErrorState({
+            failed: true,
+            reason: 'This pairing was replaced by a newer one (another tab or admin). Start again here if needed.',
+          });
+          setActivePairing(null);
+          stopPolling();
         }
       } catch {
         // Ignore transient network errors during background polling
@@ -235,6 +266,59 @@ export function MboWazapConfig() {
       }
     };
   }, [activePairing, fetchStatus]);
+
+  // 3b. Keep the QR on screen scannable: WhatsApp rotates it every ~20 s.
+  useEffect(() => {
+    if (activePairing?.method !== 'qr') return;
+    const ref = activePairing.pairingRef;
+    let cancelled = false;
+
+    const timer = setInterval(async () => {
+      setQrRefreshing(true);
+      try {
+        const res = await fetch('/api/mbowazap/qr', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ pairingRef: ref }),
+        });
+        const json = await res.json();
+        if (cancelled) return;
+        if (json.ok && json.qr) {
+          setActivePairing((prev) =>
+            prev && prev.pairingRef === ref ? { ...prev, qr: json.qr } : prev
+          );
+        } else if (json.code === 'pairing_superseded') {
+          setErrorState({
+            failed: true,
+            reason: 'This pairing was replaced by a newer one (another tab or admin). Start again here if needed.',
+          });
+          setActivePairing(null);
+        }
+        // Anything else is transient: keep the current QR and retry.
+      } catch {
+        // Network blip: the next tick retries.
+      } finally {
+        if (!cancelled) setQrRefreshing(false);
+      }
+    }, QR_REFRESH_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [activePairing?.method, activePairing?.pairingRef]);
+
+  // 3c. A pairing the server has open that this page didn't start (page
+  // reloaded while the phone was confirming): notice when it completes.
+  const serverPairingRef =
+    !activePairing && statusData?.status === 'pairing'
+      ? (statusData.pairing?.ref ?? null)
+      : null;
+  useEffect(() => {
+    if (!serverPairingRef) return;
+    const timer = setInterval(fetchStatus, SERVER_PAIRING_POLL_MS);
+    return () => clearInterval(timer);
+  }, [serverPairingRef, fetchStatus]);
 
   // 4. Initiate Pairing
   async function handleStartPairing() {
@@ -257,12 +341,23 @@ export function MboWazapConfig() {
         throw new Error(json.error || 'Failed to request pairing code');
       }
 
+      if (json.status === 'connected') {
+        // The bot still held this account's link; nothing to confirm.
+        toast.success('WhatsApp is connected.');
+        fetchStatus();
+        return;
+      }
+
       setActivePairing({
         method: json.method,
         code: json.code,
         qr: json.qr,
         pairingRef: json.pairingRef,
-        expiresAt: json.expiresAt,
+        // A QR pairing is kept alive by refreshing; give it a fixed budget.
+        expiresAt:
+          json.method === 'qr'
+            ? new Date(Date.now() + QR_SESSION_MS).toISOString()
+            : json.expiresAt,
       });
 
       if (json.method === 'code') {
@@ -270,12 +365,12 @@ export function MboWazapConfig() {
       } else {
         toast.info('QR Code ready! Scan it using WhatsApp on your phone.');
       }
-    } catch (err: any) {
+    } catch (err) {
       setErrorState({
         failed: true,
-        reason: err.message || 'Could not communicate with the MboWazap WhatsApp engine.',
+        reason: errorMessage(err, 'Could not communicate with the MboWazap WhatsApp engine.'),
       });
-      toast.error(err.message || 'Pairing request failed');
+      toast.error(errorMessage(err, 'Pairing request failed'));
     } finally {
       setPairingLoading(false);
     }
@@ -302,8 +397,8 @@ export function MboWazapConfig() {
           ? 'Davila AI Assistant activated on TchuekBot'
           : 'WACRM Flows & Internal AI Assistant activated'
       );
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to switch brain');
+    } catch (err) {
+      toast.error(errorMessage(err, 'Failed to switch brain'));
     } finally {
       setSwitchingBrain(false);
     }
@@ -323,10 +418,14 @@ export function MboWazapConfig() {
       setShowDisconnectDialog(false);
       setActivePairing(null);
       setErrorState(null);
-      toast.success('WhatsApp session disconnected and credentials purged.');
+      if (json.warning) {
+        toast.warning(json.warning);
+      } else {
+        toast.success('WhatsApp session disconnected and credentials purged.');
+      }
       fetchStatus();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to disconnect');
+    } catch (err) {
+      toast.error(errorMessage(err, 'Failed to disconnect'));
     } finally {
       setDisconnecting(false);
     }
@@ -341,8 +440,18 @@ export function MboWazapConfig() {
   }
 
   function handleResetToTryAgain() {
+    const refs = [activePairing?.pairingRef, statusData?.pairing?.ref].filter(
+      (ref): ref is string => Boolean(ref)
+    );
+    if (refs.length) setDismissedRefs((prev) => [...prev, ...refs]);
     setActivePairing(null);
     setErrorState(null);
+    // Back to the connect form, whatever the last status said.
+    setStatusData((prev) =>
+      prev && prev.status !== 'connected' && prev.status !== 'connecting'
+        ? { ...prev, status: 'disconnected', failureReason: null }
+        : prev
+    );
   }
 
   if (loading) {
@@ -354,9 +463,18 @@ export function MboWazapConfig() {
   }
 
   const isConfigured = statusData?.configured ?? false;
-  const isConnected = statusData?.status === 'connected';
-  const isPairing = Boolean(activePairing) || statusData?.status === 'pairing' || statusData?.status === 'connecting';
-  const isFailed = Boolean(errorState?.failed) || statusData?.status === 'failed' || statusData?.status === 'expired';
+  const botUnreachable = isConfigured && statusData?.bot?.reachable === false;
+  // 'connecting' = linked, and the bot is re-establishing the socket.
+  const isReconnecting = statusData?.status === 'connecting';
+  const isConnected = statusData?.status === 'connected' || isReconnecting;
+  const isPairing = !isConnected && Boolean(activePairing);
+  const isFailed = !isConnected && !isPairing && Boolean(errorState?.failed);
+  const pendingServerPairing =
+    !isConnected &&
+    !isPairing &&
+    statusData?.status === 'pairing' &&
+    Boolean(statusData.pairing?.ref) &&
+    !dismissedRefs.includes(statusData.pairing!.ref);
 
   return (
     <div className="space-y-6">
@@ -365,7 +483,12 @@ export function MboWazapConfig() {
         description="Pair your WhatsApp companion number via Baileys and synchronize chats, contacts, deals, and Davila sales AI with WACRM."
         action={
           <div className="flex items-center gap-2">
-            {isConnected ? (
+            {isReconnecting ? (
+              <SettingsChip variant="warn">
+                <Loader2 className="size-3 animate-spin text-amber-500" />
+                Reconnecting
+              </SettingsChip>
+            ) : isConnected ? (
               <SettingsChip variant="ok">
                 <StatusDot tone="ok" />
                 Connected
@@ -404,21 +527,40 @@ export function MboWazapConfig() {
           <AlertCircle className="size-5 text-amber-600 dark:text-amber-400" />
           <AlertTitle className="font-semibold">MboWazap Bridge is not configured</AlertTitle>
           <AlertDescription className="mt-2 space-y-2 text-sm leading-relaxed">
+            {statusData?.configIssues && statusData.configIssues.length > 0 && (
+              <ul className="list-inside list-disc text-xs">
+                {statusData.configIssues.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+            )}
             <p>
-              To link WACRM to TchuekBot, set the following environment variables in your{' '}
+              Set these variables on the wacrm service (on Railway: the service&apos;s{' '}
+              <strong>Variables</strong> tab; locally:{' '}
               <code className="rounded bg-background/80 px-1.5 py-0.5 font-mono text-xs text-foreground">
                 .env.local
-              </code>{' '}
-              file:
+              </code>
+              ), then redeploy:
             </p>
-            <div className="rounded-lg bg-background/90 p-3 font-mono text-xs text-foreground border border-border">
-              <div>MBOWAZAP_BOT_URL=http://localhost:8080</div>
-              <div>MBOWAZAP_SECRET=your_secure_shared_hmac_secret_at_least_32_chars</div>
+            <div className="rounded-lg bg-background/90 p-3 font-mono text-xs text-foreground border border-border break-all">
+              <div>MBOWAZAP_BOT_URL=https://your-tchuekbot.up.railway.app</div>
+              <div>MBOWAZAP_SECRET=same_32+_character_secret_as_the_bot</div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Ensure <code className="font-mono">MBOWAZAP_SECRET</code> matches the one in TchuekBot{' '}
-              <code className="font-mono">.env</code>.
+              The bot service needs the same <code className="font-mono">MBOWAZAP_SECRET</code>, plus{' '}
+              <code className="font-mono">WACRM_URL</code> set to this CRM&apos;s address so messages
+              reach the inbox.
             </p>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {botUnreachable && (
+        <Alert variant="destructive" className="border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200">
+          <AlertCircle className="size-5 text-amber-600 dark:text-amber-400" />
+          <AlertTitle className="font-semibold">TchuekBot is not answering</AlertTitle>
+          <AlertDescription className="mt-2 text-sm leading-relaxed">
+            {statusData?.bot?.error || 'The bot did not answer a signed ping.'}
           </AlertDescription>
         </Alert>
       )}
@@ -448,10 +590,17 @@ export function MboWazapConfig() {
                       </span>
                     )}
                     <span>•</span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="size-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
-                      Status: Online
-                    </span>
+                    {isReconnecting ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="size-2 rounded-full bg-amber-500 inline-block animate-pulse" />
+                        Status: Reconnecting…
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        <span className="size-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
+                        Status: Online
+                      </span>
+                    )}
                   </CardDescription>
                 </div>
               </div>
@@ -465,8 +614,10 @@ export function MboWazapConfig() {
               <div className="rounded-lg border border-border bg-card p-3">
                 <div className="text-xs text-muted-foreground">Companion Status</div>
                 <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <span className="size-2 rounded-full bg-emerald-500" />
-                  Online & Linked
+                  <span
+                    className={`size-2 rounded-full ${isReconnecting ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                  />
+                  {isReconnecting ? 'Linked, reconnecting' : 'Online & Linked'}
                 </div>
               </div>
               <div className="rounded-lg border border-border bg-card p-3">
@@ -565,7 +716,7 @@ export function MboWazapConfig() {
       {/* ============================================================ */}
       {/* STATE 2: PAIRING IN PROGRESS                                 */}
       {/* ============================================================ */}
-      {!isConnected && isPairing && activePairing && !isFailed && (
+      {isPairing && activePairing && (
         <Card className="border-primary/30 bg-primary/[0.01]">
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -661,7 +812,11 @@ export function MboWazapConfig() {
 
                   <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin text-primary" />
-                    <span>Waiting for QR scan confirmation...</span>
+                    <span>
+                      {qrRefreshing
+                        ? 'Refreshing QR code...'
+                        : 'Waiting for QR scan confirmation (the code refreshes automatically)...'}
+                    </span>
                   </div>
 
                   <Button
@@ -687,7 +842,7 @@ export function MboWazapConfig() {
       {/* ============================================================ */}
       {/* STATE 3: ERROR / FAILED / EXPIRED                             */}
       {/* ============================================================ */}
-      {!isConnected && isFailed && (
+      {isFailed && (
         <Card className="border-red-500/20 bg-red-500/[0.02]">
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -745,6 +900,15 @@ export function MboWazapConfig() {
           </CardHeader>
 
           <CardContent className="space-y-6">
+            {pendingServerPairing && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
+                <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin" />
+                <span>
+                  A pairing started earlier is still open. If you already confirmed it on the phone,
+                  this page switches to Connected by itself; otherwise start a new one below.
+                </span>
+              </div>
+            )}
             <Tabs
               value={pairMode}
               onValueChange={(val) => setPairMode(val as 'code' | 'qr')}
