@@ -292,6 +292,22 @@ describe('MboWazap Gateway Control Routes', () => {
       expect(storedConfig?.mbowazap_brain).toBe('wacrm');
       expect(h.clientMock.setBrain).toHaveBeenCalledWith('237653683174', false);
     });
+
+    it('still tells TchuekBot while the session is reconnecting', async () => {
+      storedConfig!.mbowazap_state = 'disconnected';
+      h.clientMock.setBrain.mockResolvedValueOnce({
+        session: '237653683174',
+        davila: false,
+      });
+
+      const req = new NextRequest('http://localhost/api/mbowazap/brain', {
+        method: 'PUT',
+        body: JSON.stringify({ brain: 'wacrm' }),
+      });
+      const res = await putBrain(req);
+      expect(res.status).toBe(200);
+      expect(h.clientMock.setBrain).toHaveBeenCalledWith('237653683174', false);
+    });
   });
 
   describe('POST /api/mbowazap/disconnect', () => {
