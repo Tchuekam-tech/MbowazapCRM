@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account';
 import { readMbowazapEnv } from '@/lib/mbowazap/env';
-import { createMbowazapClient, MbowazapBridgeError } from '@/lib/mbowazap/client';
+import {
+  createMbowazapClient,
+  MbowazapBridgeError,
+} from '@/lib/mbowazap/client';
 import type { SessionInfo } from '@/lib/mbowazap/protocol';
 
 export const dynamic = 'force-dynamic';
@@ -58,9 +61,12 @@ export async function GET() {
       configIssues: envResult.ok ? [] : envResult.problems,
       provider: config?.provider ?? 'meta',
       session,
-      state: isMbowazap ? (config.mbowazap_state ?? 'disconnected') : 'disconnected',
+      state: isMbowazap
+        ? (config.mbowazap_state ?? 'disconnected')
+        : 'disconnected',
       displayName: isMbowazap ? (config.mbowazap_display_name ?? null) : null,
-      brain: isMbowazap && config.mbowazap_brain === 'wacrm' ? 'wacrm' : 'tchuekbot',
+      brain:
+        isMbowazap && config.mbowazap_brain === 'wacrm' ? 'wacrm' : 'tchuekbot',
       connectedAt: isMbowazap ? (config.connected_at ?? null) : null,
       lastEventAt: isMbowazap ? (config.mbowazap_last_event_at ?? null) : null,
       live,
