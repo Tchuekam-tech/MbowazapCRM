@@ -11,8 +11,7 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
 import { supabaseAdmin } from './admin-client'
-import { checkAutomationAllowed } from '@/lib/ai/reply-control'
-import { logReplyControl } from '@/lib/ai/reply-control-log'
+import { assertAutomationAllowed } from '@/lib/ai/reply-control'
 
 // ------------------------------------------------------------
 // Flows-side Meta sender (interactive variants).
@@ -90,17 +89,14 @@ export async function engineSendText(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  // Final outbound gate: verify conversation is still eligible for automation
+  // Final outbound gate (throws AutomationBlockedError).
   if (args.conversationId) {
-    const gate = await checkAutomationAllowed(db, args.conversationId, args.expectedVersion)
-    if (!gate.allowed) {
-      logReplyControl('automated_send_blocked', {
-        conversationId: args.conversationId,
-        accountId: args.accountId,
-        reason: `engineSendText blocked: ${gate.reason}`,
-      })
-      throw new Error(`automated send blocked: ${gate.reason}`)
-    }
+    await assertAutomationAllowed(db, {
+      conversationId: args.conversationId,
+      accountId: args.accountId,
+      expectedVersion: args.expectedVersion,
+      site: 'engineSendText',
+    })
   }
 
   const { data: contact, error: contactErr } = await db
@@ -196,6 +192,8 @@ interface SendMediaEngineArgs {
   caption?: string
   /** Document-only; ignored by Meta for image/video. */
   filename?: string
+  /** Expected automation version for concurrency & invalidation control. */
+  expectedVersion?: number
 }
 
 /**
@@ -212,17 +210,14 @@ export async function engineSendMedia(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  // Final outbound gate: verify conversation is still eligible for automation
+  // Final outbound gate (throws AutomationBlockedError).
   if (args.conversationId) {
-    const gate = await checkAutomationAllowed(db, args.conversationId)
-    if (!gate.allowed) {
-      logReplyControl('automated_send_blocked', {
-        conversationId: args.conversationId,
-        accountId: args.accountId,
-        reason: `engineSendMedia blocked: ${gate.reason}`,
-      })
-      throw new Error(`automated send blocked: ${gate.reason}`)
-    }
+    await assertAutomationAllowed(db, {
+      conversationId: args.conversationId,
+      accountId: args.accountId,
+      expectedVersion: args.expectedVersion,
+      site: 'engineSendMedia',
+    })
   }
 
   const { data: contact, error: contactErr } = await db
@@ -323,6 +318,8 @@ interface SendInteractiveButtonsEngineArgs {
   buttons: InteractiveButton[]
   headerText?: string
   footerText?: string
+  /** Expected automation version for concurrency & invalidation control. */
+  expectedVersion?: number
 }
 
 interface SendInteractiveListEngineArgs {
@@ -335,6 +332,8 @@ interface SendInteractiveListEngineArgs {
   sections: InteractiveListSection[]
   headerText?: string
   footerText?: string
+  /** Expected automation version for concurrency & invalidation control. */
+  expectedVersion?: number
 }
 
 /**
@@ -373,17 +372,14 @@ async function sendInteractiveViaMeta(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  // Final outbound gate: verify conversation is still eligible for automation
+  // Final outbound gate (throws AutomationBlockedError).
   if (input.conversationId) {
-    const gate = await checkAutomationAllowed(db, input.conversationId)
-    if (!gate.allowed) {
-      logReplyControl('automated_send_blocked', {
-        conversationId: input.conversationId,
-        accountId: input.accountId,
-        reason: `sendInteractiveViaMeta blocked: ${gate.reason}`,
-      })
-      throw new Error(`automated send blocked: ${gate.reason}`)
-    }
+    await assertAutomationAllowed(db, {
+      conversationId: input.conversationId,
+      accountId: input.accountId,
+      expectedVersion: input.expectedVersion,
+      site: 'sendInteractiveViaMeta',
+    })
   }
 
   // Scope the contact + whatsapp_config lookups by account_id —

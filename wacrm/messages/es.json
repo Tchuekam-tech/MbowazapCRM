@@ -312,7 +312,9 @@
       "tookOver": "Tomaste el control de este chat.",
       "resumed": "IA reanudada.",
       "updateError": "No se pudo actualizar el asistente de IA.",
-      "networkError": "No se pudo conectar con el servidor."
+      "networkError": "No se pudo conectar con el servidor.",
+      "stillAssigned": "IA reanudada, pero este chat está asignado a otro miembro del equipo: seguirá en silencio hasta que lo desasigne.",
+      "botSyncFailed": "Guardado aquí, pero no se pudo contactar con TchuekBot, así que Davila puede no aplicar este cambio todavía. Inténtalo de nuevo en un momento."
     }
   },
   "Contacts": {

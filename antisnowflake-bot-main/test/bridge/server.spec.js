@@ -420,3 +420,46 @@ test('agent send and contact AI pause cancel in-flight Davila run immediately', 
     assert.equal(aborted, true);
     assert.equal(stoppedPresence, true);
 });
+
+test('presence answers 409 session_not_connected while the socket is down, reconnecting or unpaired', async (t) => {
+    const { call, sockets } = await startBridge(t);
+    const body = { session: SESSION, to: { phone: CUSTOMER }, presence: 'composing' };
+
+    // No socket at all (logged out, or never paired on this process).
+    let res = await call('POST', '/bridge/presence', body);
+    assert.equal(res.status, 409);
+    assert.equal(res.json.error.code, 'session_not_connected');
+
+    // Socket object kept while Baileys reconnects (connection 'close' → scheduleReconnect).
+    sockets.set(SESSION, fakeSocket({ open: false }));
+    res = await call('POST', '/bridge/presence', body);
+    assert.equal(res.status, 409);
+    assert.equal(res.json.error.code, 'session_not_connected');
+
+    // Socket mid-pairing.
+    sockets.set(SESSION, fakeSocket({ registered: false }));
+    res = await call('POST', '/bridge/presence', body);
+    assert.equal(res.status, 409);
+
+    // Back open after the reconnect: presence flows again.
+    const sock = fakeSocket();
+    sockets.set(SESSION, sock);
+    res = await call('POST', '/bridge/presence', body);
+    assert.equal(res.status, 200);
+    assert.equal(sock.presenceUpdates.length, 1);
+});
+
+test('presence answers presence_failed instead of hanging when the socket stalls', async (t) => {
+    const { call, sockets } = await startBridge(t, { presenceTimeoutMs: () => 30 });
+    const sock = fakeSocket();
+    sock.sendPresenceUpdate = () => new Promise(() => {}); // never settles
+    sockets.set(SESSION, sock);
+
+    const res = await call('POST', '/bridge/presence', {
+        session: SESSION,
+        to: { phone: CUSTOMER },
+        presence: 'composing',
+    });
+    assert.equal(res.status, 502);
+    assert.equal(res.json.error.code, 'presence_failed');
+});

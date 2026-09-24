@@ -13,8 +13,7 @@ import {
   templateContentText,
 } from '@/lib/whatsapp/template-body'
 import { supabaseAdmin } from './admin-client'
-import { checkAutomationAllowed } from '@/lib/ai/reply-control'
-import { logReplyControl } from '@/lib/ai/reply-control-log'
+import { assertAutomationAllowed } from '@/lib/ai/reply-control'
 
 // ------------------------------------------------------------
 // Automation-side Meta sender.
@@ -111,17 +110,13 @@ type SendInput =
 async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  // Final outbound gate: verify conversation is still eligible for automation
+  // Final outbound gate (throws AutomationBlockedError).
   if (input.conversationId) {
-    const gate = await checkAutomationAllowed(db, input.conversationId)
-    if (!gate.allowed) {
-      logReplyControl('automated_send_blocked', {
-        conversationId: input.conversationId,
-        accountId: input.accountId,
-        reason: `Automations sendViaMeta blocked: ${gate.reason}`,
-      })
-      throw new Error(`automated send blocked: ${gate.reason}`)
-    }
+    await assertAutomationAllowed(db, {
+      conversationId: input.conversationId,
+      accountId: input.accountId,
+      site: 'Automations sendViaMeta',
+    })
   }
 
   // Scope the contact + config lookups by account_id, not user_id.

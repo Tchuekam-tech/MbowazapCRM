@@ -312,7 +312,9 @@
       "tookOver": "Você assumiu esta conversa.",
       "resumed": "IA retomada.",
       "updateError": "Não foi possível atualizar o assistente de IA.",
-      "networkError": "Não foi possível conectar ao servidor."
+      "networkError": "Não foi possível conectar ao servidor.",
+      "stillAssigned": "IA retomada, mas esta conversa está atribuída a outro membro da equipe — ela fica em silêncio até que seja desatribuída.",
+      "botSyncFailed": "Salvo aqui, mas não foi possível contatar o TchuekBot, então a Davila pode ainda não seguir esta mudança. Tente novamente em instantes."
     }
   },
   "Contacts": {

@@ -6,6 +6,9 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/hooks/use-auth";
+import { createClient } from "@/lib/supabase/client";
+import { isAutomationPausedHere } from "@/lib/ai/pause-state";
+import type { AutomationState } from "@/types";
 
 // ------------------------------------------------------------
 // Account AI status is the same for every conversation, so cache it per
@@ -19,26 +22,39 @@ import { useAuth } from "@/hooks/use-auth";
 // banner for the whole session.
 // ------------------------------------------------------------
 interface AiAccountStatus {
+  /** wacrm's own AI auto-reply bot is live. */
   autoReplyOn: boolean;
+  /** MboWazap with TchuekBot as the brain: Davila answers on the bot. */
+  davilaOn: boolean;
 }
+const OFF: AiAccountStatus = { autoReplyOn: false, davilaOn: false };
 const statusCache = new Map<string, AiAccountStatus>();
 
 async function fetchAiAccountStatus(accountId: string): Promise<AiAccountStatus> {
   const cached = statusCache.get(accountId);
   if (cached) return cached;
   try {
-    const res = await fetch("/api/ai/config", { cache: "no-store" });
-    if (!res.ok) return { autoReplyOn: false }; // don't cache a transient failure
+    const [res, wa] = await Promise.all([
+      fetch("/api/ai/config", { cache: "no-store" }),
+      createClient()
+        .from("whatsapp_config")
+        .select("provider, mbowazap_brain")
+        .eq("account_id", accountId)
+        .maybeSingle(),
+    ]);
+    if (!res.ok || wa.error) return OFF; // don't cache a transient failure
     const j = await res.json();
     const status = {
       // AI auto-reply is "live" only when configured, the master switch
       // is on, and the inbound bot is enabled.
       autoReplyOn: !!(j?.configured && j?.is_active && j?.auto_reply_enabled),
+      davilaOn:
+        wa.data?.provider === "mbowazap" && wa.data?.mbowazap_brain !== "wacrm",
     };
     statusCache.set(accountId, status);
     return status;
   } catch {
-    return { autoReplyOn: false }; // don't cache
+    return OFF; // don't cache
   }
 }
 
@@ -46,6 +62,10 @@ interface AiThreadBannerProps {
   conversationId: string;
   /** `conversations.ai_autoreply_disabled` — bot paused on this thread. */
   disabled: boolean;
+  /** `conversations.automation_state` (migration 045). */
+  automationState?: AutomationState;
+  /** `conversations.ai_paused_until` — end of a timed human pause. */
+  pausedUntil?: string | null;
   /** `conversations.ai_handoff_summary` — note the bot left on handoff. */
   handoffSummary?: string | null;
   /** Current assignee; when a human owns the thread the bot won't run,
@@ -58,6 +78,7 @@ interface AiThreadBannerProps {
    *  the banner instant). */
   onChange?: (patch: {
     ai_autoreply_disabled: boolean;
+    automation_state?: AutomationState;
     assigned_agent_id?: string | null;
   }) => void;
 }
@@ -67,12 +88,15 @@ interface AiThreadBannerProps {
  * conversation:
  *   - bot active here → "AI is replying automatically" + [Take over]
  *   - bot paused here → the handoff note (if any) + [Resume AI]
- * Renders nothing when the account has no auto-reply configured, or when
- * the bot is active but a human already owns the thread (nothing to do).
+ * Renders nothing when the account has no bot that could answer here
+ * (neither wacrm's auto-reply nor Davila on MboWazap), or when the bot is
+ * active but a human already owns the thread (nothing to do).
  */
 export function AiThreadBanner({
   conversationId,
   disabled,
+  automationState,
+  pausedUntil,
   handoffSummary,
   assignedAgentId,
   currentUserId,
@@ -82,16 +106,21 @@ export function AiThreadBanner({
   const { accountId } = useAuth();
   const [autoReplyOn, setAutoReplyOn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
-  // Optimistic local mirror of the pause flag so the banner flips
+  // Optimistic local mirror of the pause state so the banner flips
   // instantly on click; re-seeds whenever the thread (or its server
   // state via realtime) changes.
   const [paused, setPaused] = useState(disabled);
-  useEffect(() => setPaused(disabled), [conversationId, disabled]);
+  useEffect(
+    () => setPaused(isAutomationPausedHere(disabled, automationState, pausedUntil)),
+    [conversationId, disabled, automationState, pausedUntil],
+  );
 
   useEffect(() => {
     if (!accountId) return;
     let alive = true;
-    fetchAiAccountStatus(accountId).then((s) => alive && setAutoReplyOn(s.autoReplyOn));
+    fetchAiAccountStatus(accountId).then(
+      (s) => alive && setAutoReplyOn(s.autoReplyOn || s.davilaOn),
+    );
     return () => {
       alive = false;
     };
@@ -107,24 +136,30 @@ export function AiThreadBanner({
           // "Take over" also assigns the thread to the acting agent.
           body: JSON.stringify({ paused, assign_to_me: paused }),
         });
+        const j = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
           toast.error(j?.error ?? t("updateError"));
           return;
         }
         setPaused(paused);
+        // The route answers with the thread's resulting state. Take over
+        // assigns the acting agent; resume releases only the caller's own
+        // assignment — a teammate's stays, and keeps the bot quiet.
+        const assignee: string | null | undefined =
+          j && "assigned_agent_id" in j
+            ? j.assigned_agent_id
+            : paused
+              ? currentUserId
+              : undefined;
         onChange?.({
-          ai_autoreply_disabled: paused,
-          // Take over assigns to the acting agent; resume releases only
-          // the caller's own assignment. The realtime UPDATE reconciles
-          // the exact value either way.
-          ...(paused
-            ? currentUserId
-              ? { assigned_agent_id: currentUserId }
-              : {}
-            : { assigned_agent_id: null }),
+          ai_autoreply_disabled: j?.ai_autoreply_disabled ?? paused,
+          automation_state:
+            j?.automation_state ?? (paused ? "human_handling" : "active"),
+          ...(assignee !== undefined ? { assigned_agent_id: assignee } : {}),
         });
-        toast.success(paused ? t("tookOver") : t("resumed"));
+        if (!paused && assignee) toast.warning(t("stillAssigned"));
+        else toast.success(paused ? t("tookOver") : t("resumed"));
+        if (j?.bot_sync === "failed") toast.warning(t("botSyncFailed"));
       } catch {
         toast.error(t("networkError"));
       } finally {

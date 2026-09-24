@@ -46,6 +46,7 @@ vi.mock('@/lib/mbowazap/client', async (importOriginal) => {
   };
 });
 
+import { MbowazapBridgeError } from '@/lib/mbowazap/client';
 import { GET as getSession } from './session/route';
 import { GET as getStatus } from './status/route';
 import { POST as postPair } from './pair/route';
@@ -147,6 +148,24 @@ describe('MboWazap Gateway Control Routes', () => {
       expect(json.ok).toBe(true);
       expect(json.configured).toBe(false);
       expect(json.configIssues.length).toBeGreaterThan(0);
+      expect(h.clientMock.getSession).not.toHaveBeenCalled();
+    });
+
+    it('still answers with stored state when TchuekBot is unreachable', async () => {
+      h.clientMock.getSession.mockRejectedValueOnce(
+        new MbowazapBridgeError('network_error', 'Could not reach TchuekBot: ECONNREFUSED')
+      );
+
+      const res = await getSession();
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.ok).toBe(true);
+      expect(json.state).toBe('connected');
+      expect(json.live).toBeNull();
+      expect(json.liveError).toEqual({
+        code: 'network_error',
+        message: 'Could not reach TchuekBot: ECONNREFUSED',
+      });
     });
   });
 
@@ -271,6 +290,22 @@ describe('MboWazap Gateway Control Routes', () => {
       expect(json.ok).toBe(true);
       expect(json.brain).toBe('wacrm');
       expect(storedConfig?.mbowazap_brain).toBe('wacrm');
+      expect(h.clientMock.setBrain).toHaveBeenCalledWith('237653683174', false);
+    });
+
+    it('still tells TchuekBot while the session is reconnecting', async () => {
+      storedConfig!.mbowazap_state = 'disconnected';
+      h.clientMock.setBrain.mockResolvedValueOnce({
+        session: '237653683174',
+        davila: false,
+      });
+
+      const req = new NextRequest('http://localhost/api/mbowazap/brain', {
+        method: 'PUT',
+        body: JSON.stringify({ brain: 'wacrm' }),
+      });
+      const res = await putBrain(req);
+      expect(res.status).toBe(200);
       expect(h.clientMock.setBrain).toHaveBeenCalledWith('237653683174', false);
     });
   });

@@ -7,11 +7,13 @@ import {
   unregisterInFlightAi,
   getInFlightAi,
   abortInFlightAi,
+  AutomationBlockedError,
 } from './reply-control';
 import {
   withTypingIndicator,
   TYPING_HEARTBEAT_MS,
 } from './typing-controller';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { WhatsAppTransport } from '@/lib/whatsapp/transport';
 import { engineSendText } from '@/lib/flows/meta-send';
 
@@ -140,14 +142,29 @@ describe('Reply Engine Control & Concurrency System', () => {
           }
         }
         if (name === 'resume_conversation_automation') {
+          // Mirrors migration 046.
           const conv = mockDbState.conversations.get(args.p_conversation_id);
           if (conv) {
             conv.automation_state = 'active';
             conv.automation_version = (conv.automation_version || 1) + 1;
             conv.ai_autoreply_disabled = false;
             conv.ai_paused_until = null;
+            conv.ai_reply_count = 0;
+            conv.ai_handoff_summary = null;
+            if (
+              args.p_release_assignee &&
+              conv.assigned_agent_id === args.p_release_assignee
+            ) {
+              conv.assigned_agent_id = null;
+            }
             return Promise.resolve({
-              data: [{ new_state: conv.automation_state, new_version: conv.automation_version }],
+              data: [
+                {
+                  new_state: conv.automation_state,
+                  new_version: conv.automation_version,
+                  new_assigned_agent_id: conv.assigned_agent_id ?? null,
+                },
+              ],
               error: null,
             });
           }
@@ -396,6 +413,223 @@ describe('Reply Engine Control & Concurrency System', () => {
           expectedVersion: initialVersion,
         })
       ).rejects.toThrow(/automated send blocked: version_mismatch/);
+    });
+
+    it('throws a typed AutomationBlockedError so callers can stand down quietly', async () => {
+      await takeoverConversation(mockClient, 'conv-1', { reason: 'agent_replied' });
+      const err = await engineSendText({
+        accountId: 'acc-1',
+        userId: 'user-1',
+        conversationId: 'conv-1',
+        contactId: 'ct-1',
+        text: 'Stale automated reply',
+      }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AutomationBlockedError);
+      expect((err as AutomationBlockedError).reason).toBe('human_handling_active');
+    });
+  });
+
+  describe('5. Concurrent runs on one conversation', () => {
+    function handle() {
+      return {
+        conversationId: 'conv-1',
+        abortController: new AbortController(),
+        capturedVersion: 1,
+        startedAt: Date.now(),
+      };
+    }
+
+    it('a finishing run only unregisters itself, so a later takeover still aborts the other', async () => {
+      const first = handle();
+      const second = handle();
+      registerInFlightAi(first);
+      registerInFlightAi(second);
+
+      // The first run finishes and cleans up while the second is still generating.
+      unregisterInFlightAi('conv-1', first);
+      expect(getInFlightAi('conv-1')).toBe(second);
+
+      await takeoverConversation(mockClient, 'conv-1', { reason: 'agent_replied' });
+      expect(second.abortController.signal.aborted).toBe(true);
+      expect(first.abortController.signal.aborted).toBe(false);
+    });
+
+    it('takeover aborts every in-flight run for the conversation', async () => {
+      const first = handle();
+      const second = handle();
+      registerInFlightAi(first);
+      registerInFlightAi(second);
+
+      await abortInFlightAi('conv-1', 'agent_replied');
+
+      expect(first.abortController.signal.aborted).toBe(true);
+      expect(second.abortController.signal.aborted).toBe(true);
+      expect(getInFlightAi('conv-1')).toBeUndefined();
+    });
+  });
+
+  describe('6. Takeover / resume persistence', () => {
+    it('resume resets the reply count and handoff note, and releases the resuming agent', async () => {
+      mockDbState.conversations.set('conv-1', {
+        ...mockDbState.conversations.get('conv-1'),
+        ai_reply_count: 3,
+        ai_handoff_summary: 'AI agent handed off',
+      });
+      await takeoverConversation(mockClient, 'conv-1', {
+        reason: 'manual_takeover',
+        handlerId: 'agent-1',
+      });
+      mockDbState.conversations.get('conv-1').assigned_agent_id = 'agent-1';
+
+      const resumed = await resumeConversation(mockClient, 'conv-1', {
+        releaseAssignee: 'agent-1',
+      });
+
+      expect(resumed).toMatchObject({ state: 'active', assignedAgentId: null, persisted: true });
+      const conv = mockDbState.conversations.get('conv-1');
+      expect(conv.ai_reply_count).toBe(0);
+      expect(conv.ai_handoff_summary).toBeNull();
+      // Nothing left holding the engine back.
+      const check = await checkAutomationAllowed(mockClient, 'conv-1');
+      expect(check.allowed).toBe(true);
+    });
+
+    it("resume leaves another agent's assignment alone and reports it", async () => {
+      mockDbState.conversations.get('conv-1').assigned_agent_id = 'agent-2';
+      const resumed = await resumeConversation(mockClient, 'conv-1', {
+        releaseAssignee: 'agent-1',
+      });
+      expect(resumed.assignedAgentId).toBe('agent-2');
+      const check = await checkAutomationAllowed(mockClient, 'conv-1');
+      expect(check).toMatchObject({ allowed: false, reason: 'human_agent_assigned' });
+    });
+
+    it('the fallback path (RPC unavailable) applies the same resume semantics', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockDbState.conversations.set('conv-1', {
+        ...mockDbState.conversations.get('conv-1'),
+        automation_state: 'human_handling',
+        automation_version: 4,
+        ai_autoreply_disabled: true,
+        ai_reply_count: 3,
+        assigned_agent_id: 'agent-1',
+      });
+      const rpc = mockClient.rpc;
+      mockClient.rpc = () =>
+        Promise.resolve({ data: null, error: { message: 'Could not find the function' } });
+
+      const resumed = await resumeConversation(mockClient, 'conv-1', {
+        releaseAssignee: 'agent-1',
+      });
+      mockClient.rpc = rpc;
+
+      expect(resumed).toMatchObject({ state: 'active', version: 5, persisted: true });
+      expect(mockDbState.conversations.get('conv-1')).toMatchObject({
+        automation_state: 'active',
+        automation_version: 5,
+        ai_autoreply_disabled: false,
+        ai_reply_count: 0,
+        assigned_agent_id: null,
+      });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('resume RPC failed'),
+        'Could not find the function'
+      );
+      warn.mockRestore();
+    });
+
+    it('reports persisted: false instead of claiming success when nothing was written', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const failing = {
+        from: (table: string) => ({
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: null, error: { message: 'permission denied' } }),
+            }),
+          }),
+          update: () => ({
+            eq: () => ({
+              eq: () => Promise.resolve({ error: table === 'flow_runs' ? null : { message: 'x' } }),
+            }),
+          }),
+        }),
+        rpc: () => Promise.resolve({ data: [], error: null }),
+      } as unknown as SupabaseClient;
+      hoisted.getClient = () => failing;
+
+      const result = await takeoverConversation(failing, 'conv-1', { reason: 'agent_replied' });
+
+      expect(result.persisted).toBe(false);
+      expect(error).toHaveBeenCalledWith(
+        '[reply-control] takeover DB update failed:',
+        expect.any(Error)
+      );
+      error.mockRestore();
+      warn.mockRestore();
+    });
+  });
+
+  describe('7. Typing presence ordering', () => {
+    it("never lets an in-flight 'composing' land after the final 'paused'", async () => {
+      vi.useFakeTimers();
+      try {
+        const delivered: boolean[] = [];
+        const pending: Array<() => void> = [];
+        // Presence calls resolve only when the test releases them, like a
+        // slow bridge — the 'composing' heartbeat is still in flight when
+        // the takeover stops typing.
+        const fakeTransport = {
+          provider: 'mbowazap',
+          setTyping: vi.fn(
+            ({ typing }: { typing: boolean }) =>
+              new Promise<void>((resolve) => {
+                pending.push(() => {
+                  delivered.push(typing);
+                  resolve();
+                });
+              })
+          ),
+        } as unknown as WhatsAppTransport;
+
+        const abortController = new AbortController();
+        let releaseFn!: () => void;
+        const run = withTypingIndicator({
+          transport: fakeTransport,
+          conversationId: 'conv-1',
+          recipient: '+237690000000',
+          signal: abortController.signal,
+          fn: () => new Promise<string>((resolve) => (releaseFn = () => resolve('done'))),
+        });
+        run.catch(() => {});
+
+        // Initial 'composing' goes out and is delivered.
+        await vi.advanceTimersByTimeAsync(0);
+        pending.shift()!();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Heartbeat fires; its 'composing' is still in flight...
+        await vi.advanceTimersByTimeAsync(TYPING_HEARTBEAT_MS);
+        expect(fakeTransport.setTyping).toHaveBeenCalledTimes(2);
+
+        // ...when a human takes over.
+        abortController.abort(new Error('human_takeover'));
+        await vi.advanceTimersByTimeAsync(0);
+        // 'paused' must wait for the in-flight 'composing'.
+        expect(fakeTransport.setTyping).toHaveBeenCalledTimes(2);
+
+        pending.shift()!(); // heartbeat 'composing' lands
+        await vi.advanceTimersByTimeAsync(0);
+        expect(fakeTransport.setTyping).toHaveBeenCalledTimes(3);
+        pending.shift()!(); // then 'paused'
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(delivered).toEqual([true, true, false]);
+        releaseFn();
+        await expect(run).rejects.toThrow('human_takeover');
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

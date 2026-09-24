@@ -774,7 +774,7 @@ Never send catalog images if catalogImagesSent is true.`;
             console.error('[AutoReply] Fallback also failed:', fallbackErr.message);
         }
     } finally {
-        bridgeState.unregisterActiveDavilaRun(contactKey);
+        bridgeState.unregisterActiveDavilaRun(contactKey, runHandle);
         await safePresence(sock, 'paused', chatId);
     }
 }

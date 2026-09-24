@@ -312,7 +312,9 @@
       "tookOver": "You’ve taken over this chat.",
       "resumed": "AI resumed.",
       "updateError": "Couldn’t update the AI assistant.",
-      "networkError": "Couldn’t reach the server."
+      "networkError": "Couldn’t reach the server.",
+      "stillAssigned": "AI resumed, but a teammate is assigned to this chat — it stays quiet until they unassign it.",
+      "botSyncFailed": "Saved here, but TchuekBot couldn’t be reached, so Davila may not follow this change yet. Try again in a moment."
     }
   },
   "Contacts": {

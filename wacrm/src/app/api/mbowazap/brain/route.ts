@@ -44,13 +44,12 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // Synchronize to TchuekBot if connected
+    // Synchronize to TchuekBot. The bot stores the switch on disk and
+    // needs no live WhatsApp socket for it, so sync whenever a number is
+    // paired — also mid-reconnect, when skipping it would leave Davila
+    // answering alongside wacrm.
     const envResult = readMbowazapEnv();
-    if (
-      envResult.ok &&
-      config?.mbowazap_session &&
-      config.mbowazap_state === 'connected'
-    ) {
+    if (envResult.ok && config?.mbowazap_session) {
       try {
         const client = createMbowazapClient(envResult.env);
         await client.setBrain(config.mbowazap_session, brain === 'tchuekbot');

@@ -57,6 +57,28 @@ export async function withTypingIndicator<T>(
     }
   }
 
+  // Presence updates are independent HTTP calls, so two in flight can
+  // land in either order — a heartbeat's 'composing' overtaking the final
+  // 'paused' leaves "typing…" stuck on the customer's phone after a
+  // takeover. Send one at a time, always finishing on the latest state
+  // asked for; heartbeats requested mid-flight collapse into one.
+  let desiredPresence: boolean | null = null;
+  let presenceInFlight: Promise<void> | null = null;
+  function requestPresence(typing: boolean): Promise<void> {
+    desiredPresence = typing;
+    if (!presenceInFlight) {
+      presenceInFlight = (async () => {
+        while (desiredPresence !== null) {
+          const next = desiredPresence;
+          desiredPresence = null;
+          await sendPresence(next); // never rejects
+        }
+        presenceInFlight = null;
+      })();
+    }
+    return presenceInFlight;
+  }
+
   async function stopTyping(reason = 'completed') {
     if (stopped) return;
     stopped = true;
@@ -72,7 +94,7 @@ export async function withTypingIndicator<T>(
       conversationId,
       reason,
     });
-    await sendPresence(false);
+    await requestPresence(false);
   }
 
   // Abort listener for instant takeover abort
@@ -92,21 +114,25 @@ export async function withTypingIndicator<T>(
     logReplyControl('typing_started', {
       conversationId,
     });
-    await sendPresence(true);
+    await requestPresence(true);
 
-    // 2. Start heartbeat
-    heartbeatTimer = setInterval(() => {
-      if (stopped || (signal && signal.aborted)) {
-        if (heartbeatTimer) clearInterval(heartbeatTimer);
-        return;
-      }
-      void sendPresence(true);
-    }, TYPING_HEARTBEAT_MS);
+    // An abort can land while that first update is in flight; stopTyping
+    // has then already run, and timers started now would outlive it.
+    if (!stopped) {
+      // 2. Start heartbeat
+      heartbeatTimer = setInterval(() => {
+        if (stopped || (signal && signal.aborted)) {
+          if (heartbeatTimer) clearInterval(heartbeatTimer);
+          return;
+        }
+        void requestPresence(true);
+      }, TYPING_HEARTBEAT_MS);
 
-    // 3. Safety timeout
-    timeoutTimer = setTimeout(() => {
-      void stopTyping('max_duration_timeout');
-    }, MAX_TYPING_DURATION_MS);
+      // 3. Safety timeout
+      timeoutTimer = setTimeout(() => {
+        void stopTyping('max_duration_timeout');
+      }, MAX_TYPING_DURATION_MS);
+    }
 
     // 4. Race fn with signal abort for immediate takeover cancellation
     const abortPromise = signal

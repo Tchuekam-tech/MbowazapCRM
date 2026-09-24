@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   engineSendText: vi.fn(),
   loadAccountMetaCredentials: vi.fn(),
   sendTypingIndicator: vi.fn(),
+  loadTransport: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -29,6 +30,9 @@ vi.mock('@/lib/flows/meta-send', () => ({
 }))
 vi.mock('@/lib/whatsapp/meta-api', () => ({
   sendTypingIndicator: h.sendTypingIndicator,
+}))
+vi.mock('@/lib/whatsapp/transport', () => ({
+  loadTransport: h.loadTransport,
 }))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
@@ -66,6 +70,7 @@ vi.mock('./admin-client', () => ({
 }))
 
 import { dispatchInboundToAiReply } from './auto-reply'
+import { AutomationBlockedError } from './reply-control'
 
 const ARGS = {
   accountId: 'acct-1',
@@ -110,6 +115,8 @@ beforeEach(() => {
     accessToken: 'tok',
   })
   h.sendTypingIndicator.mockResolvedValue(undefined)
+  // Most tests don't care which provider the account uses.
+  h.loadTransport.mockRejectedValue(new Error('WhatsApp not configured'))
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {
@@ -117,8 +124,12 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.state.rpcCalls).toEqual([
       {
-        name: 'claim_ai_reply_slot',
-        args: { conversation_id: 'conv-1', max_replies: 3 },
+        name: 'claim_ai_reply_slot_v2',
+        args: {
+          p_conversation_id: 'conv-1',
+          p_max_replies: 3,
+          p_expected_version: 1,
+        },
       },
     ])
     expect(h.engineSendText).toHaveBeenCalledWith(
@@ -140,6 +151,46 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
     expect(h.sendTypingIndicator).not.toHaveBeenCalled()
+  })
+
+  it('claims against the automation_version Gate 1 saw', async () => {
+    h.state.conv = {
+      assigned_agent_id: null,
+      ai_autoreply_disabled: false,
+      ai_reply_count: 0,
+      automation_state: 'active',
+      automation_version: 7,
+    }
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.rpcCalls[0]).toMatchObject({
+      name: 'claim_ai_reply_slot_v2',
+      args: { p_expected_version: 7 },
+    })
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedVersion: 7 }),
+    )
+  })
+
+  it('stands down quietly when Gate 5 blocks the send after a late takeover', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.engineSendText.mockRejectedValue(
+      new AutomationBlockedError('version_mismatch: expected 1, got 2'),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    expect(error).not.toHaveBeenCalled()
+    error.mockRestore()
+  })
+
+  it('still reports genuine send failures as errors', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.engineSendText.mockRejectedValue(new Error('Meta API error: 500'))
+    await dispatchInboundToAiReply(ARGS)
+    expect(error).toHaveBeenCalledWith(
+      '[ai auto-reply] dispatch failed:',
+      expect.any(Error),
+    )
+    error.mockRestore()
   })
 
   it('does not send when the atomic slot claim loses the race', async () => {
@@ -257,6 +308,20 @@ describe('dispatchInboundToAiReply — typing indicator (#527)', () => {
     expect(h.sendTypingIndicator).not.toHaveBeenCalled()
     expect(h.loadAccountMetaCredentials).not.toHaveBeenCalled()
     expect(h.engineSendText).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips the Meta indicator on MboWazap accounts (no wamid typing call there)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    h.loadTransport.mockResolvedValue({ provider: 'mbowazap' })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.loadAccountMetaCredentials).not.toHaveBeenCalled()
+    expect(h.sendTypingIndicator).not.toHaveBeenCalled()
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.stringContaining('typing indicator failed'),
+      expect.anything(),
+    )
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
   })
 
   it('does not fire when a gate short-circuits before the LLM', async () => {

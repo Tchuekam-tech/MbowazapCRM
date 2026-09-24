@@ -57,6 +57,12 @@ export const DEFAULT_TIMEOUT_MS = 15_000;
  * bucket; pairing waits for a fresh socket to produce a code or QR.
  */
 export const SLOW_TIMEOUT_MS = 45_000;
+/**
+ * Typing presence is cosmetic and sits on the AI reply path (it is
+ * awaited before generation starts), so a stalled bot must not hold a
+ * reply back for long.
+ */
+export const PRESENCE_TIMEOUT_MS = 5_000;
 
 export interface MbowazapClientOptions {
   botUrl: string;
@@ -236,7 +242,7 @@ export function createMbowazapClient({
         'POST',
         BOT_PATHS.presence,
         request,
-        DEFAULT_TIMEOUT_MS
+        PRESENCE_TIMEOUT_MS
       );
     },
   };

@@ -33,7 +33,10 @@
  */
 
 import { supabaseAdmin } from "./admin-client";
-import { checkAutomationAllowed } from "@/lib/ai/reply-control";
+import {
+  checkAutomationAllowed,
+  isAutomationBlockedError,
+} from "@/lib/ai/reply-control";
 import { logReplyControl } from "@/lib/ai/reply-control-log";
 import {
   engineSendInteractiveButtons,
@@ -392,6 +395,7 @@ async function sendButtonsAndSuspend(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
+  expectedVersion?: number,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendButtonsNodeConfig;
   // Every customer-visible string is interpolated against run.vars —
@@ -406,6 +410,7 @@ async function sendButtonsAndSuspend(
     userId: run.user_id,
     conversationId: run.conversation_id!,
     contactId: run.contact_id!,
+    expectedVersion,
     bodyText: interpolateVars(cfg.text, run.vars),
     headerText: interpolateOptionalVars(cfg.header_text, run.vars),
     footerText: interpolateOptionalVars(cfg.footer_text, run.vars),
@@ -438,6 +443,7 @@ async function sendListAndSuspend(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
+  expectedVersion?: number,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendListNodeConfig;
   // See sendButtonsAndSuspend — interpolate every visible string,
@@ -447,6 +453,7 @@ async function sendListAndSuspend(
     userId: run.user_id,
     conversationId: run.conversation_id!,
     contactId: run.contact_id!,
+    expectedVersion,
     bodyText: interpolateVars(cfg.text, run.vars),
     buttonLabel: interpolateVars(cfg.button_label, run.vars),
     headerText: interpolateOptionalVars(cfg.header_text, run.vars),
@@ -602,6 +609,30 @@ async function endRun(
     .eq("id", runId);
 }
 
+/**
+ * A human took the conversation over (reply engine control): the run
+ * yields. Logged as a handoff rather than an error — it is the designed
+ * outcome, not a fault in the flow.
+ */
+async function pauseRunForHuman(
+  db: AdminClient,
+  run: FlowRunRow,
+  nodeKey: string | null,
+  reason: string,
+): Promise<void> {
+  logReplyControl("flow_cancelled", {
+    conversationId: run.conversation_id ?? "",
+    accountId: run.account_id,
+    runId: run.id,
+    reason,
+  });
+  await logEvent(db, run.id, "handoff", nodeKey, {
+    reason: "human_handling",
+    detail: reason,
+  });
+  await endRun(db, run.id, "paused_by_agent", `human_handling:${reason}`);
+}
+
 // ============================================================
 // The synchronous advance loop. Walks through auto-advance nodes
 // until it hits one that suspends (send_buttons/send_list) or
@@ -616,19 +647,26 @@ async function advanceFromNodeKey(
   nodes: Map<string, FlowNodeRow>,
 ): Promise<{ outcome: "advanced" | "completed" | "handed_off" }> {
   let currentKey: string | null = startNodeKey;
+  // automation_version at the first gate. Every later step and send must
+  // still see it: a takeover — even one already undone by a resume —
+  // bumps it, and this walk must not carry on for a conversation a human
+  // touched mid-way. The check is against the database, so it holds when
+  // the takeover landed on another worker.
+  let baselineVersion: number | undefined;
   // Defensive cap — if a flow has a cycle (which the validator
   // SHOULD catch but doesn't yet in v1), we bail rather than loop.
   for (let safety = 0; safety < 64; safety += 1) {
     if (run.conversation_id) {
-      const gate = await checkAutomationAllowed(db, run.conversation_id);
+      const gate = await checkAutomationAllowed(
+        db,
+        run.conversation_id,
+        baselineVersion,
+      );
       if (!gate.allowed) {
-        await logEvent(db, run.id, "error", currentKey, {
-          reason: "human_handling_abort",
-          detail: gate.reason,
-        });
-        await endRun(db, run.id, "paused_by_agent", `human_handling:${gate.reason}`);
+        await pauseRunForHuman(db, run, currentKey, gate.reason ?? "not_allowed");
         return { outcome: "completed" };
       }
+      baselineVersion = gate.version;
     }
 
     if (!currentKey) {
@@ -663,12 +701,17 @@ async function advanceFromNodeKey(
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
           text: interpolateVars(cfg.text, run.vars),
+          expectedVersion: baselineVersion,
         });
         await logEvent(db, run.id, "message_sent", node.node_key, {
           node_type: "send_message",
           whatsapp_message_id,
         });
       } catch (err) {
+        if (isAutomationBlockedError(err)) {
+          await pauseRunForHuman(db, run, node.node_key, err.reason);
+          return { outcome: "completed" };
+        }
         await logEvent(db, run.id, "error", node.node_key, {
           reason: "send_text_failed",
           detail: err instanceof Error ? err.message : String(err),
@@ -693,6 +736,7 @@ async function advanceFromNodeKey(
             ? interpolateVars(cfg.caption, run.vars)
             : undefined,
           filename: cfg.filename,
+          expectedVersion: baselineVersion,
         });
         await logEvent(db, run.id, "message_sent", node.node_key, {
           node_type: "send_media",
@@ -700,6 +744,10 @@ async function advanceFromNodeKey(
           whatsapp_message_id,
         });
       } catch (err) {
+        if (isAutomationBlockedError(err)) {
+          await pauseRunForHuman(db, run, node.node_key, err.reason);
+          return { outcome: "completed" };
+        }
         await logEvent(db, run.id, "error", node.node_key, {
           reason: "send_media_failed",
           detail: err instanceof Error ? err.message : String(err),
@@ -721,6 +769,7 @@ async function advanceFromNodeKey(
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
           text: interpolateVars(cfg.prompt_text, run.vars),
+          expectedVersion: baselineVersion,
         });
         await logEvent(db, run.id, "message_sent", node.node_key, {
           node_type: "collect_input",
@@ -738,6 +787,10 @@ async function advanceFromNodeKey(
           })
           .eq("id", run.id);
       } catch (err) {
+        if (isAutomationBlockedError(err)) {
+          await pauseRunForHuman(db, run, node.node_key, err.reason);
+          return { outcome: "completed" };
+        }
         await logEvent(db, run.id, "error", node.node_key, {
           reason: "collect_input_prompt_failed",
           detail: err instanceof Error ? err.message : String(err),
@@ -822,8 +875,12 @@ async function advanceFromNodeKey(
       // console.error'd and left the run active + stuck on the prior
       // node with nothing in flow_run_events.
       try {
-        await sendButtonsAndSuspend(db, run, node);
+        await sendButtonsAndSuspend(db, run, node, baselineVersion);
       } catch (err) {
+        if (isAutomationBlockedError(err)) {
+          await pauseRunForHuman(db, run, node.node_key, err.reason);
+          return { outcome: "completed" };
+        }
         await logEvent(db, run.id, "error", node.node_key, {
           reason: "send_buttons_failed",
           detail: err instanceof Error ? err.message : String(err),
@@ -847,8 +904,12 @@ async function advanceFromNodeKey(
     }
     if (node.node_type === "send_list") {
       try {
-        await sendListAndSuspend(db, run, node);
+        await sendListAndSuspend(db, run, node, baselineVersion);
       } catch (err) {
+        if (isAutomationBlockedError(err)) {
+          await pauseRunForHuman(db, run, node.node_key, err.reason);
+          return { outcome: "completed" };
+        }
         await logEvent(db, run.id, "error", node.node_key, {
           reason: "send_list_failed",
           detail: err instanceof Error ? err.message : String(err),
@@ -1153,6 +1214,10 @@ async function handleReplyForActiveRun(
         });
       }
     } catch (err) {
+      if (isAutomationBlockedError(err)) {
+        await pauseRunForHuman(db, run, currentNode.node_key, err.reason);
+        return { consumed: true, flow_run_id: run.id, outcome: "completed" };
+      }
       await logEvent(db, run.id, "error", currentNode.node_key, {
         reason: "reprompt_send_failed",
         detail: err instanceof Error ? err.message : String(err),

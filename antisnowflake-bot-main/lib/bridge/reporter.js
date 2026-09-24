@@ -9,8 +9,13 @@
  *  - Fully asynchronous and non-blocking: never crashes or delays Baileys socket.
  *  - Idempotent: deterministic event IDs prevent duplicate CRM rows on retry/restart.
  *  - Media streaming: uploads binary media to /api/mbowazap/media before emitting message.
- *  - Actor classification: identifies Davila replies (origin: 'davila') vs phone (origin: 'phone').
+ *  - Actor classification: anything this process sends through the socket
+ *    is automation (origin: 'davila'); a fromMe message that did not pass
+ *    through it was typed on another device — the phone (origin: 'phone')
+ *    — and is what counts as a human takeover.
  *  - Echo suppression: suppresses messages originated by wacrm (/bridge/send).
+ *  - One-to-one chats only: wacrm has no group conversations, so group,
+ *    broadcast and newsletter traffic is never reported.
  */
 
 const crypto = require('crypto');
@@ -30,6 +35,11 @@ function unwrapMessage(content) {
     if (content.viewOnceMessageV2?.message) return unwrapMessage(content.viewOnceMessageV2.message);
     if (content.documentWithCaptionMessage?.message) return unwrapMessage(content.documentWithCaptionMessage.message);
     return content;
+}
+
+/** A one-to-one chat (phone- or LID-addressed), not a group/broadcast/newsletter. */
+function isDirectChat(jid) {
+    return /@(s\.whatsapp\.net|lid)$/.test(String(jid || ''));
 }
 
 /**
@@ -238,7 +248,7 @@ function createReporter({
         }
 
         const remoteJid = mek.key.remoteJid;
-        if (remoteJid === 'status@broadcast') return;
+        if (!isDirectChat(remoteJid)) return;
 
         const inner = unwrapMessage(mek.message);
         if (!inner) return;
@@ -371,6 +381,7 @@ function createReporter({
         if (!SESSION_PATTERN.test(String(session))) return;
         if (!update || !update.key || update.update?.status === undefined) return;
 
+        if (!isDirectChat(update.key.remoteJid)) return;
         const messageId = update.key.id;
         const mappedStatus = mapBaileysStatus(update.update.status);
         if (!mappedStatus) return;
@@ -397,6 +408,7 @@ function createReporter({
     function reportReaction(session, reactionUpdate) {
         if (!SESSION_PATTERN.test(String(session))) return;
         if (!reactionUpdate || !reactionUpdate.key) return;
+        if (!isDirectChat(reactionUpdate.key.remoteJid)) return;
 
         const targetId = reactionUpdate.reaction?.key?.id || reactionUpdate.key.id;
         const chat = extractChatRef(reactionUpdate.key.remoteJid, reactionUpdate.key.participant);
@@ -433,7 +445,16 @@ function createReporter({
         if (pairingRef) payload.pairingRef = pairingRef;
         if (reason) payload.reason = String(reason).slice(0, 512);
 
-        const eventId = deterministicEventId(session, 'connection', `${status}:${pairingRef || 'direct'}`);
+        // Unique per occurrence: wacrm de-duplicates event ids forever, so an
+        // id derived from status + ref alone made every reconnect after the
+        // first a "duplicate" — wacrm kept showing the number disconnected
+        // and stopped syncing the Davila switch to it. Retries of one event
+        // keep its id: it is stamped once and stored with the batch.
+        const eventId = deterministicEventId(
+            session,
+            'connection',
+            `${status}:${pairingRef || 'direct'}:${now()}`
+        );
         getClient()?.emit(session, 'connection', payload, eventId);
     }
 
@@ -521,17 +542,19 @@ function createReporter({
         if (!sock || !sock.ev) return;
         if (!SESSION_PATTERN.test(String(phoneNumber))) return;
 
-        // Monitor sendMessage to register Davila or phone messages
+        // Everything sent through this socket is automation — Davila, a
+        // command reply, a system notice — whether or not the caller tagged
+        // it `_origin: 'davila'`. Only fromMe messages that never came
+        // through here were typed by a person on another device, and only
+        // those may pause Davila and hand the conversation to a human.
+        // (Marked once sendMessage resolves; the echo is processed later,
+        // behind setImmediate in reportMessageSafe.)
         if (!sock._reporterWrapped) {
             const originalSendMessage = sock.sendMessage.bind(sock);
             sock.sendMessage = async (jid, content, options = {}) => {
                 const result = await originalSendMessage(jid, content, options);
                 const msgId = result?.key?.id || options?.messageId;
-                if (msgId) {
-                    if (options._origin === 'davila') {
-                        markDavilaSent(msgId);
-                    }
-                }
+                if (msgId) markDavilaSent(msgId);
                 return result;
             };
             sock._reporterWrapped = true;
@@ -601,6 +624,7 @@ function getReporter() {
 }
 
 module.exports = {
+    isDirectChat,
     extractChatRef,
     inspectMessageContent,
     createReporter,

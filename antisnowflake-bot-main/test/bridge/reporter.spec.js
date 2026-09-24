@@ -5,6 +5,9 @@ const {
     inspectMessageContent,
     createReporter,
 } = require('../../lib/bridge/reporter');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { createBridgeState } = require('../../lib/bridge/state');
 const { deterministicEventId } = require('../../lib/bridge/protocol');
 
@@ -228,7 +231,9 @@ test('processMessage gracefully handles media upload failure by preserving text/
 
 test('outbound message: distinguishes Davila vs phone origin and suppresses CRM-sent echo', async () => {
     const client = mockWacrmClient();
-    const state = createBridgeState();
+    // A temp dir: the phone-origin path persists a pause, which must not
+    // land in the real data/bridge/pauses.json of a dev checkout.
+    const state = tempState();
     const reporter = createReporter({ getClient: () => client, state });
 
     // 1. Message sent by WACRM via /bridge/send -> should be skipped!
@@ -432,4 +437,125 @@ test('attachSocket: hooks socket events and wraps sendMessage without throwing',
     // Verify sendMessage wrapper marks Davila
     await fakeSocket.sendMessage(`${CUSTOMER_PHONE}@s.whatsapp.net`, { text: 'Hi' }, { _origin: 'davila' });
     assert.ok(reporter.isDavilaSent('OUT_REPLY_123'));
+});
+
+function tempState() {
+    return createBridgeState({ baseDir: fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-reporter-')) });
+}
+
+function fakeSocketFor(reporter) {
+    let counter = 0;
+    const sock = {
+        ev: { on() {} },
+        sendMessage: async (jid) => ({ key: { id: `BOT_OUT_${++counter}`, remoteJid: jid, fromMe: true } }),
+    };
+    reporter.attachSocket(sock, SESSION);
+    return sock;
+}
+
+test('connection events get a fresh id per occurrence, so wacrm never drops a reconnect as a duplicate', () => {
+    const client = mockWacrmClient();
+    let clock = 1_700_000_000_000;
+    const reporter = createReporter({ getClient: () => client, now: () => clock });
+
+    reporter.reportConnection(SESSION, 'connected', { phone: SESSION }, 'ref-uuid-1234');
+    clock += 60_000;
+    reporter.reportConnection(SESSION, 'disconnected', null, null, 'stream reset');
+    clock += 5_000;
+    // Reconnect of the same session with the same (retained) pairing ref.
+    reporter.reportConnection(SESSION, 'connected', { phone: SESSION }, 'ref-uuid-1234');
+    clock += 60_000;
+    reporter.reportConnection(SESSION, 'disconnected', null, null, 'stream reset');
+
+    const ids = client.emitted.map((e) => e.eventId);
+    assert.equal(new Set(ids).size, 4);
+});
+
+test('anything sent through the socket is automation, tagged or not — no human takeover', async () => {
+    const client = mockWacrmClient();
+    const state = tempState();
+    const reporter = createReporter({ getClient: () => client, state });
+    const sock = fakeSocketFor(reporter);
+
+    // e.g. Davila's "couldn't hear your voice note" apology, the STOP
+    // confirmation or the human-request acknowledgement: none carry _origin.
+    const sent = await sock.sendMessage(`${CUSTOMER_PHONE}@s.whatsapp.net`, { text: 'Désolée…' });
+    await reporter.processMessage(SESSION, {
+        key: { id: sent.key.id, remoteJid: `${CUSTOMER_PHONE}@s.whatsapp.net`, fromMe: true },
+        message: { conversation: 'Désolée…' },
+    });
+
+    assert.equal(client.emitted.length, 1);
+    assert.equal(client.emitted[0].payload.origin, 'davila');
+    assert.equal(state.isContactPaused(CUSTOMER_PHONE), false);
+});
+
+test('a message typed on the phone is still a human takeover: origin phone, Davila paused', async () => {
+    const client = mockWacrmClient();
+    const state = tempState();
+    let cancelled = false;
+    state.registerActiveDavilaRun(CUSTOMER_PHONE, { abort: () => { cancelled = true; } });
+    const reporter = createReporter({ getClient: () => client, state });
+    fakeSocketFor(reporter);
+
+    // Never went through sock.sendMessage: typed on the paired phone.
+    await reporter.processMessage(SESSION, {
+        key: { id: 'PHONE_TYPED_1', remoteJid: `${CUSTOMER_PHONE}@s.whatsapp.net`, fromMe: true },
+        message: { conversation: 'Je prends le relais' },
+    });
+
+    assert.equal(client.emitted[0].payload.origin, 'phone');
+    assert.equal(state.isContactPaused(CUSTOMER_PHONE), true);
+    assert.equal(cancelled, true);
+});
+
+test('group, broadcast and newsletter traffic is never reported as a 1:1 conversation', async () => {
+    const client = mockWacrmClient();
+    const state = tempState();
+    const reporter = createReporter({ getClient: () => client, state });
+
+    // A member writing in a group the business number belongs to.
+    await reporter.processMessage(SESSION, {
+        key: {
+            id: 'GROUP_MSG_1',
+            remoteJid: '120363000000000000@g.us',
+            participant: `${CUSTOMER_PHONE}@s.whatsapp.net`,
+            fromMe: false,
+        },
+        message: { conversation: 'hello group' },
+    });
+    // The owner posting in that group from the phone.
+    await reporter.processMessage(SESSION, {
+        key: {
+            id: 'GROUP_MSG_2',
+            remoteJid: '120363000000000000@g.us',
+            participant: `${SESSION}@s.whatsapp.net`,
+            fromMe: true,
+        },
+        message: { conversation: 'owner in group' },
+    });
+    await reporter.processMessage(SESSION, {
+        key: { id: 'NEWS_1', remoteJid: '120363111111111111@newsletter', fromMe: false },
+        message: { conversation: 'channel post' },
+    });
+    reporter.reportStatusUpdate(SESSION, {
+        key: {
+            id: 'GROUP_MSG_2',
+            remoteJid: '120363000000000000@g.us',
+            participant: `${CUSTOMER_PHONE}@s.whatsapp.net`,
+        },
+        update: { status: 4 },
+    });
+    reporter.reportReaction(SESSION, {
+        key: {
+            id: 'GROUP_MSG_1',
+            remoteJid: '120363000000000000@g.us',
+            participant: `${CUSTOMER_PHONE}@s.whatsapp.net`,
+        },
+        reaction: { text: '👍', key: { id: 'GROUP_MSG_1' } },
+    });
+
+    assert.equal(client.emitted.length, 0);
+    assert.equal(state.isContactPaused(CUSTOMER_PHONE), false);
+    assert.equal(state.isContactPaused(SESSION), false);
 });

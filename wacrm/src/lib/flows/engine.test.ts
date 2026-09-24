@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
     events: [] as Record<string, unknown>[],
     /** Every UPDATE, by table. */
     updates: [] as { table: string; row: Record<string, unknown> }[],
+    /** Conversation rows the reply-engine gates read (empty = not found = allowed). */
+    conversations: [] as Record<string, unknown>[],
   },
   sendButtons: vi.fn<
     (
@@ -37,6 +39,7 @@ vi.mock("./admin-client", () => {
     if (table === "flow_runs") return h.state.activeRuns;
     if (table === "flows") return h.state.flows;
     if (table === "flow_nodes") return h.state.nodes;
+    if (table === "conversations") return h.state.conversations;
     return [];
   }
 
@@ -94,10 +97,12 @@ import {
   isTerminal,
   evaluateConditionPredicate,
 } from "./engine";
-import type {
-  engineSendInteractiveButtons,
-  engineSendInteractiveList,
+import {
+  engineSendText,
+  type engineSendInteractiveButtons,
+  type engineSendInteractiveList,
 } from "./meta-send";
+import { AutomationBlockedError } from "@/lib/ai/reply-control";
 import type { ParsedInbound } from "./types";
 
 describe("matchReplyId", () => {
@@ -621,6 +626,117 @@ describe("send_buttons / send_list interpolate {{vars.*}} (#553)", () => {
           status: "failed",
           end_reason: "send_buttons_failed",
         }),
+      }),
+    );
+  });
+});
+
+describe("reply engine control: human takeover mid-flow", () => {
+  const ACTIVE_CONV = {
+    id: "cv-1",
+    automation_state: "active",
+    automation_version: 1,
+    ai_autoreply_disabled: false,
+    ai_paused_until: null,
+    assigned_agent_id: null,
+  };
+
+  beforeEach(() => {
+    h.state.activeRuns = [{ ...RUN, vars: {} }];
+    h.state.flows = [FLOW];
+    h.state.nodes = nodesEndingIn("choose");
+    h.state.events = [];
+    h.state.updates = [];
+    h.state.conversations = [{ ...ACTIVE_CONV }];
+  });
+
+  it("a send blocked by a takeover pauses the run for the human — no error event, no failed run", async () => {
+    h.sendButtons.mockRejectedValueOnce(
+      new AutomationBlockedError("human_handling_active"),
+    );
+
+    const result = await dispatch(text("Alice"));
+
+    expect(result).toMatchObject({ consumed: true, outcome: "completed" });
+    expect(h.state.events).toContainEqual(
+      expect.objectContaining({
+        event_type: "handoff",
+        node_key: "choose",
+        payload: { reason: "human_handling", detail: "human_handling_active" },
+      }),
+    );
+    expect(h.state.events.filter((e) => e.event_type === "error")).toEqual([]);
+    const runUpdates = h.state.updates.filter((u) => u.table === "flow_runs");
+    expect(runUpdates).toContainEqual(
+      expect.objectContaining({
+        row: expect.objectContaining({
+          status: "paused_by_agent",
+          end_reason: "human_handling:human_handling_active",
+        }),
+      }),
+    );
+    expect(runUpdates.map((u) => u.row.status)).not.toContain("failed");
+  });
+
+  it("a takeover + resume between steps stops the walk: each step is pinned to the version it started on", async () => {
+    // ask_name → greet (send_message) → choose (send_buttons)
+    h.state.nodes = [
+      {
+        id: "n1",
+        flow_id: "flow-1",
+        node_key: "ask_name",
+        node_type: "collect_input",
+        config: { prompt_text: "What's your name?", var_key: "name", next_node_key: "greet" },
+      },
+      {
+        id: "n2",
+        flow_id: "flow-1",
+        node_key: "greet",
+        node_type: "send_message",
+        config: { text: "Hi {{vars.name}}", next_node_key: "choose" },
+      },
+      BUTTONS_NODE,
+      { id: "n9", flow_id: "flow-1", node_key: "done", node_type: "end", config: {} },
+    ];
+    // While the greeting is being sent, an agent takes over and resumes
+    // again — possibly on another worker. The state reads 'active', but
+    // the version moved on.
+    vi.mocked(engineSendText).mockImplementationOnce(async () => {
+      h.state.conversations[0] = { ...ACTIVE_CONV, automation_version: 3 };
+      return { whatsapp_message_id: "wamid.greet" };
+    });
+
+    await dispatch(text("Alice"));
+
+    expect(engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Hi Alice", expectedVersion: 1 }),
+    );
+    expect(h.sendButtons).not.toHaveBeenCalled();
+    expect(h.state.updates).toContainEqual(
+      expect.objectContaining({
+        table: "flow_runs",
+        row: expect.objectContaining({
+          status: "paused_by_agent",
+          end_reason: "human_handling:version_mismatch: expected 1, got 3",
+        }),
+      }),
+    );
+  });
+
+  it("an inbound on a conversation a human is handling pauses the active run and sends nothing", async () => {
+    h.state.conversations = [
+      { ...ACTIVE_CONV, automation_state: "human_handling", ai_autoreply_disabled: true },
+    ];
+
+    const result = await dispatch(text("Alice"));
+
+    expect(result).toMatchObject({ consumed: false, outcome: "no_match" });
+    expect(engineSendText).not.toHaveBeenCalled();
+    expect(h.sendButtons).not.toHaveBeenCalled();
+    expect(h.state.updates).toContainEqual(
+      expect.objectContaining({
+        table: "flow_runs",
+        row: expect.objectContaining({ status: "paused_by_agent" }),
       }),
     );
   });

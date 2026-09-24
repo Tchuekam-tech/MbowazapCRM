@@ -24,6 +24,7 @@ import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { isAutomationBlockedError } from '@/lib/ai/reply-control'
 
 // ------------------------------------------------------------
 // Public API
@@ -336,6 +337,18 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
         detail,
       })
     } catch (err) {
+      // A human has the conversation (reply engine control): the send is
+      // suppressed by design, like an opted-out contact — not a failure.
+      // Later steps still run; any further send is gated the same way.
+      if (isAutomationBlockedError(err)) {
+        results.push({
+          step_id: step.id,
+          step_type: step.step_type,
+          status: 'skipped',
+          detail: `skipped: ${err.message}`,
+        })
+        continue
+      }
       const msg = err instanceof Error ? err.message : String(err)
       results.push({
         step_id: step.id,
