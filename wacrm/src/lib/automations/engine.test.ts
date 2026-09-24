@@ -105,6 +105,8 @@ vi.mock("./meta-send", () => ({
 }));
 
 import { runAutomationsForTrigger, triggerMatches } from "./engine";
+import { engineSendText } from "./meta-send";
+import { AutomationBlockedError } from "@/lib/ai/reply-control";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
 
 const ACCOUNT = "acct-1";
@@ -548,5 +550,46 @@ describe("triggerMatches — keyword_match", () => {
   it("ignores empty keywords and empty messages in `word` mode", () => {
     expect(on(automation({ keywords: [""], match_type: "word" }), "anything")).toBe(false);
     expect(on(automation({ keywords: ["hi"], match_type: "word" }), "")).toBe(false);
+  });
+});
+
+describe("reply engine control — a human has the conversation", () => {
+  it("records a blocked send as skipped, keeps running later steps, and does not fail the run", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [
+      {
+        id: "s0",
+        automation_id: "a1",
+        step_type: "send_message",
+        position: 0,
+        parent_step_id: null,
+        step_config: { text: "Hello" },
+      },
+      { ...updateStep(), id: "s1", position: 1 },
+    ];
+    vi.mocked(engineSendText).mockRejectedValueOnce(
+      new AutomationBlockedError("human_handling_active"),
+    );
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { conversation_id: "cv-1" },
+    });
+
+    const final = h.state.logUpdates.filter((u) => "status" in u).at(-1);
+    expect(final).toMatchObject({ status: "success" });
+    expect(final?.steps_executed).toEqual([
+      expect.objectContaining({
+        step_id: "s0",
+        status: "skipped",
+        detail: "skipped: automated send blocked: human_handling_active",
+      }),
+      expect.objectContaining({ step_id: "s1", status: "success" }),
+    ]);
+    // The non-messaging step still ran.
+    expect(h.state.updateCalls).toHaveLength(1);
   });
 });

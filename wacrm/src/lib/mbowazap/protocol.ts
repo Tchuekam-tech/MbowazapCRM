@@ -140,6 +140,7 @@ export type BridgeErrorCode =
   | 'pairing_pending'
   | 'pairing_failed'
   | 'send_failed'
+  | 'presence_failed'
   | 'internal_error';
 
 // ------------------------------------------------------------

@@ -30,6 +30,82 @@ export interface TakeoverOptions {
   accountId?: string;
 }
 
+export interface TakeoverResult {
+  state: AutomationState;
+  version: number;
+  /** False when neither the RPC nor the fallback UPDATE was written. */
+  persisted: boolean;
+}
+
+export interface ResumeOptions {
+  accountId?: string;
+  handlerId?: string;
+  /**
+   * Release the assignment when it belongs to this user. The reply
+   * engine stands down while anyone is assigned, so resuming without
+   * releasing the resuming agent's own claim would re-enable nothing.
+   */
+  releaseAssignee?: string;
+}
+
+export interface ResumeResult {
+  state: AutomationState;
+  version: number;
+  /** The assignee after the resume; non-null keeps automation silent. */
+  assignedAgentId: string | null;
+  persisted: boolean;
+}
+
+/**
+ * Thrown by the final send gates when automation may not speak on a
+ * conversation. The expected outcome of a human takeover, not a
+ * failure: callers stand down quietly instead of logging an error.
+ */
+export class AutomationBlockedError extends Error {
+  readonly reason: string;
+  constructor(reason: string) {
+    super(`automated send blocked: ${reason}`);
+    this.name = 'AutomationBlockedError';
+    this.reason = reason;
+  }
+}
+
+export function isAutomationBlockedError(
+  err: unknown
+): err is AutomationBlockedError {
+  return err instanceof AutomationBlockedError;
+}
+
+/**
+ * Gate 5: the authoritative check right before an automated message
+ * leaves. Throws AutomationBlockedError when a human owns the thread or,
+ * with `expectedVersion`, when it changed hands since the caller's run
+ * began — a check against the database, so it holds across workers.
+ */
+export async function assertAutomationAllowed(
+  db: SupabaseClient,
+  args: {
+    conversationId: string;
+    accountId?: string;
+    expectedVersion?: number;
+    site: string;
+  }
+): Promise<void> {
+  const gate = await checkAutomationAllowed(
+    db,
+    args.conversationId,
+    args.expectedVersion
+  );
+  if (gate.allowed) return;
+  logReplyControl('automated_send_blocked', {
+    conversationId: args.conversationId,
+    accountId: args.accountId,
+    version: gate.version,
+    reason: `${args.site} blocked: ${gate.reason}`,
+  });
+  throw new AutomationBlockedError(gate.reason ?? 'not_allowed');
+}
+
 export interface InFlightAiHandle {
   conversationId: string;
   abortController: AbortController;
@@ -38,43 +114,69 @@ export interface InFlightAiHandle {
   startedAt: number;
 }
 
-// In-process active AI run registry for immediate zero-latency abort
-const activeAiRuns = new Map<string, InFlightAiHandle>();
+// In-process registry of running AI generations, for zero-latency abort
+// on takeover. Several can run at once for one conversation (two inbound
+// messages close together), so each conversation holds a set, and a run
+// only ever removes its own handle.
+const activeAiRuns = new Map<string, Set<InFlightAiHandle>>();
 
 export function registerInFlightAi(handle: InFlightAiHandle): void {
-  activeAiRuns.set(handle.conversationId, handle);
+  let runs = activeAiRuns.get(handle.conversationId);
+  if (!runs) {
+    runs = new Set();
+    activeAiRuns.set(handle.conversationId, runs);
+  }
+  runs.add(handle);
 }
 
-export function unregisterInFlightAi(conversationId: string): void {
-  activeAiRuns.delete(conversationId);
+/** Without `handle`, forgets every run for the conversation. */
+export function unregisterInFlightAi(
+  conversationId: string,
+  handle?: InFlightAiHandle
+): void {
+  if (!handle) {
+    activeAiRuns.delete(conversationId);
+    return;
+  }
+  const runs = activeAiRuns.get(conversationId);
+  if (!runs) return;
+  runs.delete(handle);
+  if (runs.size === 0) activeAiRuns.delete(conversationId);
 }
 
+/** The most recently registered run for the conversation. */
 export function getInFlightAi(conversationId: string): InFlightAiHandle | undefined {
-  return activeAiRuns.get(conversationId);
+  const runs = activeAiRuns.get(conversationId);
+  if (!runs) return undefined;
+  let latest: InFlightAiHandle | undefined;
+  for (const handle of runs) latest = handle;
+  return latest;
 }
 
 export async function abortInFlightAi(
   conversationId: string,
   reason: string
 ): Promise<void> {
-  const handle = activeAiRuns.get(conversationId);
-  if (!handle) return;
+  const runs = activeAiRuns.get(conversationId);
+  if (!runs) return;
   activeAiRuns.delete(conversationId);
 
-  logReplyControl('automation_cancelled', {
-    conversationId,
-    version: handle.capturedVersion,
-    reason,
-  });
+  for (const handle of runs) {
+    logReplyControl('automation_cancelled', {
+      conversationId,
+      version: handle.capturedVersion,
+      reason,
+    });
 
-  try {
-    handle.abortController.abort(new Error(`Cancelled: ${reason}`));
-  } catch (_) {}
-
-  if (handle.stopTyping) {
     try {
-      await handle.stopTyping();
+      handle.abortController.abort(new Error(`Cancelled: ${reason}`));
     } catch (_) {}
+
+    if (handle.stopTyping) {
+      try {
+        await handle.stopTyping();
+      } catch (_) {}
+    }
   }
 }
 
@@ -165,16 +267,25 @@ export async function checkAutomationAllowed(
   };
 }
 
+function rpcFailureDetail(err: { message?: string } | null, rows: unknown): string {
+  if (err) return err.message ?? 'unknown error';
+  return Array.isArray(rows) && rows.length === 0 ? 'no row updated' : 'no result';
+}
+
 /**
  * Authoritatively transition a conversation to HUMAN_HANDLING.
  * Increments automation_version to atomically invalidate all stale in-flight / queued work,
  * aborts running AI generation in memory, and pauses active Flow runs.
+ *
+ * Never throws; `persisted: false` means the state could not be written
+ * (the caller decides whether that is fatal — a human's send is not
+ * blocked on it, an explicit "Take over" click is).
  */
 export async function takeoverConversation(
   db: SupabaseClient,
   conversationId: string,
   options: TakeoverOptions
-): Promise<{ state: AutomationState; version: number }> {
+): Promise<TakeoverResult> {
   let pauseUntilIso: string | null = options.pauseUntil || null;
   if (!pauseUntilIso && options.pauseMinutes && options.pauseMinutes > 0) {
     pauseUntilIso = new Date(Date.now() + options.pauseMinutes * 60 * 1000).toISOString();
@@ -186,9 +297,9 @@ export async function takeoverConversation(
   // 2. Perform atomic database transition (via RPC or direct fallback update)
   let newState: AutomationState = 'human_handling';
   let newVersion = 1;
+  let persisted = false;
 
   try {
-    let rpcSuccess = false;
     if (typeof db.rpc === 'function') {
       const { data: rpcData, error: rpcErr } = await db.rpc(
         'takeover_conversation_automation',
@@ -202,20 +313,28 @@ export async function takeoverConversation(
       if (!rpcErr && rpcData && rpcData.length > 0) {
         newState = (rpcData[0].new_state as AutomationState) || 'human_handling';
         newVersion = Number(rpcData[0].new_version) || 1;
-        rpcSuccess = true;
+        persisted = true;
+      } else {
+        console.warn(
+          `[reply-control] takeover RPC failed for ${conversationId}, falling back to a direct update:`,
+          rpcFailureDetail(rpcErr, rpcData)
+        );
       }
     }
 
-    if (!rpcSuccess) {
-      // Fallback update if RPC is missing in local test env
-      const { data: current } = await db
+    if (!persisted) {
+      // Non-atomic fallback (RPC unavailable). Same writes as the RPC.
+      const { data: current, error: readErr } = await db
         .from('conversations')
         .select('automation_version')
         .eq('id', conversationId)
         .maybeSingle();
-      newVersion = ((current?.automation_version as number) || 1) + 1;
+      if (readErr || !current) {
+        throw new Error(readErr?.message ?? 'conversation not found');
+      }
+      newVersion = ((current.automation_version as number) || 1) + 1;
 
-      await db
+      const { error: updateErr } = await db
         .from('conversations')
         .update({
           automation_state: 'human_handling',
@@ -228,6 +347,8 @@ export async function takeoverConversation(
           updated_at: new Date().toISOString(),
         })
         .eq('id', conversationId);
+      if (updateErr) throw new Error(updateErr.message);
+      persisted = true;
     }
   } catch (err) {
     console.error('[reply-control] takeover DB update failed:', err);
@@ -238,6 +359,7 @@ export async function takeoverConversation(
     accountId: options.accountId,
     version: newVersion,
     reason: options.reason,
+    details: { persisted },
   });
 
   // 3. Pause any active flow runs for this conversation
@@ -247,7 +369,7 @@ export async function takeoverConversation(
       clientToUse = supabaseAdmin();
     } catch (_) {}
 
-    await clientToUse
+    const { error: pauseErr } = await clientToUse
       .from('flow_runs')
       .update({
         status: 'paused_by_agent',
@@ -256,60 +378,85 @@ export async function takeoverConversation(
       })
       .eq('conversation_id', conversationId)
       .eq('status', 'active');
+    if (pauseErr) throw new Error(pauseErr.message);
   } catch (err) {
     console.error('[reply-control] flow_runs pause failed:', err);
   }
 
-  return { state: newState, version: newVersion };
+  return { state: newState, version: newVersion, persisted };
 }
 
 /**
  * Authoritatively resume automation for a conversation.
- * Re-enables automation and increments version so stale queued runs are never resurrected.
+ * Re-enables automation, resets the per-conversation reply count, clears
+ * the handoff note, releases `releaseAssignee`'s own assignment, and
+ * increments the version so stale queued runs are never resurrected.
+ * Never throws; see `persisted`.
  */
 export async function resumeConversation(
   db: SupabaseClient,
   conversationId: string,
-  options?: { accountId?: string; handlerId?: string }
-): Promise<{ state: AutomationState; version: number }> {
+  options: ResumeOptions = {}
+): Promise<ResumeResult> {
   let newState: AutomationState = 'active';
   let newVersion = 1;
+  let assignedAgentId: string | null = null;
+  let persisted = false;
 
   try {
-    let rpcSuccess = false;
     if (typeof db.rpc === 'function') {
       const { data: rpcData, error: rpcErr } = await db.rpc(
         'resume_conversation_automation',
-        { p_conversation_id: conversationId }
+        {
+          p_conversation_id: conversationId,
+          p_release_assignee: options.releaseAssignee ?? null,
+        }
       );
 
       if (!rpcErr && rpcData && rpcData.length > 0) {
         newState = (rpcData[0].new_state as AutomationState) || 'active';
         newVersion = Number(rpcData[0].new_version) || 1;
-        rpcSuccess = true;
+        assignedAgentId = (rpcData[0].new_assigned_agent_id as string | null) ?? null;
+        persisted = true;
+      } else {
+        console.warn(
+          `[reply-control] resume RPC failed for ${conversationId}, falling back to a direct update:`,
+          rpcFailureDetail(rpcErr, rpcData)
+        );
       }
     }
 
-    if (!rpcSuccess) {
-      const { data: current } = await db
+    if (!persisted) {
+      // Non-atomic fallback (RPC unavailable). Same writes as the RPC.
+      const { data: current, error: readErr } = await db
         .from('conversations')
-        .select('automation_version')
+        .select('automation_version, assigned_agent_id')
         .eq('id', conversationId)
         .maybeSingle();
-      newVersion = ((current?.automation_version as number) || 1) + 1;
+      if (readErr || !current) {
+        throw new Error(readErr?.message ?? 'conversation not found');
+      }
+      newVersion = ((current.automation_version as number) || 1) + 1;
+      const currentAssignee = (current.assigned_agent_id as string | null) ?? null;
+      const release =
+        !!options.releaseAssignee && currentAssignee === options.releaseAssignee;
+      assignedAgentId = release ? null : currentAssignee;
 
-      await db
+      const { error: updateErr } = await db
         .from('conversations')
         .update({
           automation_state: 'active',
           automation_version: newVersion,
           ai_autoreply_disabled: false,
           ai_paused_until: null,
+          ai_reply_count: 0,
           ai_handoff_summary: null,
-          assigned_agent_id: null,
+          ...(release ? { assigned_agent_id: null } : {}),
           updated_at: new Date().toISOString(),
         })
         .eq('id', conversationId);
+      if (updateErr) throw new Error(updateErr.message);
+      persisted = true;
     }
   } catch (err) {
     console.error('[reply-control] resume DB update failed:', err);
@@ -317,10 +464,11 @@ export async function resumeConversation(
 
   logReplyControl('automation_run_invalidated', {
     conversationId,
-    accountId: options?.accountId,
+    accountId: options.accountId,
     version: newVersion,
     reason: 'resumed_with_fresh_version',
+    details: { persisted, stillAssigned: assignedAgentId !== null },
   });
 
-  return { state: newState, version: newVersion };
+  return { state: newState, version: newVersion, assignedAgentId, persisted };
 }

@@ -15,8 +15,10 @@ import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import {
   checkAutomationAllowed,
+  isAutomationBlockedError,
   registerInFlightAi,
   unregisterInFlightAi,
+  type InFlightAiHandle,
 } from './reply-control'
 import { logReplyControl } from './reply-control-log'
 import { withTypingIndicator } from './typing-controller'
@@ -134,19 +136,27 @@ export async function dispatchInboundToAiReply(
       return
     }
 
-    // Show initial typing indicator on inbound wamid (marks message read on Meta)
-    if (inboundMessageId) {
+    let transport: WhatsAppTransport | null = null
+    try {
+      transport = await loadTransport(db, accountId)
+    } catch (_) {}
+
+    // Meta's typing indicator rides on the inbound wamid (and marks it
+    // read). MboWazap has no such call — its presence runs through
+    // withTypingIndicator below — and has no Meta credentials to load.
+    if (inboundMessageId && transport?.provider !== 'mbowazap') {
       await showTypingIndicator(db, accountId, inboundMessageId)
     }
 
     // Register in-flight AI run for zero-latency cancellation upon human takeover
     const abortController = new AbortController()
-    registerInFlightAi({
+    const inFlight: InFlightAiHandle = {
       conversationId,
       abortController,
       capturedVersion: baselineVersion,
       startedAt: Date.now(),
-    })
+    }
+    registerInFlightAi(inFlight)
 
     // Resolve recipient phone / lid for typing presence
     let recipient: string | undefined
@@ -157,11 +167,6 @@ export async function dispatchInboundToAiReply(
         .eq('id', contactId)
         .maybeSingle()
       recipient = contact?.phone || contact?.wa_lid || undefined
-    } catch (_) {}
-
-    let transport: WhatsAppTransport | null = null
-    try {
-      transport = await loadTransport(db, accountId)
     } catch (_) {}
 
     let text: string | null = null
@@ -231,7 +236,7 @@ export async function dispatchInboundToAiReply(
       console.warn('[ai auto-reply] generation error:', err)
       return
     } finally {
-      unregisterInFlightAi(conversationId)
+      unregisterInFlightAi(conversationId, inFlight)
     }
 
     // Gate 4: Check if conversation was taken over or version changed while AI was generating
@@ -286,19 +291,22 @@ export async function dispatchInboundToAiReply(
     }
 
     // Atomically claim a reply slot: the cap check + increment happen in
-    // one UPDATE, so concurrent inbounds can never overshoot the cap.
+    // one UPDATE, so concurrent inbounds can never overshoot the cap. The
+    // claim also re-checks eligibility against the version this run began
+    // with, so a takeover after Gate 4 costs no slot (migration 046).
     const { data: claimed, error: claimErr } = await db.rpc(
-      'claim_ai_reply_slot',
+      'claim_ai_reply_slot_v2',
       {
-        conversation_id: conversationId,
-        max_replies: config.autoReplyMaxPerConversation,
+        p_conversation_id: conversationId,
+        p_max_replies: config.autoReplyMaxPerConversation,
+        p_expected_version: baselineVersion,
       },
     )
     if (claimErr) {
-      console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
+      console.error('[ai auto-reply] claim_ai_reply_slot_v2 failed:', claimErr)
       return
     }
-    if (claimed !== true) return // lost the per-conversation cap race
+    if (claimed !== true) return // cap reached, or taken over since Gate 4
 
     // Gate 5: Final outbound send guarded by expectedVersion
     await engineSendText({
@@ -311,6 +319,9 @@ export async function dispatchInboundToAiReply(
       expectedVersion: baselineVersion,
     })
   } catch (err) {
+    // Gate 5 refused the send: a human took over after the claim. The
+    // designed outcome, already logged as automated_send_blocked.
+    if (isAutomationBlockedError(err)) return
     console.error('[ai auto-reply] dispatch failed:', err)
   }
 }
