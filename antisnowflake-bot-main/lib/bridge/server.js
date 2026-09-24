@@ -38,6 +38,9 @@ const { PAUSE_FOREVER, contactKeyFromJid } = require('./state');
 
 const MAX_BODY_BYTES = 512 * 1024;
 const LOGOUT_TIMEOUT_MS = 10000;
+// Under wacrm's 5s presence timeout, so a stalled socket gets a clean
+// presence_failed answer instead of a client-side timeout.
+const PRESENCE_TIMEOUT_MS = 4000;
 const DEFAULT_HANDOFF_MINUTES = 120;
 const SESSIONS_ROOT = path.join(__dirname, '../../data/sessions');
 
@@ -71,6 +74,7 @@ function productionDeps() {
         loadMessage: (jid, id) => require('../lightweight_store').loadMessage(jid, id),
         // preload.js puts the ESM-only Baileys build into the require cache.
         generateMessageId: (userId) => require('@whiskeysockets/baileys').generateMessageIDV2(userId),
+        presenceTimeoutMs: () => PRESENCE_TIMEOUT_MS,
         handoffMinutes: () => {
             const minutes = Number(process.env.MBOWAZAP_HANDOFF_MINUTES);
             return Number.isInteger(minutes) && minutes > 0 ? minutes : DEFAULT_HANDOFF_MINUTES;
@@ -303,7 +307,7 @@ function createBridgeHandler(overrides = {}) {
             const sock = requireConnected(cmd.session);
             const jid = recipientJid(cmd.to);
             try {
-                await sock.sendPresenceUpdate(cmd.presence, jid);
+                await withTimeout(Promise.resolve(sock.sendPresenceUpdate(cmd.presence, jid)), d.presenceTimeoutMs());
             } catch (err) {
                 throw new BridgeError(502, 'presence_failed', err.message || 'WhatsApp presence failed');
             }

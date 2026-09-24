@@ -78,3 +78,29 @@ test('contactKeyFromJid strips the device and server parts', () => {
     assert.equal(contactKeyFromJid('237600000001:12@s.whatsapp.net'), '237600000001');
     assert.equal(contactKeyFromJid('123456789012@lid'), '123456789012');
 });
+
+test('concurrent Davila runs for one contact: a finishing run removes only itself, cancel stops them all', () => {
+    const state = createBridgeState({ baseDir: fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-runs-')) });
+    const contact = '237611111111';
+    const first = { cancelled: false };
+    const second = { cancelled: false };
+
+    state.registerActiveDavilaRun(contact, first);
+    state.registerActiveDavilaRun(contact, second);
+
+    // The first run finishes while the second is still generating.
+    state.unregisterActiveDavilaRun(contact, first);
+    assert.equal(state.cancelActiveDavilaRun(contact, 'agent_send'), true);
+    assert.equal(second.cancelled, true);
+    assert.equal(first.cancelled, false);
+
+    // Both register again; a takeover cancels both.
+    const third = { cancelled: false };
+    const fourth = { cancelled: false };
+    state.registerActiveDavilaRun(contact, third);
+    state.registerActiveDavilaRun(contact, fourth);
+    state.cancelActiveDavilaRun(contact, 'phone_outbound_detected');
+    assert.equal(third.cancelled, true);
+    assert.equal(fourth.cancelled, true);
+    assert.equal(state.cancelActiveDavilaRun(contact), false);
+});

@@ -124,26 +124,44 @@ function createBridgeState({
         return session ? isDavilaEnabled(session) : true;
     }
 
-    const activeDavilaRuns = new Map(); // contact -> { abort, stopPresence, cancelled: boolean }
+    // contact -> Set of { abort, stopPresence, cancelled: boolean }. Two
+    // messages close together start two runs for one contact, so each run
+    // keeps its own entry and removes only that one when it finishes.
+    const activeDavilaRuns = new Map();
 
     function registerActiveDavilaRun(contact, handle) {
-        activeDavilaRuns.set(contact, handle);
+        let runs = activeDavilaRuns.get(contact);
+        if (!runs) {
+            runs = new Set();
+            activeDavilaRuns.set(contact, runs);
+        }
+        runs.add(handle);
     }
 
-    function unregisterActiveDavilaRun(contact) {
-        activeDavilaRuns.delete(contact);
+    /** Without `handle`, forgets every run for the contact. */
+    function unregisterActiveDavilaRun(contact, handle) {
+        if (handle === undefined) {
+            activeDavilaRuns.delete(contact);
+            return;
+        }
+        const runs = activeDavilaRuns.get(contact);
+        if (!runs) return;
+        runs.delete(handle);
+        if (runs.size === 0) activeDavilaRuns.delete(contact);
     }
 
     function cancelActiveDavilaRun(contact, reason = 'human_takeover') {
-        const handle = activeDavilaRuns.get(contact);
-        if (!handle) return false;
+        const runs = activeDavilaRuns.get(contact);
+        if (!runs) return false;
         activeDavilaRuns.delete(contact);
-        handle.cancelled = true;
-        if (typeof handle.abort === 'function') {
-            try { handle.abort(new Error(`Cancelled: ${reason}`)); } catch (_) {}
-        }
-        if (typeof handle.stopPresence === 'function') {
-            try { handle.stopPresence(); } catch (_) {}
+        for (const handle of runs) {
+            handle.cancelled = true;
+            if (typeof handle.abort === 'function') {
+                try { handle.abort(new Error(`Cancelled: ${reason}`)); } catch (_) {}
+            }
+            if (typeof handle.stopPresence === 'function') {
+                try { handle.stopPresence(); } catch (_) {}
+            }
         }
         return true;
     }

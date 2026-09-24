@@ -388,6 +388,12 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
                     console.error('[Boot] Error copying credentials on scan:', e.message);
                 }
 
+                // The wacrm pairing that asked for this QR now belongs to the
+                // number that scanned it; its connect report must carry it.
+                try {
+                    require('./lib/bridge/state').movePairingRef('temp_qr', loggedIn);
+                } catch (_) {}
+
                 // Restart the session in its final permanent folder
                 await startXeonBotInc(loggedIn);
 
@@ -406,7 +412,11 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             try {
                 const bridgeState = require('./lib/bridge/state');
                 const { getReporter } = require('./lib/bridge/reporter');
-                const pairingRef = bridgeState.getPairingRef(phoneNumber) || (phoneNumber !== 'temp_qr' ? bridgeState.getPairingRef('temp_qr') : null);
+                // Only this number's own ref: the temp_qr one is handed over
+                // when a QR scan migrates, and must never be borrowed by an
+                // unrelated session reconnecting while a QR pairing is
+                // pending — that would bind it to the wrong wacrm account.
+                const pairingRef = bridgeState.getPairingRef(phoneNumber);
                 getReporter().reportConnection(phoneNumber, 'connected', { phone: loggedIn, name: XeonBotInc.user?.name }, pairingRef);
             } catch (_) {}
 
