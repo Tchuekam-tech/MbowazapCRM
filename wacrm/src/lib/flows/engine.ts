@@ -33,6 +33,8 @@
  */
 
 import { supabaseAdmin } from "./admin-client";
+import { checkAutomationAllowed } from "@/lib/ai/reply-control";
+import { logReplyControl } from "@/lib/ai/reply-control-log";
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
@@ -587,7 +589,7 @@ function interpolateOptionalVars(
 async function endRun(
   db: AdminClient,
   runId: string,
-  status: "completed" | "handed_off" | "timed_out" | "failed",
+  status: "completed" | "handed_off" | "timed_out" | "failed" | "paused_by_agent",
   reason: string,
 ): Promise<void> {
   await db
@@ -617,6 +619,18 @@ async function advanceFromNodeKey(
   // Defensive cap — if a flow has a cycle (which the validator
   // SHOULD catch but doesn't yet in v1), we bail rather than loop.
   for (let safety = 0; safety < 64; safety += 1) {
+    if (run.conversation_id) {
+      const gate = await checkAutomationAllowed(db, run.conversation_id);
+      if (!gate.allowed) {
+        await logEvent(db, run.id, "error", currentKey, {
+          reason: "human_handling_abort",
+          detail: gate.reason,
+        });
+        await endRun(db, run.id, "paused_by_agent", `human_handling:${gate.reason}`);
+        return { outcome: "completed" };
+      }
+    }
+
     if (!currentKey) {
       await logEvent(db, run.id, "error", null, {
         reason: "next_node_key was null mid-advance",
@@ -923,6 +937,26 @@ export async function dispatchInboundToFlows(
 ): Promise<DispatchInboundResult> {
   const db = supabaseAdmin();
   try {
+    if (input.conversationId) {
+      const gate = await checkAutomationAllowed(db, input.conversationId);
+      if (!gate.allowed) {
+        logReplyControl('flow_cancelled', {
+          conversationId: input.conversationId,
+          accountId: input.accountId,
+          reason: `Flow dispatch blocked: ${gate.reason}`,
+        });
+        const activeRun = await loadActiveRunForContact(
+          db,
+          input.accountId,
+          input.contactId,
+        );
+        if (activeRun) {
+          await endRun(db, activeRun.id, 'paused_by_agent', `human_handling:${gate.reason}`);
+        }
+        return { consumed: false, outcome: 'no_match' };
+      }
+    }
+
     const activeRun = await loadActiveRunForContact(
       db,
       input.accountId,

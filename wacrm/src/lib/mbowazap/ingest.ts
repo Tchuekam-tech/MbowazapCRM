@@ -21,6 +21,7 @@ import { mergeContacts } from '@/lib/contacts/merge';
 import { normalizePhone } from '@/lib/whatsapp/phone-utils';
 import { reopenClosedConversation } from '@/lib/conversations/reopen';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
+import { takeoverConversation } from '@/lib/ai/reply-control';
 import { dispatchInboundLifecycle } from '@/lib/whatsapp/inbound/lifecycle';
 import {
   findOrCreateContact,
@@ -423,8 +424,20 @@ async function ingestMessage(
   const preview = contentText || `[${e.kind}]`;
 
   if (!inbound) {
-    // Davila's reply, or one typed on the paired phone: recorded, never
-    // counted as unread, never fanned out to the reply engines. Only
+    // If sent by a human operator (typed on paired phone or agent),
+    // trigger immediate human takeover so automated AI / Flow replies stop.
+    if (e.origin !== 'davila') {
+      try {
+        await takeoverConversation(db, conversation.id, {
+          reason: `human_reply_${e.origin || 'phone'}`,
+          accountId: account.accountId,
+        });
+      } catch (err) {
+        console.error('[mbowazap/ingest] takeover on human send failed:', err);
+      }
+    }
+
+    // Recorded, never counted as unread, never fanned out to the reply engines. Only
     // moves the preview forward — a late event mustn't bury a newer one.
     const last = conversation.last_message_at
       ? Date.parse(conversation.last_message_at)

@@ -13,6 +13,15 @@ import {
 } from '@/lib/flows/meta-send'
 import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import {
+  checkAutomationAllowed,
+  registerInFlightAi,
+  unregisterInFlightAi,
+} from './reply-control'
+import { logReplyControl } from './reply-control-log'
+import { withTypingIndicator } from './typing-controller'
+import { loadTransport, type WhatsAppTransport } from '@/lib/whatsapp/transport'
+import type { AiUsage } from './types'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -37,6 +46,7 @@ interface DispatchArgs {
  * or slow LLM call must not affect the webhook's 200 to Meta.
  *
  * Eligibility gates (any → silent no-op):
+ *   - Gate 1: conversation automation state (must be 'active', not 'human_handling')
  *   - AI off / auto-reply disabled for the account
  *   - a human agent is assigned (they own the thread)
  *   - auto-reply was disabled for this conversation (prior handoff)
@@ -60,6 +70,18 @@ export async function dispatchInboundToAiReply(
 
   try {
     const db = supabaseAdmin()
+
+    // Gate 1: Authoritative conversation-level automation eligibility check
+    const gate1 = await checkAutomationAllowed(db, conversationId)
+    if (!gate1.allowed) {
+      logReplyControl('automated_send_blocked', {
+        conversationId,
+        accountId,
+        reason: `Gate 1 blocked: ${gate1.reason}`,
+      })
+      return
+    }
+    const baselineVersion = gate1.version
 
     const config = await loadAiConfig(db, accountId)
     if (!config || !config.autoReplyEnabled) return
@@ -112,35 +134,117 @@ export async function dispatchInboundToAiReply(
       return
     }
 
-    // Every gate has passed — we're committed to attempting a reply, so
-    // show the customer "typing…" (and mark their message read) while the
-    // retrieval + LLM round trips run. Meta clears the indicator after
-    // 25 s or when our reply lands, whichever is first, so there's
-    // nothing to undo on the handoff / no-text path. Strictly
-    // best-effort: a failed indicator must never cost us the reply.
+    // Show initial typing indicator on inbound wamid (marks message read on Meta)
     if (inboundMessageId) {
       await showTypingIndicator(db, accountId, inboundMessageId)
     }
 
-    // Ground the reply in the account's knowledge base (best-effort).
-    const knowledge = await retrieveKnowledge(
-      db,
-      accountId,
-      config,
-      latestUserMessage(messages),
-    )
-
-    const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
-      mode: 'auto_reply',
-      knowledge,
+    // Register in-flight AI run for zero-latency cancellation upon human takeover
+    const abortController = new AbortController()
+    registerInFlightAi({
+      conversationId,
+      abortController,
+      capturedVersion: baselineVersion,
+      startedAt: Date.now(),
     })
 
-    const { text, handoff, usage } = await generateReply({
-      config,
-      systemPrompt,
-      messages,
-    })
+    // Resolve recipient phone / lid for typing presence
+    let recipient: string | undefined
+    try {
+      const { data: contact } = await db
+        .from('contacts')
+        .select('phone, wa_lid')
+        .eq('id', contactId)
+        .maybeSingle()
+      recipient = contact?.phone || contact?.wa_lid || undefined
+    } catch (_) {}
+
+    let transport: WhatsAppTransport | null = null
+    try {
+      transport = await loadTransport(db, accountId)
+    } catch (_) {}
+
+    let text: string | null = null
+    let handoff = false
+    let usage: AiUsage | null = null
+
+    try {
+      logReplyControl('ai_generation_started', {
+        conversationId,
+        accountId,
+        version: baselineVersion,
+      })
+
+      // Gate 3 & Generation: Show typing indicator with heartbeat while preparing reply
+      const genResult = await withTypingIndicator({
+        transport,
+        conversationId,
+        recipient,
+        inboundMessageId,
+        signal: abortController.signal,
+        fn: async () => {
+          // Ground the reply in the account's knowledge base (best-effort).
+          const knowledge = await retrieveKnowledge(
+            db,
+            accountId,
+            config,
+            latestUserMessage(messages),
+          )
+
+          if (abortController.signal.aborted) {
+            throw abortController.signal.reason || new Error('Aborted')
+          }
+
+          const systemPrompt = buildSystemPrompt({
+            userPrompt: config.systemPrompt,
+            mode: 'auto_reply',
+            knowledge,
+          })
+
+          return generateReply({
+            config,
+            systemPrompt,
+            messages,
+          })
+        },
+      })
+
+      text = genResult.text
+      handoff = genResult.handoff
+      usage = genResult.usage
+
+      logReplyControl('ai_generation_completed', {
+        conversationId,
+        accountId,
+        version: baselineVersion,
+      })
+    } catch (err) {
+      if (abortController.signal.aborted) {
+        logReplyControl('ai_generation_discarded', {
+          conversationId,
+          accountId,
+          version: baselineVersion,
+          reason: 'aborted_during_generation',
+        })
+        return
+      }
+      console.warn('[ai auto-reply] generation error:', err)
+      return
+    } finally {
+      unregisterInFlightAi(conversationId)
+    }
+
+    // Gate 4: Check if conversation was taken over or version changed while AI was generating
+    const gate4 = await checkAutomationAllowed(db, conversationId, baselineVersion)
+    if (!gate4.allowed) {
+      logReplyControl('ai_generation_discarded', {
+        conversationId,
+        accountId,
+        version: baselineVersion,
+        reason: `Gate 4 invalidated: ${gate4.reason}`,
+      })
+      return
+    }
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
@@ -182,10 +286,7 @@ export async function dispatchInboundToAiReply(
     }
 
     // Atomically claim a reply slot: the cap check + increment happen in
-    // one UPDATE, so concurrent inbounds can never overshoot the cap. If
-    // another inbound just took the last slot, `claimed` is false and we
-    // skip the send. (We consume a slot slightly before the send lands —
-    // fail-safe: under-reply rather than over-reply.)
+    // one UPDATE, so concurrent inbounds can never overshoot the cap.
     const { data: claimed, error: claimErr } = await db.rpc(
       'claim_ai_reply_slot',
       {
@@ -194,15 +295,12 @@ export async function dispatchInboundToAiReply(
       },
     )
     if (claimErr) {
-      // A real error here (vs. losing the cap race) is almost always a
-      // deploy issue — e.g. `claim_ai_reply_slot` not EXECUTE-able by the
-      // service role, or the migration not applied. Log it loudly: a
-      // silent return makes "auto-reply never fires" undiagnosable.
       console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
       return
     }
     if (claimed !== true) return // lost the per-conversation cap race
 
+    // Gate 5: Final outbound send guarded by expectedVersion
     await engineSendText({
       accountId,
       userId: configOwnerUserId,
@@ -210,6 +308,7 @@ export async function dispatchInboundToAiReply(
       contactId,
       text,
       aiGenerated: true,
+      expectedVersion: baselineVersion,
     })
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)

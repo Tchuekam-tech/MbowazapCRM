@@ -127,4 +127,16 @@ export interface WhatsAppTransport {
    * Absent where the provider has no such call.
    */
   sendTyping?(inboundMessageId: string): Promise<void>;
+
+  /**
+   * Set typing presence ('composing' vs 'paused') for the target recipient.
+   * On MboWazap, controls Baileys socket presence.
+   * On Meta, triggers typing indicator.
+   */
+  setTyping?(opts: {
+    to: string;
+    typing: boolean;
+    conversationId?: string;
+    inboundMessageId?: string;
+  }): Promise<void>;
 }

@@ -43,6 +43,7 @@ export const BOT_PATHS = {
   logout: (session: string) => `/bridge/sessions/${session}/logout`,
   brain: (session: string) => `/bridge/sessions/${session}/brain`,
   send: '/bridge/send',
+  presence: '/bridge/presence',
   react: '/bridge/react',
   contactAi: (contact: string) => `/bridge/contacts/${contact}/ai`,
 } as const;
@@ -116,6 +117,14 @@ export interface ContactAiRequest {
   paused: boolean;
   /** Pause length; omitted = until resumed. */
   minutes?: number;
+}
+
+export type PresenceKind = 'composing' | 'paused';
+
+export interface PresenceRequest {
+  session: string;
+  to: BridgeRecipient;
+  presence: PresenceKind;
 }
 
 export type BridgeErrorCode =

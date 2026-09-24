@@ -293,5 +293,21 @@ export function createMbowazapTransport(
         throw toSendError(err);
       }
     },
+
+    async setTyping(opts) {
+      try {
+        const to = toBridgeRecipient(opts.to);
+        await client.presence({
+          session: config.session,
+          to,
+          presence: opts.typing ? 'composing' : 'paused',
+        });
+      } catch (err) {
+        console.warn(
+          '[mbowazap-transport] setTyping failed (ignored):',
+          err instanceof Error ? err.message : err
+        );
+      }
+    },
   };
 }

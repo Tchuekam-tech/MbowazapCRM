@@ -29,6 +29,7 @@ const {
     recipientKey,
     parsePairRequest,
     parseSendRequest,
+    parsePresenceRequest,
     parseReactRequest,
     parseBrainRequest,
     parseContactAiRequest,
@@ -47,6 +48,7 @@ const ROUTES = [
     { method: 'POST', pattern: /^\/bridge\/sessions\/([^/]+)\/logout$/, name: 'logout', param: 'session' },
     { method: 'PUT', pattern: /^\/bridge\/sessions\/([^/]+)\/brain$/, name: 'brain', param: 'session' },
     { method: 'POST', pattern: /^\/bridge\/send$/, name: 'send' },
+    { method: 'POST', pattern: /^\/bridge\/presence$/, name: 'presence' },
     { method: 'POST', pattern: /^\/bridge\/react$/, name: 'react' },
     { method: 'PUT', pattern: /^\/bridge\/contacts\/([^/]+)\/ai$/, name: 'contactAi', param: 'contact' },
 ];
@@ -287,12 +289,25 @@ function createBridgeHandler(overrides = {}) {
                 const until = d.now() + d.handoffMinutes() * 60 * 1000;
                 const current = d.state.getContactPause(contact);
                 if (!current || current < until) d.state.setContactPause(contact, until);
+                d.state.cancelActiveDavilaRun?.(contact, 'agent_send');
             }
 
             return {
                 messageId,
                 timestamp: toUnixSeconds(sent?.messageTimestamp) ?? Math.floor(d.now() / 1000),
             };
+        },
+
+        async presence(body) {
+            const cmd = parsePresenceRequest(body);
+            const sock = requireConnected(cmd.session);
+            const jid = recipientJid(cmd.to);
+            try {
+                await sock.sendPresenceUpdate(cmd.presence, jid);
+            } catch (err) {
+                throw new BridgeError(502, 'presence_failed', err.message || 'WhatsApp presence failed');
+            }
+            return { session: cmd.session, presence: cmd.presence };
         },
 
         async react(body) {

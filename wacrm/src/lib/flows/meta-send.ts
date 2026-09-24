@@ -11,6 +11,8 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
 import { supabaseAdmin } from './admin-client'
+import { checkAutomationAllowed } from '@/lib/ai/reply-control'
+import { logReplyControl } from '@/lib/ai/reply-control-log'
 
 // ------------------------------------------------------------
 // Flows-side Meta sender (interactive variants).
@@ -67,6 +69,8 @@ interface SendTextEngineArgs {
    *  badges it as an AI reply. Only the auto-reply bot sets this;
    *  deterministic Flow/automation sends leave it false. */
   aiGenerated?: boolean
+  /** Expected automation version for concurrency & invalidation control. */
+  expectedVersion?: number
 }
 
 /**
@@ -85,6 +89,19 @@ export async function engineSendText(
   args: SendTextEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
+
+  // Final outbound gate: verify conversation is still eligible for automation
+  if (args.conversationId) {
+    const gate = await checkAutomationAllowed(db, args.conversationId, args.expectedVersion)
+    if (!gate.allowed) {
+      logReplyControl('automated_send_blocked', {
+        conversationId: args.conversationId,
+        accountId: args.accountId,
+        reason: `engineSendText blocked: ${gate.reason}`,
+      })
+      throw new Error(`automated send blocked: ${gate.reason}`)
+    }
+  }
 
   const { data: contact, error: contactErr } = await db
     .from('contacts')
@@ -194,6 +211,19 @@ export async function engineSendMedia(
   args: SendMediaEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
+
+  // Final outbound gate: verify conversation is still eligible for automation
+  if (args.conversationId) {
+    const gate = await checkAutomationAllowed(db, args.conversationId)
+    if (!gate.allowed) {
+      logReplyControl('automated_send_blocked', {
+        conversationId: args.conversationId,
+        accountId: args.accountId,
+        reason: `engineSendMedia blocked: ${gate.reason}`,
+      })
+      throw new Error(`automated send blocked: ${gate.reason}`)
+    }
+  }
 
   const { data: contact, error: contactErr } = await db
     .from('contacts')
@@ -342,6 +372,19 @@ async function sendInteractiveViaMeta(
   input: SendInput,
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
+
+  // Final outbound gate: verify conversation is still eligible for automation
+  if (input.conversationId) {
+    const gate = await checkAutomationAllowed(db, input.conversationId)
+    if (!gate.allowed) {
+      logReplyControl('automated_send_blocked', {
+        conversationId: input.conversationId,
+        accountId: input.accountId,
+        reason: `sendInteractiveViaMeta blocked: ${gate.reason}`,
+      })
+      throw new Error(`automated send blocked: ${gate.reason}`)
+    }
+  }
 
   // Scope the contact + whatsapp_config lookups by account_id —
   // same defense-in-depth rationale as automations/meta-send.ts.

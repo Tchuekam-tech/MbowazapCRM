@@ -120,5 +120,11 @@ export function createMetaTransport(
     async sendTyping(inboundMessageId) {
       await sendTypingIndicator({ ...creds, messageId: inboundMessageId });
     },
+
+    async setTyping(opts) {
+      if (opts.typing && opts.inboundMessageId) {
+        await sendTypingIndicator({ ...creds, messageId: opts.inboundMessageId });
+      }
+    },
   };
 }

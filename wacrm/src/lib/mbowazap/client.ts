@@ -18,6 +18,8 @@ import {
   type ContactAiRequest,
   type PairRequest,
   type PairResult,
+  type PresenceKind,
+  type PresenceRequest,
   type ReactRequest,
   type SendRequest,
   type SendResult,
@@ -79,6 +81,9 @@ export interface MbowazapClient {
     contact: string,
     request: ContactAiRequest
   ): Promise<{ contact: string; pausedUntil: number | null }>;
+  presence(
+    request: PresenceRequest
+  ): Promise<{ session: string; presence: PresenceKind }>;
 }
 
 type Json = Record<string, unknown>;
@@ -220,6 +225,16 @@ export function createMbowazapClient({
       return call(
         'PUT',
         BOT_PATHS.contactAi(contact),
+        request,
+        DEFAULT_TIMEOUT_MS
+      );
+    },
+
+    presence: async (request) => {
+      assertSession(request.session);
+      return call(
+        'POST',
+        BOT_PATHS.presence,
         request,
         DEFAULT_TIMEOUT_MS
       );

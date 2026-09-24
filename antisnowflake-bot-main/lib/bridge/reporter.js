@@ -278,6 +278,14 @@ function createReporter({
         let origin = 'customer';
         if (isFromMe) {
             origin = isDavilaSent(messageId) ? 'davila' : 'phone';
+            if (origin === 'phone') {
+                const contact = chat.phone || chat.lid;
+                if (contact) {
+                    const until = now() + (Number(process.env.MBOWAZAP_HANDOFF_MINUTES) || 120) * 60 * 1000;
+                    state.setContactPause(contact, until);
+                    state.cancelActiveDavilaRun?.(contact, 'phone_outbound_detected');
+                }
+            }
         }
 
         let mediaPayload = undefined;

@@ -207,6 +207,16 @@ function buildEvent(type, payload, now = Date.now(), customEventId = null) {
     return { ...payload, eventId, type, at: now };
 }
 
+const PRESENCE_KINDS = ['composing', 'paused'];
+
+function parsePresenceRequest(raw) {
+    const body = requireRecord(raw);
+    const session = assertSession(body.session);
+    const to = parseRecipient(body.to);
+    const presence = requireOneOf(body, 'presence', PRESENCE_KINDS);
+    return { session, to, presence };
+}
+
 module.exports = {
     TEMP_QR_SESSION,
     SESSION_PATTERN,
@@ -214,6 +224,7 @@ module.exports = {
     MESSAGE_ID_PATTERN,
     SEND_KINDS,
     SEND_ORIGINS,
+    PRESENCE_KINDS,
     EVENT_TYPES,
     BridgeError,
     assertSession,
@@ -222,6 +233,7 @@ module.exports = {
     recipientKey,
     parsePairRequest,
     parseSendRequest,
+    parsePresenceRequest,
     parseReactRequest,
     parseBrainRequest,
     parseContactAiRequest,

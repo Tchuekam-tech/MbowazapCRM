@@ -19,9 +19,13 @@ function fakeSocket({ phone = SESSION, registered = true, open = true } = {}) {
         authState: { creds: { registered } },
         user: registered ? { id: `${phone}:7@s.whatsapp.net`, name: 'Tchuek-Tech' } : undefined,
         sent: [],
+        presenceUpdates: [],
         failSend: false,
         loggedOut: false,
         ended: null,
+        async sendPresenceUpdate(presence, jid) {
+            this.presenceUpdates.push({ presence, jid });
+        },
         async sendMessage(jid, content, options) {
             if (this.failSend) throw new Error('socket hiccup');
             this.sent.push({ jid, content, options });
@@ -351,4 +355,68 @@ test('oversized bodies are refused with 413', async (t) => {
     const { status, json } = await call('POST', '/bridge/send', { text: 'x'.repeat(600 * 1024) });
     assert.equal(status, 413);
     assert.equal(json.error.code, 'payload_too_large');
+});
+
+test('presence endpoint sets composing and paused on Baileys socket', async (t) => {
+    const { call, sockets } = await startBridge(t);
+    const sock = fakeSocket();
+    sockets.set(SESSION, sock);
+
+    const res1 = await call('POST', '/bridge/presence', {
+        session: SESSION,
+        to: { phone: CUSTOMER },
+        presence: 'composing',
+    });
+    assert.equal(res1.status, 200);
+    assert.equal(res1.json.ok, true);
+    assert.equal(res1.json.presence, 'composing');
+    assert.deepEqual(sock.presenceUpdates[0], {
+        presence: 'composing',
+        jid: `${CUSTOMER}@s.whatsapp.net`,
+    });
+
+    const res2 = await call('POST', '/bridge/presence', {
+        session: SESSION,
+        to: { phone: CUSTOMER },
+        presence: 'paused',
+    });
+    assert.equal(res2.status, 200);
+    assert.equal(res2.json.presence, 'paused');
+    assert.deepEqual(sock.presenceUpdates[1], {
+        presence: 'paused',
+        jid: `${CUSTOMER}@s.whatsapp.net`,
+    });
+
+    // Invalid presence kind refused
+    const resBad = await call('POST', '/bridge/presence', {
+        session: SESSION,
+        to: { phone: CUSTOMER },
+        presence: 'invalid_status',
+    });
+    assert.equal(resBad.status, 400);
+});
+
+test('agent send and contact AI pause cancel in-flight Davila run immediately', async (t) => {
+    const { call, sockets, state } = await startBridge(t);
+    const sock = fakeSocket();
+    sockets.set(SESSION, sock);
+
+    let aborted = false;
+    let stoppedPresence = false;
+    state.registerActiveDavilaRun(CUSTOMER, {
+        abort: () => { aborted = true; },
+        stopPresence: () => { stoppedPresence = true; },
+    });
+
+    // Agent send triggers cancellation
+    const res = await call('POST', '/bridge/send', {
+        session: SESSION,
+        to: { phone: CUSTOMER },
+        kind: 'text',
+        origin: 'agent',
+        text: 'Hello from human agent',
+    });
+    assert.equal(res.status, 200);
+    assert.equal(aborted, true);
+    assert.equal(stoppedPresence, true);
 });

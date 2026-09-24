@@ -448,7 +448,15 @@ async function handleAutoReply(sock, chatId, senderId, message, settingsParam) {
         }
     }
 
+    const contactKey = bridgeState.contactKeyFromJid(senderId);
+    const runHandle = {
+        cancelled: false,
+        stopPresence: () => safePresence(sock, 'paused', chatId),
+    };
+    bridgeState.registerActiveDavilaRun(contactKey, runHandle);
+
     try {
+        if (runHandle.cancelled || !isDavilaAllowed(sock, senderId)) return;
 
         // Process Voice Notes
         if (hasAudio) {
@@ -520,6 +528,10 @@ async function handleAutoReply(sock, chatId, senderId, message, settingsParam) {
         const readDelayMs = Math.min(3500, Math.max(1500, (userMessage?.length || 10) * 30));
         console.log(chalk.cyan(`[AutoReply] Simulating reading time (${(readDelayMs / 1000).toFixed(1)}s) for ${senderId.split('@')[0]}...`));
         await new Promise(resolve => setTimeout(resolve, readDelayMs));
+        if (runHandle.cancelled || !isDavilaAllowed(sock, senderId)) {
+            console.log(`[AutoReply] ⏸️ Davila cancelled after reading delay for ${senderId.split('@')[0]}.`);
+            return;
+        }
 
         const summaryName = memory.name || 'unknown';
         const summaryBusiness = memory.businessType || 'unknown';
@@ -553,7 +565,17 @@ Never send catalog images if catalogImagesSent is true.`;
             .replace('{HISTORY}', `${contactSummary}\n\n${historyText}`)
             .replace('{MESSAGE}', userMessage);
 
+        if (runHandle.cancelled || !isDavilaAllowed(sock, senderId)) {
+            console.log(`[AutoReply] ⏸️ Davila cancelled before LLM for ${senderId.split('@')[0]}.`);
+            return;
+        }
+
         const aiResponse = await getAIResponse(userMessage, personalitySystem);
+
+        if (runHandle.cancelled || !isDavilaAllowed(sock, senderId)) {
+            console.log(`[AutoReply] ⏸️ Davila cancelled after LLM for ${senderId.split('@')[0]} — output discarded.`);
+            return;
+        }
 
         // Store exchange in history & save
         if (aiResponse && !aiResponse.includes('unavailable')) {
@@ -628,14 +650,22 @@ Never send catalog images if catalogImagesSent is true.`;
         // Human-realistic Typing Burst (2.0s - 5.5s right before message dispatch)
         const typingDurationMs = Math.min(5500, Math.max(2000, Math.floor((replyText?.length || 50) * 24)));
         await safePresence(sock, 'composing', chatId);
-        await new Promise(resolve => setTimeout(resolve, typingDurationMs));
+        const typingStart = Date.now();
+        while (Date.now() - typingStart < typingDurationMs) {
+            if (runHandle.cancelled || !isDavilaAllowed(sock, senderId)) {
+                await safePresence(sock, 'paused', chatId);
+                console.log(`[AutoReply] ⏸️ Davila typing cancelled mid-burst for ${senderId.split('@')[0]}.`);
+                return;
+            }
+            await new Promise(r => setTimeout(r, 100));
+        }
         await safePresence(sock, 'paused', chatId);
 
         // Global Token Bucket Slot (Throttle bursts across all chats)
         await securityManager.acquireGlobalSendSlot();
 
         // Re-check: an agent may have taken over from wacrm while the reply was being generated.
-        if (!isDavilaAllowed(sock, senderId)) {
+        if (runHandle.cancelled || !isDavilaAllowed(sock, senderId)) {
             console.log(`[AutoReply] ⏸️ Davila reply for ${senderId.split('@')[0]} dropped — handed over via wacrm.`);
             return;
         }
@@ -729,6 +759,10 @@ Never send catalog images if catalogImagesSent is true.`;
 
     } catch (err) {
         console.error('[AutoReply] AI failure:', err.message);
+        if (runHandle.cancelled || !isDavilaAllowed(sock, senderId)) {
+            console.log(`[AutoReply] ⏸️ Davila error suppressed because takeover/cancellation is active for ${senderId.split('@')[0]}.`);
+            return;
+        }
         try {
             await safePresence(sock, 'available', chatId);
             await sock.sendMessage(chatId, {
@@ -739,6 +773,9 @@ Never send catalog images if catalogImagesSent is true.`;
         } catch (fallbackErr) {
             console.error('[AutoReply] Fallback also failed:', fallbackErr.message);
         }
+    } finally {
+        bridgeState.unregisterActiveDavilaRun(contactKey);
+        await safePresence(sock, 'paused', chatId);
     }
 }
 

@@ -33,6 +33,7 @@ import {
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { takeoverConversation } from '@/lib/ai/reply-control';
 import {
   phoneVariants,
   isRecipientNotAllowedError,
@@ -215,6 +216,19 @@ export async function sendMessageToConversation(
   }
 
   const contact = conversation.contact;
+
+  // Human takeover: mark conversation HUMAN_HANDLING, increment automation_version,
+  // abort any in-flight AI generation, stop typing, and pause flow runs.
+  // Must execute BEFORE sending the message to WhatsApp so automation cannot produce
+  // another response concurrently.
+  try {
+    await takeoverConversation(db, conversationId, {
+      reason: 'agent_sent_message',
+      accountId,
+    });
+  } catch (err) {
+    console.error('[send-message] takeoverConversation failed:', err);
+  }
 
   // The account's transport: Meta Cloud API or MboWazap.
   const transport = await loadTransport(db, accountId);
@@ -458,29 +472,6 @@ export async function sendMessageToConversation(
       updated_at: new Date().toISOString(),
     })
     .eq('id', conversationId);
-
-  // Pause any active Flow run for this contact — the agent stepping in
-  // is the strongest "yield, human is here" signal. Best-effort.
-  try {
-    const { error: pauseErr } = await supabaseAdmin()
-      .from('flow_runs')
-      .update({
-        status: 'paused_by_agent',
-        ended_at: new Date().toISOString(),
-        end_reason: 'agent_replied',
-      })
-      .eq('account_id', accountId)
-      .eq('contact_id', contact.id)
-      .eq('status', 'active');
-    if (pauseErr) {
-      console.error('[flows] pause-on-agent-send failed:', pauseErr.message);
-    }
-  } catch (err) {
-    console.error(
-      '[flows] pause-on-agent-send threw:',
-      err instanceof Error ? err.message : err
-    );
-  }
 
   return { messageId: messageRecord.id, whatsappMessageId: waMessageId };
 }

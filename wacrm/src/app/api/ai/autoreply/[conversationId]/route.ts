@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { takeoverConversation, resumeConversation } from '@/lib/ai/reply-control'
+import { createMbowazapClient } from '@/lib/mbowazap/client'
+import { readMbowazapEnv } from '@/lib/mbowazap/env'
 
 type Params = { params: Promise<{ conversationId: string }> }
 
@@ -62,38 +65,57 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     }
 
-    const update: Record<string, unknown> = { ai_autoreply_disabled: paused }
-
     if (paused) {
-      if (assignToMe) update.assigned_agent_id = userId
+      await takeoverConversation(supabase, conversationId, {
+        reason: 'manual_takeover',
+        handlerId: assignToMe ? userId : undefined,
+        accountId,
+      })
+      if (assignToMe) {
+        await supabase
+          .from('conversations')
+          .update({ assigned_agent_id: userId })
+          .eq('id', conversationId)
+      }
     } else {
-      // Resuming hands the thread *back to the bot*. Clear the pause and
-      // the handoff note, and — crucially — release ANY assignment, not
-      // just the caller's own: the auto-reply eligibility gate stands
-      // down whenever a human is assigned, so leaving a stale assignee
-      // (e.g. the agent a prior handoff routed to) would silently keep
-      // the bot muted and make "Resume AI" a no-op. This is the explicit
-      // choice to let the bot own the thread again.
-      update.assigned_agent_id = null
-      // Give the bot a fresh reply budget on this thread. This is a
-      // deliberate, manual, rate-limited action (not automatable), so it
-      // can't be used to bypass the per-conversation cap at scale — it's
-      // a human choosing to re-engage the assistant.
-      update.ai_reply_count = 0
-      update.ai_handoff_summary = null
+      await resumeConversation(supabase, conversationId, {
+        accountId,
+        handlerId: userId,
+      })
     }
 
-    const { error: upErr } = await supabase
-      .from('conversations')
-      .update(update)
-      .eq('id', conversationId)
-      .eq('account_id', accountId)
-    if (upErr) {
-      console.error('[ai/autoreply] update error:', upErr)
-      return NextResponse.json(
-        { error: 'Failed to update conversation' },
-        { status: 500 },
-      )
+    // Best-effort: sync with MboWazap bot if paired
+    try {
+      const { data: waCfg } = await supabase
+        .from('whatsapp_config')
+        .select('provider, mbowazap_session')
+        .eq('account_id', accountId)
+        .maybeSingle()
+
+      if (waCfg?.provider === 'mbowazap' && waCfg?.mbowazap_session) {
+        const { data: convData } = await supabase
+          .from('conversations')
+          .select('contact_id, contacts:contacts!contact_id(phone, wa_lid)')
+          .eq('id', conversationId)
+          .maybeSingle()
+
+        const contact = convData?.contacts as { phone?: string | null; wa_lid?: string | null } | null
+        const rawTarget = contact?.phone || contact?.wa_lid
+        const targetNumber = rawTarget ? rawTarget.replace(/\D/g, '') : null
+        if (targetNumber) {
+          const envResult = readMbowazapEnv()
+          if (envResult.ok) {
+            const client = createMbowazapClient(envResult.env)
+            await client.setContactAi(targetNumber, {
+              session: waCfg.mbowazap_session,
+              paused,
+              minutes: paused && typeof body.minutes === 'number' ? body.minutes : undefined,
+            })
+          }
+        }
+      }
+    } catch (botErr) {
+      console.warn('[ai/autoreply] bot sync error (continuing):', botErr)
     }
 
     return NextResponse.json({ success: true, paused })

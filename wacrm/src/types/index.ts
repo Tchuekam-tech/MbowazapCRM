@@ -168,6 +168,8 @@ export interface ContactNote {
 
 export type ConversationStatus = 'open' | 'pending' | 'closed';
 
+export type AutomationState = 'active' | 'human_handling';
+
 export interface Conversation {
   id: string;
   user_id: string;
@@ -192,6 +194,21 @@ export interface Conversation {
   ai_autoreply_disabled?: boolean;
   ai_reply_count?: number;
   ai_handoff_summary?: string | null;
+  /**
+   * Authoritative Reply Engine Control state (migration 045):
+   *  - `automation_state`: 'active' | 'human_handling'
+   *  - `automation_version`: monotonically increasing integer incremented on each takeover/resume
+   *  - `human_handled_at`: timestamp of last human takeover
+   *  - `human_handler_id`: user ID of agent who took over
+   *  - `human_handling_reason`: reason string for the takeover
+   *  - `ai_paused_until`: optional future timestamp for temporary handoffs
+   */
+  automation_state?: AutomationState;
+  automation_version?: number;
+  human_handled_at?: string | null;
+  human_handler_id?: string | null;
+  human_handling_reason?: string | null;
+  ai_paused_until?: string | null;
 }
 
 // ============================================================

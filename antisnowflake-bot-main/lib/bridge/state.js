@@ -124,6 +124,30 @@ function createBridgeState({
         return session ? isDavilaEnabled(session) : true;
     }
 
+    const activeDavilaRuns = new Map(); // contact -> { abort, stopPresence, cancelled: boolean }
+
+    function registerActiveDavilaRun(contact, handle) {
+        activeDavilaRuns.set(contact, handle);
+    }
+
+    function unregisterActiveDavilaRun(contact) {
+        activeDavilaRuns.delete(contact);
+    }
+
+    function cancelActiveDavilaRun(contact, reason = 'human_takeover') {
+        const handle = activeDavilaRuns.get(contact);
+        if (!handle) return false;
+        activeDavilaRuns.delete(contact);
+        handle.cancelled = true;
+        if (typeof handle.abort === 'function') {
+            try { handle.abort(new Error(`Cancelled: ${reason}`)); } catch (_) {}
+        }
+        if (typeof handle.stopPresence === 'function') {
+            try { handle.stopPresence(); } catch (_) {}
+        }
+        return true;
+    }
+
     function loadPauses() {
         if (!pauses) pauses = new Map(Object.entries(readJson(pausesFile, {})));
         return pauses;
@@ -137,8 +161,12 @@ function createBridgeState({
         for (const [key, pausedUntil] of map) {
             if (pausedUntil <= t) map.delete(key);
         }
-        if (until === null || until <= t) map.delete(contact);
-        else map.set(contact, until);
+        if (until === null || until <= t) {
+            map.delete(contact);
+        } else {
+            map.set(contact, until);
+            cancelActiveDavilaRun(contact, 'contact_paused');
+        }
         writeJsonAtomic(pausesFile, Object.fromEntries(map));
     }
 
@@ -165,6 +193,9 @@ function createBridgeState({
         setContactPause,
         getContactPause,
         isContactPaused,
+        registerActiveDavilaRun,
+        unregisterActiveDavilaRun,
+        cancelActiveDavilaRun,
     };
 }
 
