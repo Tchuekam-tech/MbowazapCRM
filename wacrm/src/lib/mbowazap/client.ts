@@ -50,6 +50,61 @@ export class MbowazapBridgeError extends Error {
   }
 }
 
+/**
+ * The HTTP status and message a wacrm API route should answer with when a
+ * bridge call fails. The bot's own status is not passed through: its 401
+ * means the shared secret is wrong, not that the browser is signed out.
+ */
+export function describeBridgeError(err: MbowazapBridgeError): {
+  status: number;
+  message: string;
+} {
+  switch (err.code) {
+    case 'network_error':
+      return {
+        status: 502,
+        message: `${err.message}. Check MBOWAZAP_BOT_URL and that TchuekBot is running.`,
+      };
+    case 'timeout':
+      return {
+        status: 504,
+        message: `${err.message}. It may be restarting — try again in a moment.`,
+      };
+    case 'bad_response':
+      return {
+        status: 502,
+        message: `${err.message}. TchuekBot may be down, or MBOWAZAP_BOT_URL points at another service.`,
+      };
+    case 'unauthorized':
+      return {
+        status: 502,
+        message:
+          'TchuekBot rejected the request signature: MBOWAZAP_SECRET must be identical in wacrm and TchuekBot.',
+      };
+    case 'unsupported_protocol':
+      return {
+        status: 502,
+        message: 'wacrm and TchuekBot run different bridge protocol versions. Update both.',
+      };
+    case 'bridge_not_configured':
+      return {
+        status: 503,
+        message: 'MBOWAZAP_SECRET is not set on TchuekBot (min 32 characters).',
+      };
+    case 'already_connected':
+      return { status: 409, message: err.message };
+    case 'invalid_request':
+      return { status: 400, message: err.message };
+    case 'pairing_pending':
+      return {
+        status: 503,
+        message: 'TchuekBot is still preparing the WhatsApp QR code. Try again in a few seconds.',
+      };
+    default:
+      return { status: 502, message: err.message };
+  }
+}
+
 /** Status reads and switches are quick. */
 export const DEFAULT_TIMEOUT_MS = 15_000;
 /**

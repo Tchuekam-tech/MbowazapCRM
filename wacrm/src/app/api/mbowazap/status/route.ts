@@ -73,7 +73,11 @@ export async function GET(req: NextRequest) {
           liveTelemetry = await client.getSession(config.mbowazap_session);
           if (liveTelemetry?.status === 'reconnecting') {
             normalizedStatus = 'connecting';
-          } else if (liveTelemetry?.status === 'disconnected') {
+          } else if (
+            liveTelemetry?.status === 'disconnected' ||
+            // The bot only holds an unlinked pairing socket for the number.
+            liveTelemetry?.status === 'pairing'
+          ) {
             normalizedStatus = 'disconnected';
           }
         } catch {
