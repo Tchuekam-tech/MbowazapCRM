@@ -47,6 +47,7 @@ vi.mock('@/lib/mbowazap/client', async (importOriginal) => {
 });
 
 import { GET as getSession } from './session/route';
+import { GET as getStatus } from './status/route';
 import { POST as postPair } from './pair/route';
 import { GET as getPoll } from './poll/route';
 import { PUT as putBrain } from './brain/route';
@@ -161,7 +162,21 @@ describe('MboWazap Gateway Control Routes', () => {
       expect(json.error).toMatch(/Phone number must be between 6 and 15 digits/);
     });
 
+    it('rejects pairing when already connected', async () => {
+      const req = new NextRequest('http://localhost/api/mbowazap/pair', {
+        method: 'POST',
+        body: JSON.stringify({ method: 'code', phone: '+237 653 683 174' }),
+      });
+      const res = await postPair(req);
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.code).toBe('already_connected');
+    });
+
     it('successfully initiates pairing code with TchuekBot', async () => {
+      storedConfig!.mbowazap_state = 'disconnected';
+      storedConfig!.mbowazap_session = null;
+
       h.clientMock.pair.mockResolvedValueOnce({
         method: 'code',
         code: 'ABCD-1234',
@@ -183,6 +198,9 @@ describe('MboWazap Gateway Control Routes', () => {
     });
 
     it('successfully initiates QR pairing with TchuekBot', async () => {
+      storedConfig!.mbowazap_state = 'disconnected';
+      storedConfig!.mbowazap_session = null;
+
       h.clientMock.pair.mockResolvedValueOnce({
         method: 'qr',
         qr: 'data:image/png;base64,mockqr',
@@ -272,6 +290,50 @@ describe('MboWazap Gateway Control Routes', () => {
       expect(h.clientMock.logout).toHaveBeenCalledWith('237653683174');
       expect(storedConfig?.mbowazap_state).toBe('disconnected');
       expect(storedConfig?.mbowazap_session).toBeNull();
+    });
+  });
+
+  describe('GET /api/mbowazap/status', () => {
+    it('returns normalized connected status when linked', async () => {
+      h.clientMock.getSession.mockResolvedValueOnce({
+        session: '237653683174',
+        status: 'connected',
+        davila: true,
+      });
+
+      const req = new NextRequest('http://localhost/api/mbowazap/status');
+      const res = await getStatus(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.ok).toBe(true);
+      expect(json.status).toBe('connected');
+      expect(json.phone).toBe('+237653683174');
+      expect(json.provider).toBe('mbowazap');
+    });
+
+    it('returns disconnected when provider is not mbowazap', async () => {
+      storedConfig = { ...storedConfig, provider: 'meta' };
+      const req = new NextRequest('http://localhost/api/mbowazap/status');
+      const res = await getStatus(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.ok).toBe(true);
+      expect(json.status).toBe('disconnected');
+    });
+
+    it('normalizes expired pairing sessions', async () => {
+      storedConfig = {
+        ...storedConfig,
+        mbowazap_state: 'pairing',
+        updated_at: new Date(Date.now() - 150_000).toISOString(),
+      };
+      const req = new NextRequest('http://localhost/api/mbowazap/status');
+      const res = await getStatus(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.ok).toBe(true);
+      expect(json.status).toBe('expired');
+      expect(json.failureReason).toContain('expired');
     });
   });
 });

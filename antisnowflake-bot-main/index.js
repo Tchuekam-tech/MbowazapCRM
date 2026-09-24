@@ -630,18 +630,16 @@ async function requestPairingCodeForNumber(phoneNumber) {
     if (!sock) {
         console.log(chalk.cyan(`[pairing] Spawning production bot socket for ${cleanNumber}...`));
         sock = await startXeonBotInc(cleanNumber);
+        // Brief 1.5s pause to allow Baileys WebSocket handshake
+        await new Promise(r => setTimeout(r, 1500));
     }
 
-    // 3. Wait up to 6 seconds for initial code generation if buffer is pending
-    for (let i = 0; i < 12; i++) {
-        if (sock.currentPairingCode && sock.pairingCodeTimestamp && (Date.now() - sock.pairingCodeTimestamp < 50_000)) {
-            return { code: sock.currentPairingCode, isConnected: false };
-        }
-        await new Promise(r => setTimeout(r, 500));
-        sock = sessionManager.getSocket(cleanNumber) || sock;
+    // 3. If socket now has a fresh code, return it
+    if (sock?.currentPairingCode && sock?.pairingCodeTimestamp && (Date.now() - sock.pairingCodeTimestamp < 50_000)) {
+        return { code: sock.currentPairingCode, isConnected: false };
     }
 
-    // 4. Fallback: Request directly on the socket
+    // 4. Request directly on the socket
     try {
         let code = await sock.requestPairingCode(cleanNumber);
         code = code?.match(/.{1,4}/g)?.join('-') || code;
@@ -650,6 +648,17 @@ async function requestPairingCodeForNumber(phoneNumber) {
         console.log(chalk.green(`[pairing] Generated direct pairing code for ${cleanNumber}: ${code}`));
         return { code, isConnected: false };
     } catch (err) {
+        // If socket was still establishing connection, retry once after 2 seconds
+        if (err.message && (err.message.includes('Connection') || err.message.includes('not open') || err.message.includes('closed'))) {
+            console.log(chalk.yellow(`[pairing] Retrying pairing code request for ${cleanNumber} after socket warmup...`));
+            await new Promise(r => setTimeout(r, 2000));
+            sock = sessionManager.getSocket(cleanNumber) || sock;
+            let code = await sock.requestPairingCode(cleanNumber);
+            code = code?.match(/.{1,4}/g)?.join('-') || code;
+            sock.currentPairingCode = code;
+            sock.pairingCodeTimestamp = Date.now();
+            return { code, isConnected: false };
+        }
         throw new Error(`Failed to request pairing code: ${err.message}`);
     }
 }

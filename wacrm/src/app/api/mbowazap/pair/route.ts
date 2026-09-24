@@ -4,6 +4,10 @@ import { readMbowazapEnv } from '@/lib/mbowazap/env';
 import { createMbowazapClient, MbowazapBridgeError } from '@/lib/mbowazap/client';
 import { SESSION_PATTERN } from '@/lib/mbowazap/protocol';
 
+export const dynamic = 'force-dynamic';
+
+const PAIRING_EXPIRY_SECONDS = 120;
+
 export async function POST(req: NextRequest) {
   try {
     const ctx = await requireRole('admin');
@@ -49,8 +53,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Check if account already has an active connected session
+    const { data: existingConfig } = await ctx.supabase
+      .from('whatsapp_config')
+      .select('mbowazap_state, mbowazap_session, mbowazap_pairing_ref, updated_at')
+      .eq('account_id', ctx.accountId)
+      .maybeSingle();
+
+    if (existingConfig?.mbowazap_state === 'connected' && existingConfig.mbowazap_session) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `WhatsApp is already connected for number +${existingConfig.mbowazap_session}. Disconnect first before initiating a new pairing.`,
+          code: 'already_connected',
+        },
+        { status: 409 }
+      );
+    }
+
     const pairingRef = crypto.randomUUID();
-    const nowIso = new Date().toISOString();
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const expiresAt = new Date(now.getTime() + PAIRING_EXPIRY_SECONDS * 1000).toISOString();
 
     const { error: upsertError } = await ctx.supabase
       .from('whatsapp_config')
@@ -78,30 +102,44 @@ export async function POST(req: NextRequest) {
     }
 
     const client = createMbowazapClient(envResult.env);
+    let pairResult;
+
     try {
-      const pairResult = await client.pair(
+      pairResult = await client.pair(
         method === 'code'
           ? { pairingRef, method: 'code', phone: cleanPhone! }
           : { pairingRef, method: 'qr' }
       );
-
-      return NextResponse.json({
-        ok: true,
-        method: pairResult.method,
-        code: 'code' in pairResult ? pairResult.code : undefined,
-        qr: 'qr' in pairResult ? pairResult.qr : undefined,
-        session: pairResult.session,
-        pairingRef,
-      });
-    } catch (err) {
-      if (err instanceof MbowazapBridgeError) {
+    } catch (firstErr) {
+      // If QR generation is pending on a newly initialized socket, wait 2.5s and retry once
+      if (
+        method === 'qr' &&
+        firstErr instanceof MbowazapBridgeError &&
+        firstErr.code === 'pairing_pending'
+      ) {
+        await new Promise((r) => setTimeout(r, 2500));
+        pairResult = await client.pair({ pairingRef, method: 'qr' });
+      } else if (firstErr instanceof MbowazapBridgeError) {
         return NextResponse.json(
-          { ok: false, error: err.message, code: err.code },
-          { status: err.httpStatus || 502 }
+          { ok: false, error: firstErr.message, code: firstErr.code },
+          { status: firstErr.httpStatus || 502 }
         );
+      } else {
+        throw firstErr;
       }
-      throw err;
     }
+
+    return NextResponse.json({
+      ok: true,
+      status: 'pairing',
+      method: pairResult.method,
+      code: 'code' in pairResult ? pairResult.code : undefined,
+      qr: 'qr' in pairResult ? pairResult.qr : undefined,
+      session: pairResult.session,
+      pairingRef,
+      expiresAt,
+      expiresInSeconds: PAIRING_EXPIRY_SECONDS,
+    });
   } catch (err) {
     return toErrorResponse(err);
   }
