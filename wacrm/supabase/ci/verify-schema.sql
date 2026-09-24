@@ -75,6 +75,29 @@ BEGIN
       'messages.error_code/error_title/error_details are missing — migration 042 did not apply';
   END IF;
 
+  -- 046 locks the reply-engine RPCs down. Both halves regress silently
+  -- (a CREATE OR REPLACE back to SECURITY DEFINER, or a broad GRANT),
+  -- and either one re-opens cross-tenant writes through PostgREST.
+  IF EXISTS (
+    SELECT 1 FROM pg_proc
+    WHERE pronamespace = 'public'::regnamespace
+      AND proname IN ('takeover_conversation_automation', 'resume_conversation_automation')
+      AND prosecdef
+  ) THEN
+    RAISE EXCEPTION
+      'takeover_/resume_conversation_automation must be SECURITY INVOKER — migration 046 did not apply';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_proc
+    WHERE pronamespace = 'public'::regnamespace
+      AND proname IN ('takeover_conversation_automation', 'resume_conversation_automation',
+                      'claim_ai_reply_slot', 'claim_ai_reply_slot_v2')
+      AND has_function_privilege('anon', oid, 'EXECUTE')
+  ) THEN
+    RAISE EXCEPTION
+      'anon can still EXECUTE a reply-engine RPC — migration 046 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;
