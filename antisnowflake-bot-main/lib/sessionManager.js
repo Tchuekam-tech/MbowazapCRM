@@ -56,6 +56,22 @@ function isSocketOpen(sock) {
     return ws.readyState === 1;
 }
 
+/**
+ * Whether these Baileys credentials belong to a linked companion device.
+ * `creds.registered` alone is not enough: Baileys only sets it in the
+ * pairing-code flow, so a QR-linked device keeps `registered: false`
+ * forever. Both flows store the signed device identity (`creds.account`)
+ * when WhatsApp confirms the link (pair-success).
+ */
+function isLinkedCreds(creds) {
+    return Boolean(creds?.registered || creds?.account);
+}
+
+/** Whether the socket belongs to a linked device (see isLinkedCreds). */
+function isLinked(sock) {
+    return isLinkedCreds(sock?.authState?.creds);
+}
+
 /** Whether the socket's WebSocket is closing or closed (i.e. dead, not merely still connecting). */
 function isSocketClosed(sock) {
     const ws = sock?.ws;
@@ -114,6 +130,8 @@ module.exports = {
     getAllSockets,
     findSocketForClient,
     normalizeSessionKey,
+    isLinkedCreds,
+    isLinked,
     isSocketOpen,
     isSocketClosed
 };

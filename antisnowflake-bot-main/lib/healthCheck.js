@@ -103,7 +103,7 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
 
             const cleanNumber = number.replace(/[^0-9]/g, '');
             const sock = sessionManager.getSocket(cleanNumber);
-            const isConnected = !!(sock?.user && sock?.authState?.creds?.registered);
+            const isConnected = !!(sock?.user && sessionManager.isLinked(sock));
 
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
