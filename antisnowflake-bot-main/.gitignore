@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.bak
+
+# Runtime data
+tmp/
+temp/
+
+# Session & Config files
+session/
+data/sessions/
+data/config/
+data/session_backup/
+
+# Runtime DB and state files
+baileys_store.json
+data/aiMemory.json
+data/memory/
+data/botSentIds.json
+data/messageCount.json
+data/replyCounts.json
+data/salesTracking.json
+data/securityTracking.json
+data/optout_contacts.json
+data/processedIds.json
+data/warmup_state.json
+data/bridge/
+scratch/
+*Test.js
+pairing/
+
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

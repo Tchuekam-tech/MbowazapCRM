@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: mbowazap-bot
+    runtime: docker
+    plan: free
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: NODE_ENV
+        value: production

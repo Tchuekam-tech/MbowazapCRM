@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MboWazap — Console d'Administration</title>
+  <meta name="description" content="Gérez et configurez vos bots de vente WhatsApp MboWazap de manière autonome.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root {
+      --bg: #07070a;
+      --surface: #0e0e15;
+      --surface-card: #141420;
+      --surface-card-hover: #1b1b2b;
+      --border: rgba(255, 255, 255, 0.05);
+      --border-focus: rgba(130, 100, 255, 0.35);
+      --text: #f0edf6;
+      --text-muted: rgba(240, 237, 246, 0.45);
+      --accent: #7b5cfa;
+      --accent-glow: rgba(123, 92, 250, 0.2);
+      --accent-hover: #9175ff;
+      --error: #ff4d6d;
+      --error-glow: rgba(255, 77, 109, 0.15);
+      --success: #00e680;
+      --success-glow: rgba(0, 230, 128, 0.15);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      overflow-x: hidden;
+      background-image:
+        radial-gradient(ellipse 70% 60% at 50% -10%, rgba(123, 92, 250, 0.08) 0%, transparent 60%),
+        radial-gradient(circle at 10% 90%, rgba(123, 92, 250, 0.02) 0%, transparent 35%);
+    }
+
+    .container {
+      width: 100%;
+      max-width: 580px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 40px 32px;
+      box-shadow: 0 32px 100px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.02) inset;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .logo-container {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 18px;
+    }
+
+    .logo {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, var(--accent), #5633e0);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 30px;
+      color: #fff;
+      box-shadow: 0 12px 32px var(--accent-glow);
+    }
+
+    .logo-pulse {
+      position: absolute;
+      top: -4px; right: -4px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      border: 2px solid var(--surface);
+      background: var(--text-muted);
+      transition: background 0.3s;
+    }
+    
+    .logo-pulse.connected {
+      background: var(--success);
+      box-shadow: 0 0 12px var(--success);
+      animation: pulse 1.8s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 230, 128, 0.5); }
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(0, 230, 128, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 230, 128, 0); }
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 6px;
+      background: linear-gradient(to right, #fff, #b7a9f0);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    /* Views */
+    .view {
+      display: none;
+      animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .view.active {
+      display: block;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Input & Labels */
+    .form-group {
+      margin-bottom: 24px;
+    }
+
+    .input-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .input-label span.badge {
+      text-transform: none;
+      font-size: 11px;
+      background: rgba(255,255,255,0.04);
+      padding: 2px 8px;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 16px 20px;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      color: var(--text);
+      font-size: 15px;
+      font-family: inherit;
+      transition: all 0.25s;
+    }
+
+    .input-field:focus {
+      outline: none;
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 4px var(--accent-glow);
+    }
+
+    textarea.input-field {
+      min-height: 120px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, var(--accent), #5633e0);
+      border: none;
+      border-radius: 14px;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.25s;
+      font-family: inherit;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px var(--accent-glow);
+      background: linear-gradient(135deg, var(--accent-hover), #633fed);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn-secondary {
+      background: var(--surface-card);
+      border: 1.5px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      background: var(--surface-card-hover);
+      box-shadow: none;
+      border-color: var(--text-muted);
+    }
+
+    .btn-danger {
+      background: rgba(255, 77, 109, 0.1);
+      border: 1.5px solid rgba(255, 77, 109, 0.2);
+      color: var(--error);
+    }
+
+    .btn-danger:hover {
+      background: var(--error);
+      color: #fff;
+      box-shadow: 0 10px 24px var(--error-glow);
+    }
+
+    /* Toggle Option */
+    .toggle-container {
+      display: flex;
+      gap: 6px;
+      background: var(--bg);
+      border-radius: 14px;
+      padding: 6px;
+      margin-bottom: 24px;
+      border: 1px solid var(--border);
+    }
+
+    .toggle-opt {
+      flex: 1;
+      padding: 12px 0;
+      text-align: center;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      transition: all 0.25s;
+      user-select: none;
+    }
+
+    .toggle-opt.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 4px 16px var(--accent-glow);
+    }
+
+    /* Pair / QR display */
+    .display-box {
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 15px;
+      min-height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .qr-box {
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 30px 20px;
+      text-align: center;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .qr-box img {
+      max-width: 220px;
+      border-radius: 12px;
+      margin-bottom: 18px;
+      background: #fff;
+      padding: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+
+    .instructions {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: left;
+      line-height: 1.8;
+      max-width: 320px;
+      margin: 0 auto;
+    }
+
+    .instructions div {
+      margin-bottom: 6px;
+    }
+
+    /* Dashboard Layout */
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 20px;
+      background: rgba(0, 230, 128, 0.08);
+      border: 1px solid rgba(0, 230, 128, 0.15);
+      border-radius: 14px;
+      margin-bottom: 30px;
+      color: var(--success);
+      font-weight: 600;
+      font-size: 14px;
+    }
+    
+    .status-badge i {
+      font-size: 18px;
+    }
+
+    .actions-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 30px;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #b7a9f0;
+    }
+
+    .cmd-list {
+      list-style: none;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .cmd-list li span {
+      color: var(--accent-hover);
+      font-weight: 600;
+    }
+
+    /* Indicators */
+    .success-text { color: var(--success); font-weight: 800; font-size: 20px; letter-spacing: 1px; font-family: 'JetBrains Mono', monospace; }
+    .error-text { color: var(--error); font-size: 13px; font-weight: 500; }
+    .spinner { display: none; text-align: center; margin: 20px 0; }
+    .spinner i { font-size: 24px; color: var(--accent); animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .footer {
+      text-align: center;
+      margin-top: 32px;
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+    }
+    
+    .footer span {
+      color: var(--accent);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo-container">
+        <div class="logo"><i class="fab fa-whatsapp"></i></div>
+        <div class="logo-pulse" id="statusPulse"></div>
+      </div>
+      <h1 id="mainTitle">MboWazap Console</h1>
+      <p class="subtitle" id="mainSubtitle">Administration et Configuration de votre assistant de vente</p>
+    </div>
+
+    <!-- VIEW 1: ENTER PHONE NUMBER -->
+    <div class="view active" id="viewLogin">
+      <div class="form-group">
+        <label class="input-label">Numéro WhatsApp de l'Entreprise</label>
+        <input type="text" id="loginNumber" class="input-field" placeholder="Ex: 237653683174" value="">
+      </div>
+      <button class="btn" id="btnAccess"><i class="fas fa-sign-in-alt"></i> Accéder au Dashboard</button>
+      <div class="spinner" id="loginSpinner"><i class="fas fa-circle-notch"></i></div>
+      <div id="loginFeedback" style="text-align: center; margin-top: 14px;"></div>
+    </div>
+
+    <!-- VIEW 2: LINK DEVICE (PAIRING / QR) -->
+    <div class="view" id="viewLink">
+      <div class="toggle-container">
+        <div class="toggle-opt active" data-mode="pair" id="optPair"><i class="fas fa-key"></i>&nbsp; Code de Jumelage</div>
+        <div class="toggle-opt" data-mode="qr" id="optQr"><i class="fas fa-qrcode"></i>&nbsp; QR Code</div>
+      </div>
+
+      <div id="pairSection">
+        <div class="display-box" id="pairCodeDisplay">Votre code apparaîtra ici</div>
+        <button class="btn" id="btnGenPair"><i class="fas fa-sync-alt"></i> Générer le Code</button>
+      </div>
+
+      <div id="qrSection" class="qr-box">
+        <img id="qrImage" src="" alt="QR Code Link">
+        <div class="instructions" id="qrInstructions">Scannez ce code QR avec votre téléphone</div>
+      </div>
+
+      <div class="spinner" id="linkSpinner"><i class="fas fa-circle-notch"></i></div>
+      
+      <button class="btn btn-secondary" id="btnBackToLogin" style="margin-top: 16px;"><i class="fas fa-arrow-left"></i> Retour</button>
+    </div>
+
+    <!-- VIEW 3: CONFIGURATION DASHBOARD -->
+    <div class="view" id="viewDashboard">
+      <div class="status-badge" id="statusBadge">
+        <i class="fas fa-check-circle"></i>
+        <span>Connecté avec succès à WhatsApp</span>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><i class="fas fa-robot"></i> Personnalité de l'Assistant (AI Prompt)</div>
+        <textarea id="configPrompt" class="input-field" placeholder="Ex: Vous êtes l'assistant de M. Tchuekam. Soyez poli, précis, et guidez le client vers l'achat du service..."></textarea>
+        <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+          Laissez vide pour utiliser la personnalité par défaut (Davila AI).
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><i class="fas fa-database"></i> Base de Connaissances & FAQ</div>
+        <textarea id="configKnowledge" class="input-field" placeholder="Ex: Horaires: Lun-Sam 8h-18h. Prix Starter: 25k FCFA. Notre clinique se trouve à Bastos..."></textarea>
+        <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+          Téléversez vos informations d'entreprise, listes de prix et questions fréquentes.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><i class="fas fa-terminal"></i> Commandes du Bot</div>
+        <ul class="cmd-list">
+          <li><span>.menu</span> - Affiche le menu d'administration sur WhatsApp</li>
+          <li><span>.owner</span> - Donne les contacts du propriétaire</li>
+          <li><span>.status</span> - Affiche les diagnostics techniques du serveur</li>
+        </ul>
+      </div>
+
+      <div class="actions-grid">
+        <button class="btn" id="btnSaveConfig"><i class="fas fa-save"></i> Enregistrer</button>
+        <button class="btn btn-danger" id="btnDisconnect"><i class="fas fa-unlink"></i> Déconnecter</button>
+      </div>
+
+      <div class="spinner" id="dashSpinner"><i class="fas fa-circle-notch"></i></div>
+      <div id="dashFeedback" style="text-align: center; margin-top: 14px;"></div>
+    </div>
+
+    <div class="footer"><span>GIANTECT TECHNOLOGY</span> &middot; MboWazap &copy; 2026</div>
+  </div>
+
+  <script>
+    let currentNumber = '';
+    let linkMode = 'pair';
+    let qrPollInterval = null;
+
+    // Switch views
+    function showView(viewId) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById(viewId).classList.add('active');
+
+      const title = document.getElementById('mainTitle');
+      const subtitle = document.getElementById('mainSubtitle');
+      const pulse = document.getElementById('statusPulse');
+
+      if (viewId === 'viewDashboard') {
+        title.innerText = 'MboWazap Dashboard';
+        subtitle.innerText = 'Configuration active pour +' + currentNumber;
+        pulse.className = 'logo-pulse connected';
+      } else {
+        title.innerText = 'MboWazap Console';
+        subtitle.innerText = 'Administration et Configuration de votre assistant de vente';
+        pulse.className = 'logo-pulse';
+      }
+    }
+
+    // Access Button handler
+    document.getElementById('btnAccess').addEventListener('click', async () => {
+      const num = document.getElementById('loginNumber').value.trim().replace(/[^0-9]/g, '');
+      const feedback = document.getElementById('loginFeedback');
+      const spinner = document.getElementById('loginSpinner');
+
+      if (!num || num.length < 8) {
+        feedback.innerHTML = '<span class="error-text"><i class="fas fa-exclamation-triangle"></i> Entrez un numéro valide sans espaces ni "+"</span>';
+        return;
+      }
+
+      currentNumber = num;
+      spinner.style.display = 'block';
+      feedback.innerHTML = '';
+
+      try {
+        const res = await fetch('/api/status?number=' + currentNumber);
+        const data = await res.json();
+        
+        if (data.status === 'connected') {
+          await loadDashboardConfig();
+          showView('viewDashboard');
+        } else {
+          showView('viewLink');
+          resetLinkView();
+        }
+      } catch (err) {
+        feedback.innerHTML = '<span class="error-text"><i class="fas fa-exclamation-triangle"></i> Erreur de connexion avec le serveur.</span>';
+      } finally {
+        spinner.style.display = 'none';
+      }
+    });
+
+    // Toggle Mode QR / Pairing
+    document.getElementById('optPair').addEventListener('click', () => switchLinkMode('pair'));
+    document.getElementById('optQr').addEventListener('click', () => switchLinkMode('qr'));
+
+    function switchLinkMode(mode) {
+      linkMode = mode;
+      document.getElementById('optPair').classList.toggle('active', mode === 'pair');
+      document.getElementById('optQr').classList.toggle('active', mode === 'qr');
+
+      document.getElementById('pairSection').style.display = mode === 'pair' ? 'block' : 'none';
+      document.getElementById('qrSection').style.display = mode === 'qr' ? 'block' : 'none';
+
+      if (mode === 'qr') {
+        fetchQR();
+        startQRPolling();
+      } else {
+        stopQRPolling();
+      }
+    }
+
+    function resetLinkView() {
+      switchLinkMode('pair');
+      document.getElementById('pairCodeDisplay').innerHTML = 'Votre code apparaîtra ici';
+      const qrImg = document.getElementById('qrImage');
+      qrImg.src = '';
+      qrImg.style.display = 'none';
+    }
+
+    document.getElementById('btnBackToLogin').addEventListener('click', () => {
+      stopQRPolling();
+      showView('viewLogin');
+    });
+
+    // Generate Pairing Code
+    document.getElementById('btnGenPair').addEventListener('click', async () => {
+      const display = document.getElementById('pairCodeDisplay');
+      const spinner = document.getElementById('linkSpinner');
+
+      spinner.style.display = 'block';
+      display.innerHTML = '';
+
+      try {
+        const res = await fetch('/pair?number=' + currentNumber);
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Server Error: ' + res.status);
+        }
+
+        const data = await res.json();
+        if (data.code) {
+          display.innerHTML = '<span class="success-text">' + data.code + '</span>';
+          startStatusPolling(); // start checking connection
+        } else {
+          display.innerHTML = '<span class="error-text"><i class="fas fa-exclamation-circle"></i> ' + (data.error || 'Erreur inconnue') + '</span>';
+        }
+      } catch (err) {
+        display.innerHTML = '<span class="error-text"><i class="fas fa-exclamation-circle"></i> ' + (err.message || 'Impossible de joindre le serveur') + '</span>';
+      } finally {
+        spinner.style.display = 'none';
+      }
+    });
+
+    // Fetch QR code
+    async function fetchQR(showSpinner = true) {
+      const qrImage = document.getElementById('qrImage');
+      const inst = document.getElementById('qrInstructions');
+      const spinner = document.getElementById('linkSpinner');
+
+      if (showSpinner) spinner.style.display = 'block';
+
+      try {
+        const res = await fetch('/qr');
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Server Error: ' + res.status);
+        }
+
+        const data = await res.json();
+        if (data.qr) {
+          qrImage.src = data.qr;
+          qrImage.style.display = 'block';
+          inst.innerHTML = data.instructions.map(s => '<div>' + s + '</div>').join('');
+        } else {
+          qrImage.style.display = 'none';
+          inst.innerHTML = '<span class="error-text">' + (data.error || 'Génération du QR en cours...') + '</span>';
+        }
+
+        if (data.error && data.error.includes('Already Connected')) {
+          clearInterval(qrPollInterval);
+          showView('viewLogin');
+          document.getElementById('loginFeedback').innerHTML = '<span class="success-text" style="font-size: 13px;"><i class="fas fa-check-circle"></i> Appareil connecté ! Veuillez entrer son numéro pour configurer.</span>';
+        }
+      } catch (err) {
+        qrImage.style.display = 'none';
+        inst.innerHTML = '<span class="error-text">' + (err.message || 'Echec du chargement du code QR') + '</span>';
+      } finally {
+        if (showSpinner) spinner.style.display = 'none';
+      }
+    }
+
+    // Load custom configuration
+    async function loadDashboardConfig() {
+      try {
+        const res = await fetch('/api/config?number=' + currentNumber);
+        const data = await res.json();
+        document.getElementById('configPrompt').value = data.systemPrompt || '';
+        document.getElementById('configKnowledge').value = data.knowledgeBase || '';
+      } catch (err) {
+        console.error('Failed to load configuration:', err);
+      }
+    }
+
+    // Save Configuration
+    document.getElementById('btnSaveConfig').addEventListener('click', async () => {
+      const feedback = document.getElementById('dashFeedback');
+      const spinner = document.getElementById('dashSpinner');
+
+      spinner.style.display = 'block';
+      feedback.innerHTML = '';
+
+      const payload = {
+        number: currentNumber,
+        systemPrompt: document.getElementById('configPrompt').value.trim(),
+        knowledgeBase: document.getElementById('configKnowledge').value.trim()
+      };
+
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+          feedback.innerHTML = '<span class="success-text" style="font-size: 13px;"><i class="fas fa-check-circle"></i> Configuration enregistrée !</span>';
+          setTimeout(() => feedback.innerHTML = '', 3000);
+        } else {
+          feedback.innerHTML = '<span class="error-text">' + (data.error || 'Erreur lors de la sauvegarde') + '</span>';
+        }
+      } catch (err) {
+        feedback.innerHTML = '<span class="error-text">Erreur réseau</span>';
+      } finally {
+        spinner.style.display = 'none';
+      }
+    });
+
+    // Disconnect Action
+    document.getElementById('btnDisconnect').addEventListener('click', async () => {
+      if (!confirm('Voulez-vous vraiment déconnecter votre bot WhatsApp ? Vos configurations resteront, mais le bot cessera de répondre.')) return;
+
+      const feedback = document.getElementById('dashFeedback');
+      const spinner = document.getElementById('dashSpinner');
+
+      spinner.style.display = 'block';
+      feedback.innerHTML = '';
+
+      try {
+        const res = await fetch('/api/disconnect?number=' + currentNumber, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          currentNumber = '';
+          showView('viewLogin');
+        } else {
+          feedback.innerHTML = '<span class="error-text">' + (data.error || 'Erreur lors de la déconnexion') + '</span>';
+        }
+      } catch (err) {
+        feedback.innerHTML = '<span class="error-text">Erreur réseau</span>';
+      } finally {
+        spinner.style.display = 'none';
+      }
+    });
+
+    // Status polling for QR/Pair code validation
+    function startStatusPolling() {
+      if (qrPollInterval) clearInterval(qrPollInterval);
+      qrPollInterval = setInterval(async () => {
+        if (!currentNumber) return;
+        try {
+          const res = await fetch('/api/status?number=' + currentNumber);
+          const data = await res.json();
+          if (data.status === 'connected') {
+            clearInterval(qrPollInterval);
+            await loadDashboardConfig();
+            showView('viewDashboard');
+          }
+        } catch (_) {}
+      }, 5000);
+    }
+
+    function startQRPolling() {
+      if (qrPollInterval) clearInterval(qrPollInterval);
+      qrPollInterval = setInterval(async () => {
+        await fetchQR(false);
+      }, 5000);
+    }
+
+    function stopQRPolling() {
+      if (qrPollInterval) {
+        clearInterval(qrPollInterval);
+        qrPollInterval = null;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+node_modules/
+session/
+data/
+tmp/
+temp/
+baileys_store.json
+*.log
