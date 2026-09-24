@@ -26,12 +26,17 @@ temp/
 *.log
 
 # Baileys / WhatsApp bot runtime data
-session/
-data/sessions/
-data/session_backup/
-baileys_store.json
-data/bridge/outbox.jsonl
-data/bridge/deadletter.jsonl
+# Anchored to the bot directory on purpose: an unanchored `session/`
+# matches ANY directory named "session" in the monorepo and silently
+# kept wacrm/src/app/api/mbowazap/session/route.ts out of git. (Rules
+# with a slash in the middle, like `data/sessions/`, are anchored to the
+# repo root, where they matched nothing.) antisnowflake-bot-main/.gitignore
+# holds the authoritative list; these are a backstop only.
+/antisnowflake-bot-main/session/
+/antisnowflake-bot-main/data/sessions/
+/antisnowflake-bot-main/data/session_backup/
+/antisnowflake-bot-main/data/bridge/
+/antisnowflake-bot-main/baileys_store.json
 
 # OS / Editor
 .DS_Store

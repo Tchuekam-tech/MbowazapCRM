@@ -46,6 +46,7 @@ vi.mock('@/lib/mbowazap/client', async (importOriginal) => {
   };
 });
 
+import { MbowazapBridgeError } from '@/lib/mbowazap/client';
 import { GET as getSession } from './session/route';
 import { GET as getStatus } from './status/route';
 import { POST as postPair } from './pair/route';
@@ -147,6 +148,24 @@ describe('MboWazap Gateway Control Routes', () => {
       expect(json.ok).toBe(true);
       expect(json.configured).toBe(false);
       expect(json.configIssues.length).toBeGreaterThan(0);
+      expect(h.clientMock.getSession).not.toHaveBeenCalled();
+    });
+
+    it('still answers with stored state when TchuekBot is unreachable', async () => {
+      h.clientMock.getSession.mockRejectedValueOnce(
+        new MbowazapBridgeError('network_error', 'Could not reach TchuekBot: ECONNREFUSED')
+      );
+
+      const res = await getSession();
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.ok).toBe(true);
+      expect(json.state).toBe('connected');
+      expect(json.live).toBeNull();
+      expect(json.liveError).toEqual({
+        code: 'network_error',
+        message: 'Could not reach TchuekBot: ECONNREFUSED',
+      });
     });
   });
 
