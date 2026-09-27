@@ -572,9 +572,9 @@ test('attachSocket syncs history messages and contact names, but ignores group m
 
     await new Promise((resolve) => setImmediate(resolve));
 
-    const contactEvents = client.emitted.filter((event) => event.type === 'contact.facts');
-    assert.ok(contactEvents.some((event) => event.payload.chat.phone === CUSTOMER_PHONE && event.payload.facts.name === 'Alice Saved'));
-    assert.ok(contactEvents.some((event) => event.payload.chat.lid === CUSTOMER_LID && event.payload.facts.name === 'Bob'));
+    const contactEvents = client.emitted.filter((event) => event.type === 'contact.upsert');
+    assert.ok(contactEvents.some((event) => event.payload.chat.phone === CUSTOMER_PHONE && event.payload.name === 'Alice Saved'));
+    assert.ok(contactEvents.some((event) => event.payload.chat.lid === CUSTOMER_LID && event.payload.name === 'Bob'));
     const messageEvents = client.emitted.filter((event) => event.type === 'message');
     assert.equal(messageEvents.length, 1);
     assert.equal(messageEvents[0].payload.id, 'HISTORY_MSG_001');

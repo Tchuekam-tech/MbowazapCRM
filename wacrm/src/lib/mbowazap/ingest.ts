@@ -277,7 +277,7 @@ async function resolveContact(
         account_id: account.accountId,
         user_id: account.ownerUserId,
         phone: '',
-        name: chat.pushName || lid,
+        name: chat.pushName || '',
         wa_lid: lid,
       })
       .select()
@@ -301,7 +301,9 @@ async function resolveContact(
   if (rawPhone) {
     const identity = {
       phone: rawPhone,
-      name: chat.pushName ?? '',
+      // Resolve/create first without letting a transient pushName overwrite
+      // a contact name an agent has curated in the CRM.
+      name: '',
       waUserId: null,
       waParentUserId: null,
       waUsername: null,
@@ -314,6 +316,9 @@ async function resolveContact(
         identity
       );
       if (!outcome) throw new Error('contact create failed');
+      if (chat.pushName) {
+        await applyContactFacts(db, account, outcome.contact, { name: chat.pushName });
+      }
       return outcome;
     } else {
       const found = await findExistingContact(db, account.accountId, rawPhone);
@@ -343,7 +348,8 @@ async function findConversation(
 async function openConversation(
   ctx: IngestContext,
   account: MbowazapAccount,
-  contactId: string
+  contactId: string,
+  notifyCreated = true
 ): Promise<ConversationRow> {
   const result = await findOrCreateConversation(
     ctx.db,
@@ -352,7 +358,7 @@ async function openConversation(
     contactId
   );
   if (!result) throw new Error('conversation lookup/create failed');
-  if (result.created) {
+  if (result.created && notifyCreated) {
     ctx.defer(() =>
       dispatchWebhookEvent(ctx.db, account.accountId, 'conversation.created', {
         conversation_id: result.conversation.id,
@@ -372,7 +378,7 @@ async function ingestMessage(
   const resolved = await resolveContact(db, account, e.chat, true);
   if (!resolved) throw new Error('contact resolution failed');
   const contact = resolved.contact;
-  const conversation = await openConversation(ctx, account, contact.id);
+  const conversation = await openConversation(ctx, account, contact.id, !e.history);
 
   // A swipe-reply to a message we never stored just renders unquoted.
   const replyTo = e.quotedId
@@ -386,7 +392,7 @@ async function ingestMessage(
   // First inbound ever for this contact — counted BEFORE the insert so
   // the first_inbound_message trigger sees an accurate history.
   let isFirstInboundMessage = false;
-  if (inbound) {
+  if (inbound && !e.history) {
     const { count, error } = await db
       .from('messages')
       .select('id', { count: 'exact', head: true })
@@ -422,6 +428,24 @@ async function ingestMessage(
   if (!inserted || inserted.length === 0) return;
 
   const preview = contentText || `[${e.kind}]`;
+
+  if (e.history) {
+    const last = conversation.last_message_at
+      ? Date.parse(conversation.last_message_at)
+      : 0;
+    if (e.timestamp * 1000 >= last) {
+      const { error } = await db
+        .from('conversations')
+        .update({
+          last_message_text: preview,
+          last_message_at: createdAt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', conversation.id);
+      if (error) fail('history conversation preview update failed', error);
+    }
+    return;
+  }
 
   if (!inbound) {
     // If sent by a human operator (typed on paired phone or agent),
@@ -619,6 +643,14 @@ async function applyEvent(
         contactId: resolved.contact.id,
         emoji: event.emoji,
       });
+    }
+    case 'contact.upsert': {
+      const resolved = await resolveContact(db, account, event.chat, true);
+      if (!resolved) throw new Error('contact resolution failed');
+      if (event.name) {
+        await applyContactFacts(db, account, resolved.contact, { name: event.name });
+      }
+      return;
     }
     case 'contact.facts': {
       const resolved = await resolveContact(db, account, event.chat, true);

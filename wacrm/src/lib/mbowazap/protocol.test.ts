@@ -110,6 +110,15 @@ describe('parseEventBatch — message events', () => {
     expect(parseOne(e).rejected).toEqual([]);
   });
 
+  it('accepts history messages and contact upserts', () => {
+    const historyMessage = event('message', { ...inbound, history: true });
+    const contactUpsert = event('contact.upsert', { chat, name: 'Awa Ndiaye' });
+    const result = parseEventBatch(batch([historyMessage, contactUpsert]));
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.rejected).toEqual([]);
+    expect(result.ok && result.batch.events).toEqual([historyMessage, contactUpsert]);
+  });
+
   it('accepts LID-only chats and locations', () => {
     const e = event('message', {
       ...inbound,
@@ -168,6 +177,7 @@ describe('parseEventBatch — other events', () => {
         emoji: '',
         fromMe: false,
       }),
+      event('contact.upsert', { chat, name: 'Awa' }),
       event('contact.facts', {
         chat,
         facts: { name: 'Awa', interestedPack: 'business' },

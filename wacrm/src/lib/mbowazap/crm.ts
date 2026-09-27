@@ -30,6 +30,7 @@ export const DEAL_REPLAY_WINDOW_MS = 24 * 60 * 60 * 1000;
 export interface CrmContact {
   id: string;
   phone: string;
+  wa_lid?: string | null;
   name?: string | null;
 }
 
@@ -67,7 +68,11 @@ function isPlaceholderName(contact: CrmContact): boolean {
   const name = (contact.name ?? '').trim();
   if (!name) return true;
   const digits = normalizePhone(name);
-  return digits.length > 0 && digits === normalizePhone(contact.phone);
+  return (
+    digits.length > 0 &&
+    (digits === normalizePhone(contact.phone) ||
+      (Boolean(contact.wa_lid) && digits === normalizePhone(contact.wa_lid!)))
+  );
 }
 
 async function customFieldIds(

@@ -386,7 +386,7 @@ function createReporter({
     /**
      * Report an inbound or outbound message to wacrm.
      */
-    async function processMessage(session, mek) {
+    async function processMessage(session, mek, historical = false) {
         if (!SESSION_PATTERN.test(String(session))) return;
         if (!mek || !mek.key) return;
 
@@ -480,6 +480,7 @@ function createReporter({
         };
 
         if (inspected.text) messagePayload.text = inspected.text;
+        if (historical) messagePayload.history = true;
         if (mediaPayload) messagePayload.media = mediaPayload;
         if (inspected.location) messagePayload.location = inspected.location;
         if (inspected.quotedId) messagePayload.quotedId = inspected.quotedId;
@@ -491,10 +492,10 @@ function createReporter({
     /**
      * Safe wrapper for message processing that never rejects or throws.
      */
-    function reportMessageSafe(session, mek) {
+    function reportMessageSafe(session, mek, historical = false) {
         setImmediate(async () => {
             try {
-                await processMessage(session, mek);
+                await processMessage(session, mek, historical);
             } catch (err) {
                 log.error(`[wacrm-reporter] Error reporting message ${mek?.key?.id}:`, err.message);
             }
@@ -657,8 +658,10 @@ function createReporter({
         const jid = contact.id || contact.jid;
         const name = firstText(contact.name, contact.verifiedName, contact.businessName, contact.notify);
         const chat = extractChatRef(jid, null, name);
-        if ((!chat.phone && !chat.lid) || !name) return;
-        reportContactFacts(session, chat, { name });
+        if (!chat.phone && !chat.lid) return;
+        const identity = chat.phone || chat.lid;
+        const eventId = deterministicEventId(session, 'contact.upsert', `${identity}:${name || ''}`);
+        getClient()?.emit(session, 'contact.upsert', { chat, ...(name ? { name } : {}) }, eventId);
     }
 
     function reportContactProfiles(session, contacts) {
@@ -751,7 +754,7 @@ function createReporter({
             try {
                 reportContactProfiles(phoneNumber, history?.contacts);
                 for (const mek of history?.messages || []) {
-                    reportMessageSafe(phoneNumber, mek);
+                    reportMessageSafe(phoneNumber, mek, true);
                 }
             } catch (err) {
                 log.error('[wacrm-reporter] messaging-history.set listener error:', err.message);

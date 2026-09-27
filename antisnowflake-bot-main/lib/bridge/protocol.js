@@ -25,6 +25,7 @@ const EVENT_TYPES = [
     'message',
     'status',
     'reaction',
+    'contact.upsert',
     'contact.facts',
     'deal.closed',
     'tally.submitted',
