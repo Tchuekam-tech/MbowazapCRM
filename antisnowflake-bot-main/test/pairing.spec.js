@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const sessionManager = require('../lib/sessionManager');
 const { getTempQrDataUrl, TEMP_QR_SESSION } = require('../lib/qrSession');
 
@@ -79,6 +82,48 @@ test('a spent temp_qr socket is replaced by a fresh one', async (t) => {
     assert.equal(started.length, 1);
     assert.equal(sessionManager.getSocket(TEMP_QR_SESSION), started[0]);
     assert.match(result.qr, /^data:image\/png;base64,/);
+});
+
+test('a spent unlinked temp_qr session clears stale credentials before reconnecting', async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'temp-qr-session-'));
+    const sessionDir = path.join(root, TEMP_QR_SESSION);
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(path.join(sessionDir, 'creds.json'), JSON.stringify({
+        registered: false,
+        me: { id: '237653683174@s.whatsapp.net' },
+    }));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    const started = useTempQrStarter(t, (sock) => {
+        assert.equal(fs.existsSync(sessionDir), false, 'old unlinked credentials are removed first');
+        sock.lastQR = 'fresh-ref,noise,identity,adv';
+    });
+    sessionManager.setSocket(TEMP_QR_SESSION, fakeQrSocket({ closed: true }));
+    const result = await getTempQrDataUrl({ waitMs: 1000, sessionDir });
+
+    assert.equal(started.length, 1);
+    assert.equal(result.status, 200);
+    assert.match(result.qr, /^data:image\/png;base64,/);
+});
+
+test('a closed temp_qr socket with linked credentials is not wiped or replaced', async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'temp-qr-linked-'));
+    const sessionDir = path.join(root, TEMP_QR_SESSION);
+    fs.mkdirSync(sessionDir, { recursive: true });
+    const creds = { registered: false, account: { details: 'linked' } };
+    fs.writeFileSync(path.join(sessionDir, 'creds.json'), JSON.stringify(creds));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    const started = useTempQrStarter(t);
+    const closed = fakeQrSocket({ closed: true });
+    closed.authState = { creds };
+    sessionManager.setSocket(TEMP_QR_SESSION, closed);
+    const result = await getTempQrDataUrl({ waitMs: 1000, sessionDir });
+
+    assert.equal(started.length, 0);
+    assert.equal(result.qr, null);
+    assert.match(result.error, /being finalized/);
+    assert.equal(fs.existsSync(path.join(sessionDir, 'creds.json')), true);
 });
 
 test('WhatsApp closing the socket before any QR is an error, not "pending"', async (t) => {

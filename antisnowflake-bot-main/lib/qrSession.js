@@ -5,9 +5,12 @@
  * number's session; the next QR request starts a fresh temp_qr socket.
  */
 
+const fs = require('fs');
+const path = require('path');
 const sessionManager = require('./sessionManager');
 
 const TEMP_QR_SESSION = 'temp_qr';
+const TEMP_QR_SESSION_DIR = path.join(__dirname, '../data/sessions', TEMP_QR_SESSION);
 /**
  * How long one request waits for WhatsApp to hand out the first QR. A cold
  * socket needs a WebSocket connect plus the noise handshake first, which
@@ -23,6 +26,17 @@ function closeSocketQuietly(sock) {
     try { sock.ws?.close(); } catch (_) {}
 }
 
+function hasLinkedTempQrCredentials(sock, sessionDir) {
+    if (sessionManager.isLinked(sock)) return true;
+    const credsPath = path.join(sessionDir, 'creds.json');
+    if (!fs.existsSync(credsPath)) return false;
+    try {
+        return sessionManager.isLinkedCreds(JSON.parse(fs.readFileSync(credsPath, 'utf8')));
+    } catch (_) {
+        return false;
+    }
+}
+
 /**
  * Resolves to { status: 200, qr: <data URL> } when a QR is ready,
  * { status: 200, qr: null, error } while it is still being generated, or
@@ -33,15 +47,24 @@ function closeSocketQuietly(sock) {
  * showing it should ask again periodically; this always returns the
  * current one.
  */
-async function getTempQrDataUrl({ waitMs = QR_WAIT_MS } = {}) {
+async function getTempQrDataUrl({ waitMs = QR_WAIT_MS, sessionDir = TEMP_QR_SESSION_DIR } = {}) {
     let sock = sessionManager.getSocket(TEMP_QR_SESSION);
 
     // A closed temp_qr socket is spent (its QR refs ran out, or WhatsApp
-    // dropped it): QR linking always starts over on a fresh one.
+    // dropped it): QR linking always starts over on fresh, unlinked creds.
     if (sessionManager.isSocketClosed(sock)) {
+        if (hasLinkedTempQrCredentials(sock, sessionDir)) {
+            return {
+                status: 200,
+                qr: null,
+                error: 'QR scan is being finalized. Wait for the device to finish linking.',
+            };
+        }
+
         console.log('[QR] Initializing clean ephemeral temp_qr socket...');
         if (sock) closeSocketQuietly(sock);
         sessionManager.deleteSocket(TEMP_QR_SESSION);
+        fs.rmSync(sessionDir, { recursive: true, force: true });
         sock = undefined;
 
         if (typeof global.startXeonBotInc === 'function') {
@@ -88,4 +111,8 @@ async function getTempQrDataUrl({ waitMs = QR_WAIT_MS } = {}) {
     }
 }
 
-module.exports = { TEMP_QR_SESSION, closeSocketQuietly, getTempQrDataUrl };
+module.exports = {
+    TEMP_QR_SESSION,
+    closeSocketQuietly,
+    getTempQrDataUrl,
+};
