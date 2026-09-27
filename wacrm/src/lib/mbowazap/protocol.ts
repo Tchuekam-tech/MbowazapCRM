@@ -152,6 +152,7 @@ export const EVENT_TYPES = [
   'message',
   'status',
   'reaction',
+  'contact.upsert',
   'contact.facts',
   'deal.closed',
   'tally.submitted',
@@ -219,6 +220,8 @@ export interface MessageEvent extends BaseEvent {
     address?: string;
   };
   quotedId?: string;
+  /** True for messages imported from Baileys history; never fan them out. */
+  history?: boolean;
 }
 
 export interface StatusEvent extends BaseEvent {
@@ -247,6 +250,12 @@ export interface ContactFactsEvent extends BaseEvent {
     location?: string;
     interestedPack?: string;
   };
+}
+
+export interface ContactUpsertEvent extends BaseEvent {
+  type: 'contact.upsert';
+  chat: ChatRef;
+  name?: string;
 }
 
 export interface DealClosedEvent extends BaseEvent {
@@ -280,6 +289,7 @@ export type BridgeEvent =
   | MessageEvent
   | StatusEvent
   | ReactionEvent
+  | ContactUpsertEvent
   | ContactFactsEvent
   | DealClosedEvent
   | TallySubmittedEvent
@@ -491,6 +501,7 @@ function parseMessage(o: Obj): Omit<MessageEvent, keyof BaseEvent | 'type'> {
     media,
     location,
     quotedId: optStr(o, 'quotedId', { pattern: MESSAGE_ID_PATTERN }),
+    history: o.history === undefined ? undefined : bool(o, 'history'),
   });
 }
 
@@ -553,6 +564,11 @@ function parseEventBody(type: BridgeEventType, o: Obj): Obj {
       };
     case 'contact.facts':
       return { chat: parseChat(o), facts: parseFacts(o) };
+    case 'contact.upsert':
+      return compact({
+        chat: parseChat(o),
+        name: optStr(o, 'name', { max: 256 }),
+      });
     case 'deal.closed':
       return compact({
         chat: parseChat(o),

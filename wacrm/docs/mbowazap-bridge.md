@@ -154,9 +154,10 @@ least one of `phone` / `lid`.
 | `type`              | Fields                                                                                                                                              |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `connection`        | `status` (`connected` \| `disconnected` \| `logged_out`), `me?: { phone, name? }`, `pairingRef?`, `reason?`                                         |
-| `message`           | `id`, `direction`, `origin`, `chat`, `timestamp` (s), `kind`, `text?`, `media?: { url, mimeType, filename?, sizeBytes? }`, `location?`, `quotedId?` |
+| `message`           | `id`, `direction`, `origin`, `chat`, `timestamp` (s), `kind`, `text?`, `media?: { url, mimeType, filename?, sizeBytes? }`, `location?`, `quotedId?`, `history?` |
 | `status`            | `id`, `chat`, `status` (`sent` \| `delivered` \| `read` \| `failed`)                                                                                |
 | `reaction`          | `id`, `chat`, `targetId`, `emoji` (`""` = removed), `fromMe`                                                                                        |
+| `contact.upsert`    | `chat`, `name?` (WhatsApp address-book name; never overwrites a CRM-managed name)                                                                    |
 | `contact.facts`     | `chat`, `facts: { name?, businessType?, location?, interestedPack? }` (at least one)                                                                |
 | `deal.closed`       | `chat`, `pack?`                                                                                                                                     |
 | `tally.submitted`   | `chat`                                                                                                                                              |
@@ -171,6 +172,17 @@ For `message` events:
   `"outbound"` goes with `"davila"` (the assistant replied) or
   `"phone"` (typed on the paired phone).
 - Messages wacrm sent through `/bridge/send` are not echoed back.
+- History messages carry `history: true`. They are saved and may update a
+  conversation preview, but do not increment unread, reopen closed threads,
+  or run flows, automations, AI replies, or webhooks.
+
+The bot also forwards Baileys `messaging-history.set`, `contacts.upsert`
+and `contacts.update` data through message and `contact.upsert` events.
+This imports the history and contact snapshots WhatsApp makes
+available to the linked device; redelivered history is safe because
+messages and contact facts are idempotent. Only one-to-one chats are
+mirrored (wacrm does not model group conversations), and WhatsApp names
+only replace blank or phone-number placeholder names in the CRM.
 
 `parseEventBatch` in `protocol.ts` validates a batch:
 

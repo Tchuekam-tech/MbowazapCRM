@@ -24,6 +24,27 @@ const { deterministicEventId, SESSION_PATTERN, CONTACT_PATTERN } = require('./pr
 const bridgeState = require('./state');
 
 const DAVILA_SENT_TTL_MS = 10 * 60 * 1000;
+const MAX_REPORTED_TEXT_LENGTH = 60000;
+
+function firstText(...values) {
+    for (const value of values) {
+        if (typeof value === 'string' && value.trim()) {
+            return value.trim().slice(0, MAX_REPORTED_TEXT_LENGTH);
+        }
+    }
+    return undefined;
+}
+
+function parseNativeFlowParams(response) {
+    const raw = response?.nativeFlowResponseMessage?.paramsJson;
+    if (typeof raw !== 'string') return {};
+    try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) {
+        return {};
+    }
+}
 
 /**
  * Extracts inner message content from standard Baileys wrappers
@@ -91,6 +112,79 @@ function inspectMessageContent(innerMsg) {
             quotedId: innerMsg.extendedTextMessage.contextInfo?.stanzaId,
         };
     }
+    if (innerMsg.buttonsMessage) {
+        const message = innerMsg.buttonsMessage;
+        const options = (Array.isArray(message.buttons) ? message.buttons : [])
+            .map((button) => firstText(button?.buttonText?.displayText, button?.buttonId))
+            .filter(Boolean)
+            .map((label) => `- ${label}`);
+        return {
+            kind: 'text',
+            text: [message.contentText, ...options, message.footerText]
+                .filter((part) => typeof part === 'string' && part.trim())
+                .join('\n')
+                .slice(0, MAX_REPORTED_TEXT_LENGTH),
+            quotedId: message.contextInfo?.stanzaId,
+        };
+    }
+    if (innerMsg.listMessage) {
+        const message = innerMsg.listMessage;
+        const rows = (Array.isArray(message.sections) ? message.sections : [])
+            .flatMap((section) => (Array.isArray(section?.rows) ? section.rows : []))
+            .map((row) => {
+                const label = firstText(row?.title, row?.rowId);
+                const description = firstText(row?.description);
+                return label ? `- ${label}${description ? `: ${description}` : ''}` : null;
+            })
+            .filter(Boolean);
+        return {
+            kind: 'text',
+            text: [message.title, message.description, ...rows, message.footerText]
+                .filter((part) => typeof part === 'string' && part.trim())
+                .join('\n')
+                .slice(0, MAX_REPORTED_TEXT_LENGTH),
+            quotedId: message.contextInfo?.stanzaId,
+        };
+    }
+    if (innerMsg.buttonsResponseMessage) {
+        const response = innerMsg.buttonsResponseMessage;
+        return {
+            kind: 'text',
+            text: firstText(response.selectedDisplayText, response.selectedButtonId) || '[Button reply]',
+            quotedId: response.contextInfo?.stanzaId,
+        };
+    }
+    if (innerMsg.templateButtonReplyMessage) {
+        const response = innerMsg.templateButtonReplyMessage;
+        return {
+            kind: 'text',
+            text: firstText(response.selectedDisplayText, response.selectedId) || '[Template button reply]',
+            quotedId: response.contextInfo?.stanzaId,
+        };
+    }
+    if (innerMsg.listResponseMessage) {
+        const response = innerMsg.listResponseMessage;
+        return {
+            kind: 'text',
+            text: firstText(response.title, response.singleSelectReply?.title, response.singleSelectReply?.selectedRowId) || '[List reply]',
+            quotedId: response.contextInfo?.stanzaId,
+        };
+    }
+    if (innerMsg.interactiveResponseMessage) {
+        const response = innerMsg.interactiveResponseMessage;
+        const params = parseNativeFlowParams(response);
+        return {
+            kind: 'text',
+            text: firstText(
+                params.display_text,
+                params.title,
+                response.body?.text,
+                params.selected_id,
+                params.id
+            ) || '[Interactive reply]',
+            quotedId: response.contextInfo?.stanzaId,
+        };
+    }
     if (innerMsg.imageMessage) {
         return {
             kind: 'image',
@@ -153,8 +247,67 @@ function inspectMessageContent(innerMsg) {
             quotedId: loc.contextInfo?.stanzaId,
         };
     }
+    if (innerMsg.contactMessage) {
+        const contact = innerMsg.contactMessage;
+        const vcard = typeof contact.vcard === 'string'
+            ? contact.vcard.slice(0, MAX_REPORTED_TEXT_LENGTH)
+            : '';
+        return {
+            kind: 'text',
+            text: [`Shared contact: ${firstText(contact.displayName) || 'Contact'}`, vcard].filter(Boolean).join('\n'),
+            quotedId: contact.contextInfo?.stanzaId,
+        };
+    }
+    if (innerMsg.contactsArrayMessage) {
+        const contacts = Array.isArray(innerMsg.contactsArrayMessage.contacts)
+            ? innerMsg.contactsArrayMessage.contacts
+            : [];
+        const text = contacts.map((contact) => {
+            const name = firstText(contact?.displayName) || 'Contact';
+            const vcard = typeof contact?.vcard === 'string' ? contact.vcard : '';
+            return [`Shared contact: ${name}`, vcard].filter(Boolean).join('\n');
+        }).join('\n\n');
+        return {
+            kind: 'text',
+            text: (text || '[Shared contacts]').slice(0, MAX_REPORTED_TEXT_LENGTH),
+            quotedId: innerMsg.contactsArrayMessage.contextInfo?.stanzaId,
+        };
+    }
+    if (innerMsg.pollCreationMessage || innerMsg.pollCreationMessageV3) {
+        const poll = innerMsg.pollCreationMessage || innerMsg.pollCreationMessageV3;
+        const options = Array.isArray(poll.options)
+            ? poll.options.map((option) => firstText(option?.optionName)).filter(Boolean)
+            : [];
+        return {
+            kind: 'text',
+            text: [`Poll: ${firstText(poll.name) || 'Untitled'}`, ...options.map((option) => `- ${option}`)].join('\n').slice(0, MAX_REPORTED_TEXT_LENGTH),
+            quotedId: poll.contextInfo?.stanzaId,
+        };
+    }
+    if (innerMsg.pollUpdateMessage) {
+        return { kind: 'text', text: '[Poll response]' };
+    }
+    if (innerMsg.productMessage) {
+        const product = innerMsg.productMessage.product || {};
+        return {
+            kind: 'text',
+            text: [`Shared product: ${firstText(product.title) || 'Product'}`, firstText(product.description)].filter(Boolean).join('\n'),
+            quotedId: innerMsg.productMessage.contextInfo?.stanzaId,
+        };
+    }
+    if (innerMsg.orderMessage) {
+        const order = innerMsg.orderMessage;
+        const details = [`Order received${Number.isInteger(order.itemCount) ? ` (${order.itemCount} item${order.itemCount === 1 ? '' : 's'})` : ''}`];
+        if (order.orderId) details.push(`Order ID: ${String(order.orderId).slice(0, 128)}`);
+        if (order.status) details.push(`Status: ${String(order.status).slice(0, 128)}`);
+        return { kind: 'text', text: details.join('\n'), quotedId: order.contextInfo?.stanzaId };
+    }
 
-    return { kind: 'unsupported', text: '[Unsupported message]' };
+    const unsupportedType = Object.keys(innerMsg).find((key) => innerMsg[key] !== undefined && innerMsg[key] !== null);
+    return {
+        kind: 'unsupported',
+        text: `[Unsupported WhatsApp message${unsupportedType ? `: ${unsupportedType}` : ''}]`,
+    };
 }
 
 function normalizeTimestamp(ts) {
@@ -233,7 +386,7 @@ function createReporter({
     /**
      * Report an inbound or outbound message to wacrm.
      */
-    async function processMessage(session, mek) {
+    async function processMessage(session, mek, historical = false) {
         if (!SESSION_PATTERN.test(String(session))) return;
         if (!mek || !mek.key) return;
 
@@ -327,6 +480,7 @@ function createReporter({
         };
 
         if (inspected.text) messagePayload.text = inspected.text;
+        if (historical) messagePayload.history = true;
         if (mediaPayload) messagePayload.media = mediaPayload;
         if (inspected.location) messagePayload.location = inspected.location;
         if (inspected.quotedId) messagePayload.quotedId = inspected.quotedId;
@@ -338,10 +492,10 @@ function createReporter({
     /**
      * Safe wrapper for message processing that never rejects or throws.
      */
-    function reportMessageSafe(session, mek) {
+    function reportMessageSafe(session, mek, historical = false) {
         setImmediate(async () => {
             try {
-                await processMessage(session, mek);
+                await processMessage(session, mek, historical);
             } catch (err) {
                 log.error(`[wacrm-reporter] Error reporting message ${mek?.key?.id}:`, err.message);
             }
@@ -499,6 +653,28 @@ function createReporter({
         getClient()?.emit(session, 'contact.facts', { chat, facts: cleanFacts }, eventId);
     }
 
+    function reportContactProfile(session, contact) {
+        if (!contact || typeof contact !== 'object') return;
+        const jid = contact.id || contact.jid;
+        const name = firstText(contact.name, contact.verifiedName, contact.businessName, contact.notify);
+        const chat = extractChatRef(jid, null, name);
+        if (!chat.phone && !chat.lid) return;
+        const identity = chat.phone || chat.lid;
+        const eventId = deterministicEventId(session, 'contact.upsert', `${identity}:${name || ''}`);
+        getClient()?.emit(session, 'contact.upsert', { chat, ...(name ? { name } : {}) }, eventId);
+    }
+
+    function reportContactProfiles(session, contacts) {
+        if (!Array.isArray(contacts)) return;
+        for (const contact of contacts) {
+            try {
+                reportContactProfile(session, contact);
+            } catch (err) {
+                log.warn('[wacrm-reporter] Failed to report contact profile:', err.message);
+            }
+        }
+    }
+
     /**
      * Report Tally order form submission event.
      */
@@ -572,6 +748,29 @@ function createReporter({
             }
         });
 
+        // Initial WhatsApp history includes both old messages and the
+        // address-book snapshots needed to give existing conversations names.
+        sock.ev.on('messaging-history.set', (history) => {
+            try {
+                reportContactProfiles(phoneNumber, history?.contacts);
+                for (const mek of history?.messages || []) {
+                    reportMessageSafe(phoneNumber, mek, true);
+                }
+            } catch (err) {
+                log.error('[wacrm-reporter] messaging-history.set listener error:', err.message);
+            }
+        });
+
+        const reportContacts = (contacts) => {
+            try {
+                reportContactProfiles(phoneNumber, contacts);
+            } catch (err) {
+                log.error('[wacrm-reporter] contact sync listener error:', err.message);
+            }
+        };
+        sock.ev.on('contacts.upsert', reportContacts);
+        sock.ev.on('contacts.update', reportContacts);
+
         // Messages update: delivery and read receipts
         sock.ev.on('messages.update', (updates) => {
             try {
@@ -608,6 +807,8 @@ function createReporter({
         reportConnection,
         reportDealClosed,
         reportContactFacts,
+        reportContactProfile,
+        reportContactProfiles,
         reportTallySubmitted,
         reportContactOptedOut,
         reportAiPaused,
