@@ -106,12 +106,33 @@ describe('MboWazap Gateway Control Routes', () => {
             storedConfig = { ...(storedConfig || {}), ...patch };
             return { error: null };
           },
-          update: (patch: any) => ({
-            eq: (_col: string, _val: string) => {
-              storedConfig = { ...(storedConfig || {}), ...patch };
-              return Promise.resolve({ error: null });
-            },
-          }),
+          update: (patch: any) => {
+            const filters: Array<[string, string]> = [];
+            const updateQuery = {
+              eq: (column: string, value: string) => {
+                filters.push([column, value]);
+                return updateQuery;
+              },
+              then: (
+                resolve: (value: { error: null }) => unknown,
+                reject: (reason: unknown) => unknown
+              ) =>
+                Promise.resolve()
+                  .then(() => {
+                    if (
+                      storedConfig &&
+                      filters.every(
+                        ([column, value]) => storedConfig?.[column] === value
+                      )
+                    ) {
+                      storedConfig = { ...storedConfig, ...patch };
+                    }
+                    return { error: null };
+                  })
+                  .then(resolve, reject),
+            };
+            return updateQuery;
+          },
         };
       },
     };
@@ -581,6 +602,7 @@ describe('MboWazap Gateway Control Routes', () => {
         mbowazap_state: 'pairing',
         updated_at: new Date(Date.now() - 150_000).toISOString(),
       };
+      const staleRef = storedConfig.mbowazap_pairing_ref;
       const req = new NextRequest('http://localhost/api/mbowazap/status');
       const res = await getStatus(req);
       expect(res.status).toBe(200);
@@ -588,6 +610,18 @@ describe('MboWazap Gateway Control Routes', () => {
       expect(json.ok).toBe(true);
       expect(json.status).toBe('expired');
       expect(json.failureReason).toContain('expired');
+      expect(storedConfig).toMatchObject({
+        mbowazap_state: 'disconnected',
+        status: 'disconnected',
+        mbowazap_session: null,
+      });
+      expect(storedConfig?.mbowazap_pairing_ref).not.toBe(staleRef);
+      expect(storedConfig?.mbowazap_pairing_ref).toMatch(/^[0-9a-f-]{36}$/);
+
+      const retryStatus = await getStatus(
+        new NextRequest('http://localhost/api/mbowazap/status')
+      );
+      expect((await retryStatus.json()).status).toBe('disconnected');
     });
   });
 });
