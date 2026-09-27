@@ -154,7 +154,7 @@ least one of `phone` / `lid`.
 | `type`              | Fields                                                                                                                                              |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `connection`        | `status` (`connected` \| `disconnected` \| `logged_out`), `me?: { phone, name? }`, `pairingRef?`, `reason?`                                         |
-| `message`           | `id`, `direction`, `origin`, `chat`, `timestamp` (s), `kind`, `text?`, `media?: { url, mimeType, filename?, sizeBytes? }`, `location?`, `quotedId?` |
+| `message`           | `id`, `direction`, `origin`, `chat`, `timestamp` (s), `kind`, `text?`, `media?: { url, mimeType, filename?, sizeBytes? }`, `location?`, `quotedId?`, `history?` |
 | `status`            | `id`, `chat`, `status` (`sent` \| `delivered` \| `read` \| `failed`)                                                                                |
 | `reaction`          | `id`, `chat`, `targetId`, `emoji` (`""` = removed), `fromMe`                                                                                        |
 | `contact.upsert`    | `chat`, `name?` (WhatsApp address-book name; never overwrites a CRM-managed name)                                                                    |
@@ -177,8 +177,8 @@ For `message` events:
   or run flows, automations, AI replies, or webhooks.
 
 The bot also forwards Baileys `messaging-history.set`, `contacts.upsert`
-and `contacts.update` data through the same message and `contact.facts`
-events. This imports the history and contact snapshots WhatsApp makes
+and `contacts.update` data through message and `contact.upsert` events.
+This imports the history and contact snapshots WhatsApp makes
 available to the linked device; redelivered history is safe because
 messages and contact facts are idempotent. Only one-to-one chats are
 mirrored (wacrm does not model group conversations), and WhatsApp names
