@@ -91,6 +91,27 @@ export async function GET(req: NextRequest) {
       if (isExpired) {
         normalizedStatus = 'expired';
         failureReason = 'Pairing session expired. Please request a new pairing code or QR.';
+
+        const { error: cleanupError } = await ctx.supabase
+          .from('whatsapp_config')
+          .update({
+            mbowazap_state: 'disconnected',
+            status: 'disconnected',
+            mbowazap_session: null,
+            mbowazap_display_name: null,
+            mbowazap_pairing_ref: crypto.randomUUID(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('account_id', ctx.accountId)
+          .eq('mbowazap_pairing_ref', config.mbowazap_pairing_ref)
+          .eq('mbowazap_state', 'pairing');
+
+        if (cleanupError) {
+          console.warn(
+            '[mbowazap/status] stale pairing cleanup failed:',
+            cleanupError
+          );
+        }
       } else {
         normalizedStatus = 'pairing';
       }
