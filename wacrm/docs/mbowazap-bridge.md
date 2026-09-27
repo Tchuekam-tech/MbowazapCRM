@@ -172,6 +172,14 @@ For `message` events:
   `"phone"` (typed on the paired phone).
 - Messages wacrm sent through `/bridge/send` are not echoed back.
 
+The bot also forwards Baileys `messaging-history.set`, `contacts.upsert`
+and `contacts.update` data through the same message and `contact.facts`
+events. This imports the history and contact snapshots WhatsApp makes
+available to the linked device; redelivered history is safe because
+messages and contact facts are idempotent. Only one-to-one chats are
+mirrored (wacrm does not model group conversations), and WhatsApp names
+only replace blank or phone-number placeholder names in the CRM.
+
 `parseEventBatch` in `protocol.ts` validates a batch:
 
 - A bad envelope fails the whole batch.

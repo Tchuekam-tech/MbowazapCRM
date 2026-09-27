@@ -312,7 +312,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
         },
         markOnlineOnConnect: !(settings.policyGuard?.enabled && settings.policyGuard?.disablePresenceAutomation),
         generateHighQualityLinkPreview: true,
-        syncFullHistory: false,
+        syncFullHistory: true,
         connectTimeoutMs: 120_000,
         keepAliveIntervalMs: 25_000,
         retryRequestDelayMs: 500,
@@ -322,7 +322,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             let msg = await store.loadMessage(jid, key.id);
             return msg?.message || proto.Message.fromObject({});
         },
-        shouldSyncHistoryMessage: () => false, // 🔥 INSTANT PAIRING: Drops all historical messages during sync
+        shouldSyncHistoryMessage: () => true,
         msgRetryCounterCache,
     });
 

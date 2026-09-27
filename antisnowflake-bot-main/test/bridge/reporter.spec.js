@@ -109,6 +109,60 @@ test('inspectMessageContent unwraps wrappers and maps message kinds', () => {
     assert.equal(locMsg.kind, 'location');
     assert.equal(locMsg.location.latitude, 3.848);
     assert.equal(locMsg.location.name, 'Yaoundé Central');
+
+    const buttonReply = inspectMessageContent({
+        buttonsResponseMessage: {
+            selectedDisplayText: 'Get pricing',
+            selectedButtonId: 'pricing',
+        },
+    });
+    assert.equal(buttonReply.kind, 'text');
+    assert.equal(buttonReply.text, 'Get pricing');
+
+    const listReply = inspectMessageContent({
+        listResponseMessage: {
+            title: 'Business plan',
+            singleSelectReply: { selectedRowId: 'business' },
+        },
+    });
+    assert.equal(listReply.kind, 'text');
+    assert.equal(listReply.text, 'Business plan');
+
+    const nativeFlowReply = inspectMessageContent({
+        interactiveResponseMessage: {
+            nativeFlowResponseMessage: {
+                paramsJson: JSON.stringify({ display_text: 'Talk to sales', id: 'sales' }),
+            },
+        },
+    });
+    assert.equal(nativeFlowReply.kind, 'text');
+    assert.equal(nativeFlowReply.text, 'Talk to sales');
+
+    const buttonPrompt = inspectMessageContent({
+        buttonsMessage: {
+            contentText: 'Confirm your choice?',
+            footerText: 'MboWazap Engagement',
+            buttons: [
+                { buttonId: 'yes', buttonText: { displayText: 'Yes' } },
+                { buttonId: 'change', buttonText: { displayText: 'Change pack' } },
+            ],
+        },
+    });
+    assert.equal(buttonPrompt.kind, 'text');
+    assert.match(buttonPrompt.text, /Confirm your choice\?/);
+    assert.match(buttonPrompt.text, /- Yes/);
+    assert.match(buttonPrompt.text, /- Change pack/);
+
+    const listPrompt = inspectMessageContent({
+        listMessage: {
+            title: 'FAQ',
+            description: 'Choose a question',
+            sections: [{ rows: [{ title: 'Delivery time', rowId: 'delivery', description: 'When it arrives' }] }],
+        },
+    });
+    assert.equal(listPrompt.kind, 'text');
+    assert.match(listPrompt.text, /FAQ/);
+    assert.match(listPrompt.text, /Delivery time: When it arrives/);
 });
 
 test('processMessage reports inbound text message with customer origin and deterministic eventId', async () => {
@@ -145,6 +199,38 @@ test('processMessage reports inbound text message with customer origin and deter
 
     const expectedId = deterministicEventId(SESSION, 'message', 'INBOUND_MSG_001');
     assert.equal(event.eventId, expectedId);
+});
+
+test('processMessage mirrors view-once button prompts as readable CRM text', async () => {
+    const client = mockWacrmClient();
+    const reporter = createReporter({ getClient: () => client });
+
+    await reporter.processMessage(SESSION, {
+        key: {
+            id: 'OUTBOUND_BUTTON_001',
+            remoteJid: `${CUSTOMER_PHONE}@s.whatsapp.net`,
+            fromMe: true,
+        },
+        message: {
+            viewOnceMessage: {
+                message: {
+                    buttonsMessage: {
+                        contentText: 'Confirm your choice?',
+                        buttons: [
+                            { buttonId: 'yes', buttonText: { displayText: 'Yes' } },
+                            { buttonId: 'change', buttonText: { displayText: 'Change pack' } },
+                        ],
+                    },
+                },
+            },
+        },
+    });
+
+    assert.equal(client.emitted.length, 1);
+    assert.equal(client.emitted[0].payload.kind, 'text');
+    assert.match(client.emitted[0].payload.text, /Confirm your choice\?/);
+    assert.match(client.emitted[0].payload.text, /- Yes/);
+    assert.match(client.emitted[0].payload.text, /- Change pack/);
 });
 
 test('processMessage downloads media and uploads to wacrm before emitting message event', async () => {
@@ -431,12 +517,68 @@ test('attachSocket: hooks socket events and wraps sendMessage without throwing',
 
     // Verify listeners registered
     assert.ok(listeners.has('messages.upsert'));
+    assert.ok(listeners.has('messaging-history.set'));
+    assert.ok(listeners.has('contacts.upsert'));
+    assert.ok(listeners.has('contacts.update'));
     assert.ok(listeners.has('messages.update'));
     assert.ok(listeners.has('messages.reaction'));
 
     // Verify sendMessage wrapper marks Davila
     await fakeSocket.sendMessage(`${CUSTOMER_PHONE}@s.whatsapp.net`, { text: 'Hi' }, { _origin: 'davila' });
     assert.ok(reporter.isDavilaSent('OUT_REPLY_123'));
+});
+
+test('attachSocket syncs history messages and contact names, but ignores group messages', async () => {
+    const client = mockWacrmClient();
+    const reporter = createReporter({ getClient: () => client });
+    const listeners = new Map();
+    const fakeSocket = {
+        ev: { on: (name, callback) => listeners.set(name, callback) },
+        sendMessage: async () => ({ key: { id: 'OUT_REPLY_123' } }),
+    };
+    reporter.attachSocket(fakeSocket, SESSION);
+
+    listeners.get('contacts.upsert')([
+        { id: `${CUSTOMER_PHONE}@s.whatsapp.net`, name: 'Alice Saved', notify: 'Alice Phone' },
+    ]);
+    listeners.get('contacts.update')([
+        { id: `${CUSTOMER_LID}@lid`, name: 'Bob' },
+    ]);
+    listeners.get('messaging-history.set')({
+        contacts: [{ id: `${CUSTOMER_PHONE}@s.whatsapp.net`, name: 'Alice' }],
+        messages: [
+            {
+                key: {
+                    id: 'HISTORY_MSG_001',
+                    remoteJid: `${CUSTOMER_PHONE}@s.whatsapp.net`,
+                    fromMe: false,
+                },
+                message: { conversation: 'Earlier conversation' },
+                messageTimestamp: 1727136000,
+                pushName: 'Alice',
+            },
+            {
+                key: {
+                    id: 'GROUP_MSG_001',
+                    remoteJid: '120363000000000000@g.us',
+                    participant: `${CUSTOMER_PHONE}@s.whatsapp.net`,
+                    fromMe: false,
+                },
+                message: { conversation: 'Group message is not a 1:1 CRM thread' },
+                messageTimestamp: 1727136000,
+            },
+        ],
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const contactEvents = client.emitted.filter((event) => event.type === 'contact.facts');
+    assert.ok(contactEvents.some((event) => event.payload.chat.phone === CUSTOMER_PHONE && event.payload.facts.name === 'Alice Saved'));
+    assert.ok(contactEvents.some((event) => event.payload.chat.lid === CUSTOMER_LID && event.payload.facts.name === 'Bob'));
+    const messageEvents = client.emitted.filter((event) => event.type === 'message');
+    assert.equal(messageEvents.length, 1);
+    assert.equal(messageEvents[0].payload.id, 'HISTORY_MSG_001');
+    assert.equal(messageEvents[0].payload.text, 'Earlier conversation');
 });
 
 function tempState() {
