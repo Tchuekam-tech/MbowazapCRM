@@ -100,6 +100,23 @@ export function describeBridgeError(err: MbowazapBridgeError): {
         status: 503,
         message: 'TchuekBot is still preparing the WhatsApp QR code. Try again in a few seconds.',
       };
+    case 'pairing_failed': {
+      // WhatsApp closes the pairing socket before it emits a QR when its
+      // edge is throttling this IP or still holds a stale handshake for the
+      // number. TchuekBot already retried once — a further, human-paced
+      // retry after a short wait is the right move (and often what fixes it).
+      const closedBeforePairing = /closed the connection before pairing|Connection Terminated|Connection Closed|Connection Lost/i.test(
+        err.message
+      );
+      if (closedBeforePairing) {
+        return {
+          status: 502,
+          message:
+            'WhatsApp dropped the pairing connection twice in a row. This is usually a short-lived throttle from WhatsApp — wait about a minute and try again. If it persists, double-check the phone number and that this WhatsApp account is not already linked on too many companion devices.',
+        };
+      }
+      return { status: 502, message: err.message };
+    }
     default:
       return { status: 502, message: err.message };
   }

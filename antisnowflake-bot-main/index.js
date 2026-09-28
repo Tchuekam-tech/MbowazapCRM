@@ -101,6 +101,15 @@ const useMobile = process.argv.includes("--mobile");
 const PAIRING_INIT_BUFFER_MS = 3000;
 /** How long a pairing-code request waits for WhatsApp to accept a fresh socket. */
 const PAIRING_READY_TIMEOUT_MS = 25_000;
+/**
+ * WhatsApp sometimes closes the first pairing WebSocket right after the noise
+ * handshake (Boom "Connection Terminated" / statusCode 428) — anti-abuse
+ * throttling, a residual half-open socket at their edge, or a transient
+ * server hiccup. A second attempt on a fresh socket almost always succeeds,
+ * so retry once with a short cool-down before surfacing the failure.
+ */
+const PAIRING_MAX_ATTEMPTS = 2;
+const PAIRING_RETRY_COOLDOWN_MS = 2500;
 const WA_VERSION_TIMEOUT_MS = 5000;
 const TEMP_QR = 'temp_qr';
 const SESSIONS_ROOT = './data/sessions';
@@ -181,6 +190,11 @@ function adoptQrLinkedCredentials(sock) {
  * Resolves once WhatsApp has accepted the socket and is waiting for it to
  * be linked (it sends the first QR ref then). Pairing codes requested
  * before that fail with "Connection Closed".
+ *
+ * On a close-before-QR, the rejected Error carries `.statusCode` (the
+ * Baileys DisconnectReason from the underlying Boom error) and `.transient`
+ * (true when the close matches the class we retry on), so callers can
+ * decide whether to try again on a fresh socket.
  */
 function waitForPairingReady(sock, timeoutMs) {
     if (sock.lastQR) return Promise.resolve();
@@ -189,12 +203,26 @@ function waitForPairingReady(sock, timeoutMs) {
             if (qr) {
                 finish();
             } else if (connection === 'close') {
-                const reason = lastDisconnect?.error?.message || 'unknown reason';
-                finish(new Error(`WhatsApp closed the connection before pairing (${reason})`));
+                const boomErr = lastDisconnect?.error;
+                const statusCode = boomErr?.output?.statusCode || boomErr?.statusCode || null;
+                const reason = boomErr?.message || 'unknown reason';
+                const err = new Error(`WhatsApp closed the connection before pairing (${reason})`);
+                err.statusCode = statusCode;
+                // 428 (connectionClosed), 408 (timedOut/lost) and the raw
+                // "Connection Terminated" string are all the same class of
+                // transient close: the WebSocket dropped before pairing
+                // could start, without a real logout / conflict / restart.
+                err.transient =
+                    statusCode === 428 ||
+                    statusCode === 408 ||
+                    /connection (terminated|closed|lost)/i.test(reason);
+                finish(err);
             }
         };
         const timer = setTimeout(() => {
-            finish(new Error(`WhatsApp did not accept the connection within ${timeoutMs / 1000}s`));
+            const err = new Error(`WhatsApp did not accept the connection within ${timeoutMs / 1000}s`);
+            err.transient = true;
+            finish(err);
         }, timeoutMs);
         function finish(err) {
             clearTimeout(timer);
@@ -743,24 +771,49 @@ async function generatePairingCode(cleanNumber) {
     // refuses (401); and a socket left over from an earlier attempt has
     // usually been closed by WhatsApp once its QR refs ran out. Reusing
     // either is what made pairing codes fail with "Connection Closed".
-    closeSessionSocket(cleanNumber);
-    fs.rmSync(path.join(SESSIONS_ROOT, cleanNumber), { recursive: true, force: true });
+    let lastErr = null;
+    for (let attempt = 1; attempt <= PAIRING_MAX_ATTEMPTS; attempt++) {
+        closeSessionSocket(cleanNumber);
+        fs.rmSync(path.join(SESSIONS_ROOT, cleanNumber), { recursive: true, force: true });
 
-    console.log(chalk.cyan(`[pairing] Starting a fresh pairing socket for ${cleanNumber}...`));
-    const sock = await startXeonBotInc(cleanNumber);
-    try {
-        await waitForPairingReady(sock, PAIRING_READY_TIMEOUT_MS);
-        let code = await sock.requestPairingCode(cleanNumber);
-        code = code?.match(/.{1,4}/g)?.join('-') || code;
-        sock.currentPairingCode = code;
-        sock.pairingCodeTimestamp = Date.now();
-        console.log(chalk.green(`[pairing] Generated pairing code for ${cleanNumber}: ${code}`));
-        return { code, isConnected: false };
-    } catch (err) {
-        // Leave nothing half-paired behind for the next attempt.
-        if (sessionManager.getSocket(cleanNumber) === sock) closeSessionSocket(cleanNumber);
-        throw new Error(`Failed to request pairing code: ${err.message}`);
+        if (attempt > 1) {
+            // Give WhatsApp's edge a moment to release the previous half-open
+            // pairing socket before we knock again — reopening immediately
+            // reproduces the same "Connection Terminated" close.
+            console.log(chalk.yellow(`[pairing] Cooling down ${PAIRING_RETRY_COOLDOWN_MS}ms before retry ${attempt}/${PAIRING_MAX_ATTEMPTS} for ${cleanNumber}...`));
+            await new Promise((r) => setTimeout(r, PAIRING_RETRY_COOLDOWN_MS));
+        }
+
+        console.log(chalk.cyan(`[pairing] Starting a fresh pairing socket for ${cleanNumber} (attempt ${attempt}/${PAIRING_MAX_ATTEMPTS})...`));
+        const sock = await startXeonBotInc(cleanNumber);
+        try {
+            await waitForPairingReady(sock, PAIRING_READY_TIMEOUT_MS);
+            let code = await sock.requestPairingCode(cleanNumber);
+            code = code?.match(/.{1,4}/g)?.join('-') || code;
+            sock.currentPairingCode = code;
+            sock.pairingCodeTimestamp = Date.now();
+            console.log(chalk.green(`[pairing] Generated pairing code for ${cleanNumber}: ${code}`));
+            return { code, isConnected: false };
+        } catch (err) {
+            // Leave nothing half-paired behind for the next attempt.
+            if (sessionManager.getSocket(cleanNumber) === sock) closeSessionSocket(cleanNumber);
+            lastErr = err;
+
+            // Retry only for transient closes (WhatsApp dropped the socket
+            // before the noise handshake finished — 428 / 408 / bare
+            // "Connection Terminated"). A logout (401), conflict (440),
+            // restart-required (515) or invalid-request Boom should surface
+            // straight away, since retrying will only reproduce them.
+            if (err.transient && attempt < PAIRING_MAX_ATTEMPTS) {
+                console.log(chalk.yellow(`[pairing] [${cleanNumber}] Attempt ${attempt} closed transiently (${err.statusCode || 'no code'}): ${err.message}. Retrying...`));
+                continue;
+            }
+            break;
+        }
     }
+
+    const detail = lastErr?.message || 'unknown error';
+    throw new Error(`Failed to request pairing code: ${detail}`);
 }
 
 // Global bindings for healthCheck and pairServer integration
