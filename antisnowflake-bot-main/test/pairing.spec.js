@@ -145,3 +145,22 @@ test('no QR within the wait budget is reported as still pending', async (t) => {
     assert.equal(result.qr, null);
     assert.ok(result.error);
 });
+
+test('QR adoption cannot overwrite a code reservation or linked credentials', (t) => {
+    const { assertQrTargetAvailable } = require('../lib/qrSession');
+    const { createBridgeState } = require('../lib/bridge/state');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qr-ownership-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const state = createBridgeState({ baseDir: path.join(root, 'bridge'), now: () => 1000 });
+    const phone = '237600000001';
+    state.setPairingRef(TEMP_QR_SESSION, 'qr-owner');
+    state.setPairingRef(phone, 'code-owner');
+    const options = { state, sessionsRoot: root, now: 2000 };
+    assert.throws(() => assertQrTargetAvailable(phone, options), /already has/);
+    state.clearPairingRef(phone);
+    assert.doesNotThrow(() => assertQrTargetAvailable(phone, options));
+    fs.mkdirSync(path.join(root, phone));
+    fs.writeFileSync(path.join(root, phone, 'creds.json'), JSON.stringify({ account: { details: 'linked' } }));
+    assert.throws(() => assertQrTargetAvailable(phone, options), /already has/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root, phone, 'creds.json'))).account.details, 'linked');
+});

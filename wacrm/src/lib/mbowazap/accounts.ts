@@ -18,6 +18,9 @@ export interface MbowazapAccount {
   /** The paired number, or null while a QR pairing is pending. */
   session: string | null;
   brain: MbowazapBrain;
+  pairingRef?: string | null;
+  state?: string | null;
+  updatedAt?: string | null;
 }
 
 interface ConfigRow {
@@ -26,11 +29,17 @@ interface ConfigRow {
   user_id: string;
   mbowazap_session: string | null;
   mbowazap_brain: string | null;
+  mbowazap_pairing_ref: string | null;
+  mbowazap_state: string | null;
+  updated_at: string | null;
 }
 
 function toAccount(row: ConfigRow): MbowazapAccount {
   return {
     configId: row.id,
+    pairingRef: row.mbowazap_pairing_ref,
+    state: row.mbowazap_state,
+    updatedAt: row.updated_at,
     accountId: row.account_id,
     ownerUserId: row.user_id,
     session: row.mbowazap_session,
@@ -46,7 +55,7 @@ async function findOne(
 ): Promise<MbowazapAccount | null> {
   const { data, error } = await db
     .from('whatsapp_config')
-    .select('id, account_id, user_id, mbowazap_session, mbowazap_brain')
+    .select('id, account_id, user_id, mbowazap_session, mbowazap_brain, mbowazap_pairing_ref, mbowazap_state, updated_at')
     .eq('provider', 'mbowazap')
     .eq(column, value)
     .maybeSingle();

@@ -15,7 +15,9 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await ctx.supabase
       .from('whatsapp_config')
-      .select('mbowazap_state, mbowazap_session, mbowazap_display_name, status')
+      .select(
+        'mbowazap_state, mbowazap_session, mbowazap_display_name, status, updated_at'
+      )
       .eq('account_id', ctx.accountId)
       .eq('mbowazap_pairing_ref', ref)
       .maybeSingle();
@@ -28,6 +30,17 @@ export async function GET(req: NextRequest) {
     }
 
     if (!data) {
+      return NextResponse.json({
+        ok: true,
+        connected: false,
+        state: 'expired',
+      });
+    }
+
+    if (
+      data.mbowazap_state === 'pairing' &&
+      Date.now() >= Date.parse(data.updated_at ?? '') + 120_000
+    ) {
       return NextResponse.json({
         ok: true,
         connected: false,

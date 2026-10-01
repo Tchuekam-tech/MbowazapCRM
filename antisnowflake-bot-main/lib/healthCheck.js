@@ -55,6 +55,15 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
             return;
         }
 
+        // CRM mode disables the legacy unsigned management routes.
+        // Legacy QR/code/config/logout/send routes must not bypass ownership.
+        if (process.env.MBOWAZAP_SECRET &&
+            ['/', '/pair', '/qr', '/api/status', '/api/config', '/api/disconnect', '/api/send'].includes(pathname)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Use the authenticated CRM gateway.' }));
+            return;
+        }
+
         // ──────────────────────────────────────────────
         // Route: / → Serve landing page frontend
         // ──────────────────────────────────────────────

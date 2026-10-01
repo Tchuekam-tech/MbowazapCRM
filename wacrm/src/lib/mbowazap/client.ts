@@ -91,6 +91,8 @@ export function describeBridgeError(err: MbowazapBridgeError): {
         status: 503,
         message: 'MBOWAZAP_SECRET is not set on TchuekBot (min 32 characters).',
       };
+    case 'pairing_busy':
+    case 'pairing_expired':
     case 'already_connected':
       return { status: 409, message: err.message };
     case 'invalid_request':
@@ -147,6 +149,7 @@ export interface MbowazapClientOptions {
 export interface MbowazapClient {
   ping(): Promise<{ protocol: string; time: number }>;
   pair(request: PairRequest): Promise<PairResult>;
+  cancelPairing(request: PairRequest): Promise<{ cancelled: boolean }>;
   getSession(session: string): Promise<SessionInfo>;
   logout(session: string): Promise<{ session: string; status: 'disconnected' }>;
   setBrain(
@@ -258,6 +261,7 @@ export function createMbowazapClient({
     ping: () => call('GET', BOT_PATHS.ping, undefined, DEFAULT_TIMEOUT_MS),
 
     pair: (request) => call('POST', BOT_PATHS.pair, request, SLOW_TIMEOUT_MS),
+    cancelPairing: (request) => call('POST', BOT_PATHS.cancelPairing, request, DEFAULT_TIMEOUT_MS),
 
     getSession: async (session) => {
       assertSession(session, { allowTempQr: true });

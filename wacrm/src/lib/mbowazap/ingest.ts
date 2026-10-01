@@ -584,6 +584,16 @@ async function applyConnection(
     );
   }
 
+  if (account.state === 'pairing' || !account.session) {
+    if (!e.pairingRef || e.pairingRef !== account.pairingRef ||
+        !account.updatedAt || e.at >= Date.parse(account.updatedAt) + 120_000) {
+      throw new IngestRejection('pairing reference is missing, replaced, or expired');
+    }
+    // A registration restart emits disconnected before the final open. Keep
+    // the reservation in pairing state until the authenticated link completes.
+    if (e.status !== 'connected') return account;
+  }
+
   const nowIso = new Date(ctx.now?.() ?? Date.now()).toISOString();
   const connected = e.status === 'connected';
   const patch: Record<string, unknown> = {
@@ -598,10 +608,9 @@ async function applyConnection(
     if (e.me?.name) patch.mbowazap_display_name = e.me.name;
   }
 
-  const { error } = await ctx.db
-    .from('whatsapp_config')
-    .update(patch)
-    .eq('id', account.configId);
+  let update = ctx.db.from('whatsapp_config').update(patch).eq('id', account.configId);
+  if (account.pairingRef) update = update.eq('mbowazap_pairing_ref', account.pairingRef);
+  const { data: changed, error } = await update.select('id').maybeSingle();
   if (error) {
     // Migration 043's unique index: the number is linked elsewhere.
     if (isUniqueViolation(error)) {
@@ -611,7 +620,8 @@ async function applyConnection(
     }
     fail('whatsapp_config update failed', error);
   }
-  return { ...account, session: connected ? session : account.session };
+  if (!changed) throw new IngestRejection('pairing was replaced while connecting');
+  return { ...account, state: e.status, session: connected ? session : account.session };
 }
 
 async function applyEvent(

@@ -139,7 +139,7 @@ function parsePairRequest(raw) {
     const pairingRef = requireString(body, 'pairingRef', { pattern: UUID_PATTERN });
     const method = requireOneOf(body, 'method', ['code', 'qr']);
     if (method === 'code') {
-        const phone = requireString(body, 'phone', { pattern: SESSION_PATTERN, max: 15 });
+        const phone = requireString(body, 'phone', { pattern: /^\d{8,15}$/, max: 15 });
         return { pairingRef, method, phone };
     }
     return { pairingRef, method };

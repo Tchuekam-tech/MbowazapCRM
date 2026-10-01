@@ -64,6 +64,8 @@ function setup(
       provider: 'mbowazap',
       mbowazap_session: opts.session === undefined ? SESSION : opts.session,
       mbowazap_pairing_ref: REF,
+      mbowazap_state: opts.session === null ? 'pairing' : 'connected',
+      updated_at: new Date(NOW).toISOString(),
       mbowazap_brain: opts.brain ?? 'tchuekbot',
       status: 'disconnected',
     },
@@ -413,6 +415,21 @@ describe('connection and pairing', () => {
       ev('connection', { status: 'connected', me: { phone: SESSION }, pairingRef: REF })
     );
     expect(result.rejected[0].error).toMatch(/pairing 237611111111/);
+  });
+
+  it('rejects a stale code callback even when the phone matches the pending reservation', async () => {
+    const { run, one } = setup();
+    one('whatsapp_config').mbowazap_state = 'pairing';
+    const result = await run(ev('connection', { status: 'connected', pairingRef: 'old-ref' }));
+    expect(result.rejected[0].error).toMatch(/replaced/);
+    expect(one('whatsapp_config').mbowazap_state).toBe('pairing');
+  });
+
+  it('rejects confirmation after the pairing deadline', async () => {
+    const { run, one } = setup({ session: null });
+    const result = await run(ev('connection', { status: 'connected', pairingRef: REF, at: NOW + 120001 }));
+    expect(result.rejected[0].error).toMatch(/expired/);
+    expect(one('whatsapp_config').mbowazap_session).toBeNull();
   });
 
   it('mirrors disconnects and logouts', async () => {
