@@ -92,7 +92,7 @@ const startLocksMap = new Map();
 
 const ownerNum = (require('./settings').ownerNumber || '237653683174').replace(/[^0-9]/g, '');
 global.phoneNumber = ownerNum;
-let owner = JSON.parse(fs.readFileSync('./data/owner.json'));
+let owner = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'owner.json')));
 
 global.botname = "Tchuek Bot";
 global.themeemoji = "•";
@@ -112,7 +112,7 @@ const PAIRING_MAX_ATTEMPTS = 2;
 const PAIRING_RETRY_COOLDOWN_MS = 2500;
 const WA_VERSION_TIMEOUT_MS = 5000;
 const TEMP_QR = 'temp_qr';
-const SESSIONS_ROOT = './data/sessions';
+const SESSIONS_ROOT = path.join(__dirname, 'data', 'sessions');
 
 /**
  * Folder copying utility for QR linking migration
@@ -146,6 +146,7 @@ async function getWaVersion() {
 function closeSessionSocket(phoneNumber) {
     const sock = sessionManager.getSocket(phoneNumber);
     if (!sock) return;
+    sock._manuallyEnded = true;
     if (sock.watchdogInterval) clearInterval(sock.watchdogInterval);
     if (sock.heartbeatInterval) clearInterval(sock.heartbeatInterval);
     if (sock._presenceTimeout) clearTimeout(sock._presenceTimeout);
@@ -163,12 +164,16 @@ function closeSessionSocket(phoneNumber) {
  */
 async function adoptQrLinkedCredentials(sock) {
     const loggedIn = numberFromJid(sock.authState.creds.me?.id);
+    if (loggedIn) {
+        isReconnectingMap.set(loggedIn, true);
+    }
     try { sock.ev.removeAllListeners(); } catch (_) {}
     try {
         require('./lib/qrSession').assertQrTargetAvailable(loggedIn, {
             state: require('./lib/bridge/state'), sessionsRoot: SESSIONS_ROOT,
         });
     } catch (err) {
+        if (loggedIn) isReconnectingMap.delete(loggedIn);
         // Preserve the existing number's socket and credentials.
         try { await sock.logout(); } catch (_) {}
         try { sock.end(); } catch (_) {}
@@ -285,25 +290,33 @@ function scheduleReconnect(phoneNumber, delayOverride = null) {
  * Sanitizes auth files on initialization and auto-heals from creds.json.bak
  */
 function verifyAndRestoreSession(phoneNumber) {
-    const sessionDir = `./data/sessions/${phoneNumber}`;
+    const sessionDir = path.join(SESSIONS_ROOT, phoneNumber);
     const mainCreds = path.join(sessionDir, 'creds.json');
     const backupCreds = path.join(sessionDir, 'creds.json.bak');
+
+    function isValidCreds(content) {
+        if (!content || content.length < 10) return false;
+        try {
+            const creds = JSON.parse(content);
+            return !!(creds && typeof creds === 'object' && (creds.registered || creds.account || creds.noiseKey));
+        } catch (_) {
+            return false;
+        }
+    }
 
     if (fs.existsSync(mainCreds)) {
         try {
             const content = fs.readFileSync(mainCreds, 'utf8').trim();
-            if (content.length > 10) {
-                JSON.parse(content);
+            if (isValidCreds(content)) {
                 return; // Valid primary credentials
             }
-            throw new Error('creds.json is empty or truncated');
+            throw new Error('creds.json is empty, corrupted, or missing required Baileys fields');
         } catch (e) {
             console.warn(chalk.yellow(`[session] [${phoneNumber}] Corrupted primary creds (${e.message}). Checking backup...`));
             if (fs.existsSync(backupCreds)) {
                 try {
                     const bakContent = fs.readFileSync(backupCreds, 'utf8').trim();
-                    if (bakContent.length > 10) {
-                        JSON.parse(bakContent);
+                    if (isValidCreds(bakContent)) {
                         fs.copyFileSync(backupCreds, mainCreds);
                         console.log(chalk.green(`[session] [${phoneNumber}] ✅ Successfully restored creds from creds.json.bak!`));
                         return;
@@ -337,7 +350,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
 
     verifyAndRestoreSession(phoneNumber);
 
-    const sessionDir = `./data/sessions/${phoneNumber}`;
+    const sessionDir = path.join(SESSIONS_ROOT, phoneNumber);
     const version = await getWaVersion();
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     const msgRetryCounterCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
@@ -458,7 +471,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
     });
 
     XeonBotInc.getName = (jid, withoutContact = false) => {
-        id = XeonBotInc.decodeJid(jid);
+        const id = XeonBotInc.decodeJid(jid);
         withoutContact = XeonBotInc.withoutContact || withoutContact;
         let v;
         if (id.endsWith("@g.us")) return new Promise(async (resolve) => {
@@ -499,10 +512,14 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             // The next QR request starts a fresh temp_qr socket on demand.
             if (phoneNumber === TEMP_QR) {
                 console.log(chalk.yellow(`[Boot] Temp QR connected as ${loggedIn}. Migrating authentication credentials...`));
+                let adopted = null;
                 try {
-                    await startXeonBotInc(await adoptQrLinkedCredentials(XeonBotInc));
+                    adopted = await adoptQrLinkedCredentials(XeonBotInc);
+                    await startXeonBotInc(adopted);
                 } catch (e) {
                     console.error('[Boot] Error adopting QR-linked session:', e.message);
+                } finally {
+                    if (adopted) isReconnectingMap.delete(adopted);
                 }
                 return;
             }
@@ -596,12 +613,15 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             // linking stalled here and never reached wacrm.
             if (phoneNumber === TEMP_QR) {
                 if (isRegistered && XeonBotInc.authState.creds.me?.id) {
+                    let adopted = null;
                     try {
-                        const loggedIn = await adoptQrLinkedCredentials(XeonBotInc);
-                        console.log(chalk.green(`[QR] Scanned by ${loggedIn}. Starting its session...`));
-                        await startXeonBotInc(loggedIn);
+                        adopted = await adoptQrLinkedCredentials(XeonBotInc);
+                        console.log(chalk.green(`[QR] Scanned by ${adopted}. Starting its session...`));
+                        await startXeonBotInc(adopted);
                     } catch (e) {
                         console.error('[QR] Error adopting QR-linked session:', e.message);
+                    } finally {
+                        if (adopted) isReconnectingMap.delete(adopted);
                     }
                 }
                 // Otherwise the socket is spent (QR refs ran out); the next
