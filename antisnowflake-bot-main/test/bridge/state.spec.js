@@ -104,3 +104,17 @@ test('concurrent Davila runs for one contact: a finishing run removes only itsel
     assert.equal(fourth.cancelled, true);
     assert.equal(state.cancelActiveDavilaRun(contact), false);
 });
+
+test('pairing ownership and original deadline survive restart and QR adoption', () => {
+    const baseDir = tempDir();
+    const first = createBridgeState({ baseDir, now: () => 1000 });
+    first.setPairingRef('temp_qr', 'owner-ref');
+    const restarted = createBridgeState({ baseDir, now: () => 2000 });
+    assert.deepEqual(restarted.getPairingLease('temp_qr'), { ref: 'owner-ref', at: 1000 });
+    restarted.movePairingRef('temp_qr', '237600000001');
+    const adopted = createBridgeState({ baseDir });
+    assert.equal(adopted.getPairingRef('temp_qr'), null);
+    assert.equal(adopted.getPairingRef('237600000001'), 'owner-ref');
+    adopted.clearPairingRef('237600000001');
+    assert.equal(createBridgeState({ baseDir }).getPairingRef('237600000001'), null);
+});

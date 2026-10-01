@@ -111,8 +111,25 @@ async function getTempQrDataUrl({ waitMs = QR_WAIT_MS, sessionDir = TEMP_QR_SESS
     }
 }
 
+/** Never overwrite another linked device or another active code attempt on QR adoption. */
+function assertQrTargetAvailable(phone, { state, sessionsRoot, now = Date.now() }) {
+    const target = sessionManager.getSocket(phone);
+    const existing = state.getPairingLease(phone);
+    const qrRef = state.getPairingRef(TEMP_QR_SESSION);
+    let linkedOnDisk = false;
+    const credsPath = path.join(sessionsRoot, phone, 'creds.json');
+    if (fs.existsSync(credsPath)) {
+        linkedOnDisk = sessionManager.isLinkedCreds(JSON.parse(fs.readFileSync(credsPath, 'utf8')));
+    }
+    if (sessionManager.isLinked(target) || linkedOnDisk ||
+        (existing && existing.ref !== qrRef && now < existing.at + 120_000)) {
+        throw new Error('This phone already has a connection or another pairing attempt.');
+    }
+}
+
 module.exports = {
     TEMP_QR_SESSION,
+    assertQrTargetAvailable,
     closeSocketQuietly,
     getTempQrDataUrl,
 };

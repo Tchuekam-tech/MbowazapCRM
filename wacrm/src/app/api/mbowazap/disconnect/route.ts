@@ -37,7 +37,7 @@ export async function POST() {
         mbowazap_state: 'disconnected',
         status: 'disconnected',
         mbowazap_session: null,
-        mbowazap_pairing_ref: null,
+        mbowazap_pairing_ref: crypto.randomUUID(),
         mbowazap_display_name: null,
         updated_at: new Date().toISOString(),
       })

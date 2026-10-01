@@ -46,6 +46,7 @@ function fakeClient(send?: MbowazapClient['send']) {
   return {
     ping: unused,
     pair: unused,
+    cancelPairing: unused,
     getSession: unused,
     logout: unused,
     setBrain: unused,

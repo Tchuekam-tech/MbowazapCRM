@@ -18,6 +18,7 @@
  */
 
 const fs = require('fs');
+const { createPairingGuard } = require('./pairingGuard');
 const path = require('path');
 const { verifyRequest, createNonceCache, readSecret, PROTOCOL_VERSION } = require('./signature');
 const {
@@ -47,6 +48,7 @@ const SESSIONS_ROOT = path.join(__dirname, '../../data/sessions');
 const ROUTES = [
     { method: 'GET', pattern: /^\/bridge\/ping$/, name: 'ping' },
     { method: 'POST', pattern: /^\/bridge\/pair$/, name: 'pair' },
+    { method: 'POST', pattern: /^\/bridge\/pair\/cancel$/, name: 'cancelPairing' },
     { method: 'GET', pattern: /^\/bridge\/sessions\/([^/]+)$/, name: 'session', param: 'session' },
     { method: 'POST', pattern: /^\/bridge\/sessions\/([^/]+)\/logout$/, name: 'logout', param: 'session' },
     { method: 'PUT', pattern: /^\/bridge\/sessions\/([^/]+)\/brain$/, name: 'brain', param: 'session' },
@@ -68,6 +70,28 @@ function productionDeps() {
         requestPairingCode: (phone) => {
             const request = global.requestPairingCodeForNumber || require('../pairServer').generatePairCode;
             return request(phone);
+        },
+        resetPairingSession: (session) => {
+            const sock = sessionManager.getSocket(session);
+            if (sessionManager.isLinked(sock)) {
+                throw new BridgeError(409, 'already_connected', 'This device has already linked. Wait for connection confirmation.');
+            }
+            // A startup/restart may have linked credentials on disk but no socket yet.
+            const dir = path.join(SESSIONS_ROOT, session);
+            const creds = path.join(dir, 'creds.json');
+            if (fs.existsSync(creds) && sessionManager.isLinkedCreds(JSON.parse(fs.readFileSync(creds, 'utf8')))) {
+                throw new BridgeError(409, 'already_connected', 'This device is already linked.');
+            }
+            if (sock) {
+                clearInterval(sock.watchdogInterval);
+                clearInterval(sock.heartbeatInterval);
+                clearTimeout(sock._presenceTimeout);
+                sock.ev?.removeAllListeners();
+                try { sock.end(); } catch (_) {}
+                try { sock.ws?.close(); } catch (_) {}
+                sessionManager.deleteSocket(session);
+            }
+            fs.rmSync(dir, { recursive: true, force: true });
         },
         getTempQr: () => require('../qrSession').getTempQrDataUrl(),
         removeSessionFiles: (session) =>
@@ -167,6 +191,7 @@ function loggedOutError() {
 function createBridgeHandler(overrides = {}) {
     const d = { ...productionDeps(), ...overrides };
     const nonceCache = createNonceCache();
+    const withPairing = createPairingGuard(d);
 
     function sessionStatus(sock) {
         if (!sock) return 'disconnected';
@@ -195,38 +220,49 @@ function createBridgeHandler(overrides = {}) {
             return { protocol: PROTOCOL_VERSION, time: d.now() };
         },
 
+        async cancelPairing(body) {
+            const cmd = parsePairRequest(body);
+            withPairing.cancel(cmd.method === 'code' ? cmd.phone : TEMP_QR_SESSION, cmd.pairingRef);
+            return { cancelled: true };
+        },
+
         async pair(body) {
             const cmd = parsePairRequest(body);
-            if (cmd.method === 'code') {
-                const status = sessionStatus(d.getSocket(cmd.phone));
-                if (status === 'connected' || status === 'reconnecting') {
-                    throw new BridgeError(409, 'already_connected', `${cmd.phone} is already linked`);
-                }
-                d.state.setPairingRef(cmd.phone, cmd.pairingRef);
-                let result;
-                try {
-                    result = await d.requestPairingCode(cmd.phone);
-                } catch (err) {
-                    throw new BridgeError(502, 'pairing_failed', err.message || 'Pairing failed');
-                }
-                if (result?.isConnected) {
-                    d.state.clearPairingRef(cmd.phone);
-                    throw new BridgeError(409, 'already_connected', `${cmd.phone} is already linked`);
-                }
-                if (!result?.code) {
-                    throw new BridgeError(502, 'pairing_failed', result?.error || 'No pairing code was returned');
-                }
-                return { method: 'code', code: result.code, session: cmd.phone };
+            const session = cmd.method === 'code' ? cmd.phone : TEMP_QR_SESSION;
+            if (d.isLinked(d.getSocket(session))) {
+                throw new BridgeError(409, 'already_connected', `${session} is already linked`);
             }
+            return withPairing(session, cmd.pairingRef, async () => {
+                if (cmd.method === 'code') {
+                    const status = sessionStatus(d.getSocket(cmd.phone));
+                    if (status === 'connected' || status === 'reconnecting') {
+                        throw new BridgeError(409, 'already_connected', `${cmd.phone} is already linked`);
+                    }
 
-            // One temp_qr socket serves every QR pairing, so the latest ref wins.
-            d.state.setPairingRef(TEMP_QR_SESSION, cmd.pairingRef);
-            const qr = await d.getTempQr();
-            if (qr?.qr) return { method: 'qr', qr: qr.qr, session: TEMP_QR_SESSION };
-            if (qr?.status === 200) {
-                throw new BridgeError(503, 'pairing_pending', qr.error || 'QR code not generated yet; retry shortly');
-            }
-            throw new BridgeError(502, 'pairing_failed', qr?.error || 'QR code could not be generated');
+                    let result;
+                    try {
+                        result = await d.requestPairingCode(cmd.phone);
+                    } catch (err) {
+                        throw new BridgeError(502, 'pairing_failed', err.message || 'Pairing failed');
+                    }
+                    if (result?.isConnected) {
+                        d.state.clearPairingRef(cmd.phone);
+                        throw new BridgeError(409, 'already_connected', `${cmd.phone} is already linked`);
+                    }
+                    if (!result?.code) {
+                        throw new BridgeError(502, 'pairing_failed', result?.error || 'No pairing code was returned');
+                    }
+                    return { method: 'code', code: result.code, session: cmd.phone };
+                }
+
+                // The shared QR socket is exclusively leased to this pairing ref.
+                const qr = await d.getTempQr();
+                if (qr?.qr) return { method: 'qr', qr: qr.qr, session: TEMP_QR_SESSION };
+                if (qr?.status === 200) {
+                    throw new BridgeError(503, 'pairing_pending', qr.error || 'QR code not generated yet; retry shortly');
+                }
+                throw new BridgeError(502, 'pairing_failed', qr?.error || 'QR code could not be generated');
+            });
         },
 
         async session(_body, { session }) {

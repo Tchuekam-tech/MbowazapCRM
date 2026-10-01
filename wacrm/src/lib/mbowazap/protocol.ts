@@ -39,6 +39,7 @@ export const MAX_EVENTS_PER_BATCH = 100;
 export const BOT_PATHS = {
   ping: '/bridge/ping',
   pair: '/bridge/pair',
+  cancelPairing: '/bridge/pair/cancel',
   session: (session: string) => `/bridge/sessions/${session}`,
   logout: (session: string) => `/bridge/sessions/${session}/logout`,
   brain: (session: string) => `/bridge/sessions/${session}/brain`,
@@ -138,6 +139,8 @@ export type BridgeErrorCode =
   | 'already_connected'
   | 'session_not_connected'
   | 'pairing_pending'
+  | 'pairing_busy'
+  | 'pairing_expired'
   | 'pairing_failed'
   | 'send_failed'
   | 'presence_failed'

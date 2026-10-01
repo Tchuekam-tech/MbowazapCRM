@@ -157,13 +157,26 @@ function closeSessionSocket(phoneNumber) {
 
 /**
  * Move the temp_qr credentials to the number that scanned the QR, together
- * with the wacrm pairing ref, and return that number. Synchronous on
- * purpose: nothing may restart temp_qr (and load these linked credentials
- * into a new socket) half-way through.
+ * with the wacrm pairing ref, and return that number. The successful
+ * migration performs no awaits, so another request cannot restart temp_qr
+ * halfway through copying linked credentials.
  */
-function adoptQrLinkedCredentials(sock) {
+async function adoptQrLinkedCredentials(sock) {
     const loggedIn = numberFromJid(sock.authState.creds.me?.id);
     try { sock.ev.removeAllListeners(); } catch (_) {}
+    try {
+        require('./lib/qrSession').assertQrTargetAvailable(loggedIn, {
+            state: require('./lib/bridge/state'), sessionsRoot: SESSIONS_ROOT,
+        });
+    } catch (err) {
+        // Preserve the existing number's socket and credentials.
+        try { await sock.logout(); } catch (_) {}
+        try { sock.end(); } catch (_) {}
+        if (sessionManager.getSocket(TEMP_QR) === sock) sessionManager.deleteSocket(TEMP_QR);
+        fs.rmSync(path.join(SESSIONS_ROOT, TEMP_QR), { recursive: true, force: true });
+        require('./lib/bridge/state').clearPairingRef(TEMP_QR);
+        throw err;
+    }
     try { sock.end(); } catch (_) {}
     if (sessionManager.getSocket(TEMP_QR) === sock) sessionManager.deleteSocket(TEMP_QR);
     // Any older socket for the number would keep writing into the folder
@@ -487,7 +500,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             if (phoneNumber === TEMP_QR) {
                 console.log(chalk.yellow(`[Boot] Temp QR connected as ${loggedIn}. Migrating authentication credentials...`));
                 try {
-                    await startXeonBotInc(adoptQrLinkedCredentials(XeonBotInc));
+                    await startXeonBotInc(await adoptQrLinkedCredentials(XeonBotInc));
                 } catch (e) {
                     console.error('[Boot] Error adopting QR-linked session:', e.message);
                 }
@@ -584,7 +597,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             if (phoneNumber === TEMP_QR) {
                 if (isRegistered && XeonBotInc.authState.creds.me?.id) {
                     try {
-                        const loggedIn = adoptQrLinkedCredentials(XeonBotInc);
+                        const loggedIn = await adoptQrLinkedCredentials(XeonBotInc);
                         console.log(chalk.green(`[QR] Scanned by ${loggedIn}. Starting its session...`));
                         await startXeonBotInc(loggedIn);
                     } catch (e) {
@@ -632,7 +645,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
                     // Pre-pairing handshake timed out or was closed by gateway. The
                     // next pairing request starts over on fresh credentials.
                     console.log(chalk.yellow(`[pairing] [${phoneNumber}] Pairing attempt closed (Code 401) before the device was linked.`));
-                    const isCliPairing = process.argv.includes('--pairing-code');
+                    const isCliPairing = !process.env.MBOWAZAP_SECRET && process.argv.includes('--pairing-code');
                     const attempts = reconnectAttemptsMap.get(phoneNumber) || 0;
                     if (isCliPairing && attempts < 3) {
                         reconnectAttemptsMap.set(phoneNumber, attempts + 1);
@@ -667,7 +680,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             // 5. UNREGISTERED SOCKET TIMEOUT (Code 408 / 428 / QR expiration)
             if (!isRegistered) {
                 console.log(chalk.yellow(`[pairing] [${phoneNumber}] Unregistered pairing socket closed (Code ${statusCode || 'unknown'}).`));
-                const isCliPairing = process.argv.includes('--pairing-code');
+                const isCliPairing = !process.env.MBOWAZAP_SECRET && process.argv.includes('--pairing-code');
                 const attempts = reconnectAttemptsMap.get(phoneNumber) || 0;
                 if (isCliPairing && attempts < 3) {
                     reconnectAttemptsMap.set(phoneNumber, attempts + 1);
@@ -703,7 +716,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
         }
     });
 
-    const isCliPairing = process.argv.includes('--pairing-code');
+    const isCliPairing = !process.env.MBOWAZAP_SECRET && process.argv.includes('--pairing-code');
     if (!sessionManager.isLinkedCreds(state.creds) && phoneNumber !== TEMP_QR && isCliPairing) {
         const cleanNumber = String(phoneNumber || '').replace(/[^0-9]/g, '');
         if (cleanNumber.length >= 8 && cleanNumber.length <= 15) {
@@ -847,7 +860,11 @@ module.exports = { startXeonBotInc, requestPairingCodeForNumber };
                                 const scanned = linked && numberFromJid(creds.me?.id);
                                 if (scanned) {
                                     console.log(chalk.yellow(`[boot] Adopting QR-linked session for ${scanned}`));
+                                    require('./lib/qrSession').assertQrTargetAvailable(scanned, {
+                                        state: require('./lib/bridge/state'), sessionsRoot,
+                                    });
                                     copyFolderSync(folderPath, path.join(sessionsRoot, scanned));
+                                    require('./lib/bridge/state').movePairingRef(TEMP_QR, scanned);
                                 }
                                 fs.rmSync(folderPath, { recursive: true, force: true });
                             } else if (!linked) {
@@ -894,7 +911,7 @@ module.exports = { startXeonBotInc, requestPairingCodeForNumber };
         // CLI pairing mode, which prints the owner's code in the terminal.
         const ownerClean = ownerNum.replace(/[^0-9]/g, '');
         if (!sessionManager.getSocket(ownerClean)) {
-            if (process.argv.includes('--pairing-code')) {
+            if (!process.env.MBOWAZAP_SECRET && process.argv.includes('--pairing-code')) {
                 console.log(`[Boot] Initializing owner session for ${ownerClean} (CLI pairing)...`);
                 await startXeonBotInc(ownerClean);
             } else {

@@ -380,9 +380,23 @@ export function MboWazapConfig() {
     setTimeout(() => setCopiedCode(false), 2500);
   }
 
-  function handleResetToTryAgain() {
+  async function handleResetToTryAgain() {
+    if (activePairing) {
+      try {
+        const res = await fetch('/api/mbowazap/pair/cancel', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ pairingRef: activePairing.pairingRef }),
+        });
+        const result = await res.json();
+        if (!res.ok || !result.ok) throw new Error(result.error || 'Could not cancel pairing');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Could not cancel pairing');
+        return;
+      }
+    }
     setActivePairing(null);
     setErrorState(null);
+    await fetchStatus();
   }
 
   if (loading) {

@@ -52,7 +52,8 @@ function createBridgeState({
     const pausesFile = path.join(baseDir, 'pauses.json');
 
     const crmSentIds = new Map(); // messageId -> expiresAt
-    const pairingRefs = new Map(); // session key -> { ref, at }
+    const pairingRefsFile = path.join(baseDir, 'pairing-refs.json');
+    const pairingRefs = new Map(Object.entries(readJson(pairingRefsFile, {}))); // survives restart
     const davilaCache = new Map(); // session -> boolean
     let pauses = null; // contact -> pausedUntil (ms); loaded lazily
 
@@ -72,6 +73,11 @@ function createBridgeState({
 
     function setPairingRef(sessionKey, ref) {
         pairingRefs.set(sessionKey, { ref, at: now() });
+        writeJsonAtomic(pairingRefsFile, Object.fromEntries(pairingRefs));
+    }
+
+    function getPairingLease(sessionKey) {
+        return pairingRefs.get(sessionKey) || null;
     }
 
     function getPairingRef(sessionKey) {
@@ -84,10 +90,12 @@ function createBridgeState({
         if (!entry) return;
         pairingRefs.delete(fromKey);
         pairingRefs.set(toKey, entry);
+        writeJsonAtomic(pairingRefsFile, Object.fromEntries(pairingRefs));
     }
 
     function clearPairingRef(sessionKey) {
         pairingRefs.delete(sessionKey);
+        writeJsonAtomic(pairingRefsFile, Object.fromEntries(pairingRefs));
     }
 
     function sessionFile(session) {
@@ -202,6 +210,7 @@ function createBridgeState({
         wasSentByCrm,
         setPairingRef,
         getPairingRef,
+        getPairingLease,
         movePairingRef,
         clearPairingRef,
         isDavilaEnabled,

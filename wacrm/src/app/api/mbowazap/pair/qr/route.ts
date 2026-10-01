@@ -39,14 +39,17 @@ export async function POST(req: NextRequest) {
     const pairingRef = (body as { pairingRef?: unknown } | null)?.pairingRef;
     if (typeof pairingRef !== 'string' || !UUID_PATTERN.test(pairingRef)) {
       return NextResponse.json(
-        { ok: false, error: 'pairingRef must be the UUID returned by /api/mbowazap/pair' },
+        {
+          ok: false,
+          error: 'pairingRef must be the UUID returned by /api/mbowazap/pair',
+        },
         { status: 400 }
       );
     }
 
     const { data: config, error: configError } = await ctx.supabase
       .from('whatsapp_config')
-      .select('mbowazap_state, mbowazap_session')
+      .select('mbowazap_state, mbowazap_session, updated_at')
       .eq('account_id', ctx.accountId)
       .eq('mbowazap_pairing_ref', pairingRef)
       .maybeSingle();
@@ -61,9 +64,18 @@ export async function POST(req: NextRequest) {
 
     // Only a QR pairing that is still waiting (code pairings carry the
     // number from the start; a newer pairing replaces the ref).
-    if (!config || config.mbowazap_state !== 'pairing' || config.mbowazap_session) {
+    if (
+      !config ||
+      config.mbowazap_state !== 'pairing' ||
+      config.mbowazap_session ||
+      Date.now() >= Date.parse(config.updated_at ?? '') + 120_000
+    ) {
       return NextResponse.json(
-        { ok: false, error: 'This QR pairing is no longer active', code: 'pairing_closed' },
+        {
+          ok: false,
+          error: 'This QR pairing is no longer active',
+          code: 'pairing_closed',
+        },
         { status: 409 }
       );
     }
@@ -73,7 +85,10 @@ export async function POST(req: NextRequest) {
         pairingRef,
         method: 'qr',
       });
-      return NextResponse.json({ ok: true, qr: 'qr' in result ? result.qr : null });
+      return NextResponse.json({
+        ok: true,
+        qr: 'qr' in result ? result.qr : null,
+      });
     } catch (err) {
       if (!(err instanceof MbowazapBridgeError)) throw err;
       const { status, message } = describeBridgeError(err);

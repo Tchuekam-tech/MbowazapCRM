@@ -64,6 +64,7 @@ async function startBridge(t, overrides = {}) {
             pairingCalls.push(phone);
             return { code: 'ABCD-EFGH', isConnected: false };
         },
+        resetPairingSession: (session) => { sockets.delete(session); },
         getTempQr: async () => ({ status: 200, qr: 'data:image/png;base64,QUJD' }),
         removeSessionFiles: (session) => removed.push(session),
         loadMessage: async () => null,
@@ -504,4 +505,66 @@ test('presence answers presence_failed instead of hanging when the socket stalls
     });
     assert.equal(res.status, 502);
     assert.equal(res.json.error.code, 'presence_failed');
+});
+
+const OTHER_REF = '2b4e28ba-2fa1-41d2-883f-0016d3cca428';
+for (const method of ['qr', 'code']) {
+    test(`${method}: a competing account cannot replace the owner, including while generation awaits`, async (t) => {
+        let release, entered;
+        const started = new Promise(resolve => { entered = resolve; });
+        const wait = new Promise(resolve => { release = resolve; });
+        const generate = async () => { entered(); await wait; return method === 'qr'
+            ? { status: 200, qr: 'private-qr' } : { code: 'AAAA-BBBB' }; };
+        const { call, state } = await startBridge(t, {
+            ...(method === 'qr' ? { getTempQr: generate } : { requestPairingCode: generate }),
+        });
+        const body = { pairingRef: REF, method, ...(method === 'code' ? { phone: SESSION } : {}) };
+        const first = call('POST', '/bridge/pair', body);
+        await started;
+        const competitor = await call('POST', '/bridge/pair', { ...body, pairingRef: OTHER_REF });
+        assert.equal(competitor.status, 409);
+        assert.equal(competitor.json.error.code, 'pairing_busy');
+        assert.equal(state.getPairingRef(method === 'qr' ? 'temp_qr' : SESSION), REF);
+        release();
+        assert.equal((await first).status, 200);
+        assert.equal((await call('POST', '/bridge/pair', { ...body, pairingRef: OTHER_REF })).status, 409);
+    });
+}
+
+test('QR lease refresh keeps its deadline; next owner gets a fresh socket after expiry', async (t) => {
+    const resets = [];
+    const { call, state, clock } = await startBridge(t, { resetPairingSession: session => resets.push(session) });
+    const body = { method: 'qr', pairingRef: REF };
+    assert.equal((await call('POST', '/bridge/pair', body)).status, 200);
+    const at = state.getPairingLease('temp_qr').at;
+    clock.now += 60_000;
+    assert.equal((await call('POST', '/bridge/pair', body)).status, 200);
+    assert.equal(state.getPairingLease('temp_qr').at, at);
+    clock.now += 60_001;
+    assert.equal((await call('POST', '/bridge/pair', body)).json.error.code, 'pairing_expired');
+    assert.equal((await call('POST', '/bridge/pair', { ...body, pairingRef: OTHER_REF })).status, 200);
+    assert.deepEqual(resets, ['temp_qr', 'temp_qr']);
+    assert.equal(state.getPairingRef('temp_qr'), OTHER_REF);
+});
+
+test('6 and 7 digit pairing numbers are rejected before generating a code', async (t) => {
+    const { call, pairingCalls } = await startBridge(t);
+    for (const phone of ['123456', '1234567']) {
+        const result = await call('POST', '/bridge/pair', { method: 'code', phone, pairingRef: REF });
+        assert.equal(result.status, 400);
+    }
+    assert.deepEqual(pairingCalls, []);
+});
+
+test('cancellation is owner-scoped and permits immediate retry with fresh credentials', async (t) => {
+    const resets = [];
+    const { call, state } = await startBridge(t, { resetPairingSession: session => resets.push(session) });
+    await call('POST', '/bridge/pair', { method: 'qr', pairingRef: REF });
+    await call('POST', '/bridge/pair/cancel', { method: 'qr', pairingRef: OTHER_REF });
+    assert.equal(state.getPairingRef('temp_qr'), REF);
+    assert.equal(resets.length, 1);
+    assert.equal((await call('POST', '/bridge/pair/cancel', { method: 'qr', pairingRef: REF })).status, 200);
+    assert.equal(state.getPairingRef('temp_qr'), null);
+    assert.equal((await call('POST', '/bridge/pair', { method: 'qr', pairingRef: OTHER_REF })).status, 200);
+    assert.equal(resets.length, 3);
 });

@@ -83,8 +83,12 @@ matching HTTP status.
   `disconnected`.
 - `pairingRef` is a UUID from wacrm. The bot echoes it on the first
   `connection` event after pairing, which is how wacrm knows which
-  account a number now belongs to. There is only one QR socket, so for
-  QR pairing the latest ref wins.
+  account a number now belongs to. The shared QR socket is exclusively reserved to one attempt for two
+  minutes; competing refs receive `409 pairing_busy`. Refreshing the same
+  ref never extends its deadline. After expiry, the old unlinked socket
+  and credentials are discarded before the next owner receives a QR.
+  Code pairings have the same exclusive ownership per phone number.
+  Ownership survives gateway restarts under `data/bridge/pairing-refs.json`.
 - `to` is exactly one of `{ "phone": "2376…" }` or `{ "lid": "…" }`.
 - `/bridge/send` body: `{ session, to, kind, origin, text?, mediaUrl?,
 mimeType?, filename?, quotedId? }`.
@@ -264,3 +268,30 @@ Meta-only features answer 409 on a MboWazap account: templates,
 broadcasts, the Meta media proxy and registration checks. The Cloud
 API configuration route refuses to save or delete while MboWazap holds
 the account's single connection.
+
+## Pairing ownership and deployment
+
+Deploy the CRM and gateway changes together. No new database migration is
+needed; migration 043's unique phone index is required. Run one gateway
+process for its session data directory, with persistent `data/sessions/`
+and `data/bridge/` storage.
+
+The CRM reserves its configuration row and phone before asking the gateway
+to generate a code. Conditional writes prevent concurrent tabs from replacing
+one another. Failures roll back only their own pending reservation; stale
+connection callbacks cannot claim a replacement reservation.
+
+`POST /bridge/pair/cancel` accepts the same request shape as `/bridge/pair`.
+It cancels only the matching owner and destroys the unlinked socket before
+releasing the reservation. Cancellation during generation returns
+`pairing_busy`; cancellation of an already linked socket is refused.
+The settings screen uses the authenticated `/api/mbowazap/pair/cancel` route.
+
+When `MBOWAZAP_SECRET` is set, the unsigned standalone dashboard, pairing,
+configuration, send, and disconnect routes are disabled, as is CLI pairing.
+The health probe, signed bridge, and existing Tally webhook remain available. Start pairing
+from the authenticated CRM settings screen.
+
+Pairing requests accept 8–15 digits including the country code. Attempt
+expiry is enforced by QR refresh, polling, gateway ownership, and connection
+event ingestion. `pairing_busy` and `pairing_expired` are HTTP 409 errors.

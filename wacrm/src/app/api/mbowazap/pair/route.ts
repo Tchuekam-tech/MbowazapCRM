@@ -7,11 +7,12 @@ import {
   MbowazapBridgeError,
   type MbowazapClient,
 } from '@/lib/mbowazap/client';
+import { type PairRequest, type PairResult } from '@/lib/mbowazap/protocol';
+
 import {
-  SESSION_PATTERN,
-  type PairRequest,
-  type PairResult,
-} from '@/lib/mbowazap/protocol';
+  reservePairing,
+  type PairingConfig,
+} from '@/lib/mbowazap/pairing-reservation';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,8 @@ async function requestPairing(
     } catch (err) {
       const pending =
         err instanceof MbowazapBridgeError && err.code === 'pairing_pending';
-      if (!pending || Date.now() + PAIRING_PENDING_RETRY_MS > deadline) throw err;
+      if (!pending || Date.now() + PAIRING_PENDING_RETRY_MS > deadline)
+        throw err;
       await new Promise((r) => setTimeout(r, PAIRING_PENDING_RETRY_MS));
     }
   }
@@ -93,11 +95,12 @@ export async function POST(req: NextRequest) {
     let cleanPhone: string | undefined;
     if (method === 'code') {
       cleanPhone = String(phone ?? '').replace(/[^0-9]/g, '');
-      if (!SESSION_PATTERN.test(cleanPhone)) {
+      if (!/^\d{8,15}$/.test(cleanPhone)) {
         return NextResponse.json(
           {
             ok: false,
-            error: 'Phone number must be between 6 and 15 digits (e.g. 237653683174)',
+            error:
+              'Phone number must be between 8 and 15 digits (e.g. 237653683174)',
           },
           { status: 400 }
         );
@@ -106,12 +109,15 @@ export async function POST(req: NextRequest) {
 
     const { data: existingConfig, error: existingError } = await ctx.supabase
       .from('whatsapp_config')
-      .select('mbowazap_state, mbowazap_session')
+      .select('*')
       .eq('account_id', ctx.accountId)
       .maybeSingle();
 
     if (existingError) {
-      console.error('[mbowazap/pair] error loading whatsapp_config:', existingError);
+      console.error(
+        '[mbowazap/pair] error loading whatsapp_config:',
+        existingError
+      );
       return NextResponse.json(
         { ok: false, error: 'Failed to load WhatsApp configuration' },
         { status: 500 }
@@ -136,64 +142,50 @@ export async function POST(req: NextRequest) {
     }
 
     const pairingRef = crypto.randomUUID();
-
+    let reservation: Awaited<ReturnType<typeof reservePairing>> | undefined;
     let pairResult: PairResult;
     try {
+      reservation = await reservePairing(
+        ctx.supabase,
+        ctx.accountId,
+        ctx.userId,
+        existingConfig as PairingConfig | null,
+        pairingRef,
+        cleanPhone ?? null
+      );
       pairResult = await requestPairing(
         client,
         method === 'code'
           ? { pairingRef, method: 'code', phone: cleanPhone! }
           : { pairingRef, method: 'qr' }
       );
+      if (Date.now() >= Date.parse(reservation.expiresAt)) {
+        throw new MbowazapBridgeError(
+          'pairing_expired',
+          'Pairing took too long. Please try again.'
+        );
+      }
     } catch (err) {
+      if (reservation) {
+        try {
+          await client.cancelPairing(
+            method === 'code'
+              ? { method: 'code', phone: cleanPhone!, pairingRef }
+              : { method: 'qr', pairingRef }
+          );
+        } catch (cleanupError) {
+          console.warn(
+            '[mbowazap/pair] gateway cleanup deferred to expiry:',
+            cleanupError
+          );
+        }
+        await reservation.rollback();
+      }
       if (!(err instanceof MbowazapBridgeError)) throw err;
-      console.warn(`[mbowazap/pair] TchuekBot refused (${err.code}): ${err.message}`);
       const { status, message } = describeBridgeError(err);
       return NextResponse.json(
         { ok: false, error: message, code: err.code },
         { status }
-      );
-    }
-
-    // Recorded only once TchuekBot has produced a code or QR, so a failed
-    // attempt leaves the account as it was instead of stuck in "pairing".
-    // No race with the bot's connect report: that needs the user to act on
-    // the code / QR returned below.
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + PAIRING_EXPIRY_SECONDS * 1000).toISOString();
-    const { error: upsertError } = await ctx.supabase
-      .from('whatsapp_config')
-      .upsert(
-        {
-          account_id: ctx.accountId,
-          user_id: ctx.userId,
-          provider: 'mbowazap',
-          mbowazap_pairing_ref: pairingRef,
-          mbowazap_state: 'pairing',
-          status: 'disconnected',
-          mbowazap_session: cleanPhone ?? null,
-          mbowazap_brain: 'tchuekbot',
-          updated_at: now.toISOString(),
-        },
-        { onConflict: 'account_id' }
-      );
-
-    if (upsertError) {
-      // Migration 043's unique index on mbowazap_session.
-      if (upsertError.code === '23505') {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: `+${cleanPhone} is already linked to another wacrm account.`,
-            code: 'already_connected',
-          },
-          { status: 409 }
-        );
-      }
-      console.error('[mbowazap/pair] error preparing whatsapp_config:', upsertError);
-      return NextResponse.json(
-        { ok: false, error: `Database error: ${upsertError.message}` },
-        { status: 500 }
       );
     }
 
@@ -205,7 +197,7 @@ export async function POST(req: NextRequest) {
       qr: 'qr' in pairResult ? pairResult.qr : undefined,
       session: pairResult.session,
       pairingRef,
-      expiresAt,
+      expiresAt: reservation.expiresAt,
       expiresInSeconds: PAIRING_EXPIRY_SECONDS,
     });
   } catch (err) {
