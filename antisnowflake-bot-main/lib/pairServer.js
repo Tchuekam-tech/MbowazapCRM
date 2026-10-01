@@ -89,9 +89,11 @@ async function generatePairCode(phoneNumber) {
     }
 
     let sock = null;
+    let cleanupTimer = null;
     const sessionDir = path.join(BUSINESS_SESSION_DIR, cleanNumber);
 
-    const promise = (async () => {
+    let promise;
+    promise = (async () => {
         if (fs.existsSync(sessionDir)) {
             cleanupSession(sessionDir);
         }
@@ -151,13 +153,21 @@ async function generatePairCode(phoneNumber) {
                 const { qr, connection, lastDisconnect } = update || {};
 
                 if (connection === 'open') {
+                    if (cleanupTimer) clearTimeout(cleanupTimer);
+                    closeSocket(sock);
                     activePairingSessions.delete(cleanNumber);
+                    try {
+                        startLinkedBot(cleanNumber);
+                    } catch (err) {
+                        console.error(`[PairServer] Failed to start linked bot for ${cleanNumber}:`, err.message);
+                    }
                     return;
                 }
 
                 if (connection === 'close') {
                     const statusCode = disconnectCode(lastDisconnect);
                     if (resolvedCode && (statusCode === DisconnectReason.restartRequired || statusCode === 515)) {
+                        if (cleanupTimer) clearTimeout(cleanupTimer);
                         setTimeout(async () => {
                             closeSocket(sock);
                             activePairingSessions.delete(cleanNumber);
@@ -177,7 +187,7 @@ async function generatePairCode(phoneNumber) {
             });
         });
 
-        const cleanupTimer = setTimeout(() => {
+        cleanupTimer = setTimeout(() => {
             const entry = activePairingSessions.get(cleanNumber);
             if (entry?.sock === sock && !sock.authState.creds.registered) {
                 closeSocket(sock);
@@ -190,15 +200,10 @@ async function generatePairCode(phoneNumber) {
         return { code };
     })();
 
-    activePairingSessions.set(cleanNumber, {
-        createdAt: Date.now(),
-        promise,
-        sock
-    });
-
     try {
         return await promise;
     } catch (err) {
+        if (cleanupTimer) clearTimeout(cleanupTimer);
         closeSocket(sock);
         activePairingSessions.delete(cleanNumber);
         cleanupSession(sessionDir);
@@ -206,71 +211,13 @@ async function generatePairCode(phoneNumber) {
     }
 }
 
+/**
+ * QR code generation delegates to the persistent temp_qr session in qrSession.js.
+ * This ensures the socket stays alive until the phone scans it and Baileys confirms linking.
+ */
 async function generateQRCode() {
-    if (activePairingSessions.size >= MAX_CONCURRENT_SESSIONS) {
-        throw new Error('Server busy. Too many concurrent pairing requests. Try again in 30 seconds.');
-    }
-
-    const sessionId = `qr_${Date.now()}`;
-    const sessionDir = path.join(TEMP_SESSION_DIR, sessionId);
-    let sock = null;
-
-    activePairingSessions.set(sessionId, { createdAt: Date.now(), sock });
-
-    try {
-        fs.mkdirSync(sessionDir, { recursive: true });
-
-        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-        sock = makeWASocket(makeSocketOptions(state));
-        activePairingSessions.set(sessionId, { createdAt: Date.now(), sock });
-
-        const result = await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                reject(new Error('QR generation timed out after 30 seconds.'));
-            }, 30_000);
-
-            sock.ev.on('connection.update', async (update) => {
-                const { qr, connection, lastDisconnect } = update || {};
-
-                if (qr) {
-                    try {
-                        const qrBase64 = await QRCode.toDataURL(qr, {
-                            width: 300,
-                            margin: 2,
-                            color: { dark: '#000000', light: '#ffffff' }
-                        });
-                        clearTimeout(timeout);
-                        resolve({
-                            qr: qrBase64,
-                            instructions: [
-                                '1. Open WhatsApp on your phone',
-                                '2. Go to Settings -> Linked Devices',
-                                '3. Tap "Link a Device"',
-                                '4. Scan this QR code immediately',
-                                '5. Wait for the connection to establish'
-                            ]
-                        });
-                    } catch (err) {
-                        clearTimeout(timeout);
-                        reject(new Error(`QR generation failed: ${err.message}`));
-                    }
-                }
-
-                if (connection === 'close') {
-                    clearTimeout(timeout);
-                    reject(new Error(`Connection closed during QR generation (code: ${disconnectCode(lastDisconnect) || 'unknown'})`));
-                }
-            });
-
-            sock.ev.on('creds.update', saveCreds);
-        });
-
-        return result;
-    } finally {
-        activePairingSessions.delete(sessionId);
-        closeSocket(sock);
-        setTimeout(() => cleanupSession(sessionDir), 3000);
-    }
+    const { getTempQrDataUrl } = require('./qrSession');
+    return getTempQrDataUrl();
 }
 
 module.exports = { generatePairCode, generateQRCode };
