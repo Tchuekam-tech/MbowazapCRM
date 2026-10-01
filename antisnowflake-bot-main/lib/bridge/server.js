@@ -120,23 +120,57 @@ function sendError(res, status, code, message) {
 
 function readBody(req, limit) {
     return new Promise((resolve, reject) => {
+        let settled = false;
         const declared = Number(req.headers['content-length']);
         if (Number.isFinite(declared) && declared > limit) {
             req.resume();
             reject(new BridgeError(413, 'payload_too_large', `Body is larger than ${limit} bytes`));
             return;
         }
+
         const chunks = [];
         let size = 0;
-        req.on('data', (chunk) => {
+
+        function cleanup() {
+            req.removeListener('data', onData);
+            req.removeListener('end', onEnd);
+            req.removeListener('error', onError);
+        }
+
+        function onData(chunk) {
+            if (settled) return;
             size += chunk.length;
-            if (size <= limit) chunks.push(chunk);
-        });
-        req.on('end', () => {
-            if (size > limit) reject(new BridgeError(413, 'payload_too_large', `Body is larger than ${limit} bytes`));
-            else resolve(Buffer.concat(chunks));
-        });
-        req.on('error', reject);
+            if (size <= limit) {
+                chunks.push(chunk);
+            } else {
+                settled = true;
+                cleanup();
+                req.resume();
+                reject(new BridgeError(413, 'payload_too_large', `Body is larger than ${limit} bytes`));
+            }
+        }
+
+        function onEnd() {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            if (size > limit) {
+                reject(new BridgeError(413, 'payload_too_large', `Body is larger than ${limit} bytes`));
+            } else {
+                resolve(Buffer.concat(chunks));
+            }
+        }
+
+        function onError(err) {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(err);
+        }
+
+        req.on('data', onData);
+        req.on('end', onEnd);
+        req.on('error', onError);
     });
 }
 

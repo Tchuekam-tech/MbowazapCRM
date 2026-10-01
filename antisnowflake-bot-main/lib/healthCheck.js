@@ -36,7 +36,15 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
         const parsedUrl = url.parse(req.url, true);
         const pathname = parsedUrl.pathname;
 
-        // CORS headers
+        // ──────────────────────────────────────────────
+        // Route: /bridge/* → wacrm bridge (HMAC-signed, server-to-server)
+        // ──────────────────────────────────────────────
+        if (pathname.startsWith('/bridge/')) {
+            await handleBridgeRequest(req, res);
+            return;
+        }
+
+        // CORS headers (for local web frontend and dashboard only)
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -44,14 +52,6 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
         if (req.method === 'OPTIONS') {
             res.writeHead(204);
             res.end();
-            return;
-        }
-
-        // ──────────────────────────────────────────────
-        // Route: /bridge/* → wacrm bridge (HMAC-signed, server-to-server)
-        // ──────────────────────────────────────────────
-        if (pathname.startsWith('/bridge/')) {
-            await handleBridgeRequest(req, res);
             return;
         }
 
@@ -135,6 +135,11 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
                 }
 
                 const cleanNumber = number.replace(/[^0-9]/g, '');
+                if (!cleanNumber || cleanNumber.length < 8 || cleanNumber.length > 15) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Invalid phone number' }));
+                    return;
+                }
                 const configPath = path.join(__dirname, `../data/config/${cleanNumber}.json`);
 
                 let config = { systemPrompt: '', knowledgeBase: '' };
@@ -162,6 +167,11 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
                         }
 
                         const cleanNumber = payload.number.replace(/[^0-9]/g, '');
+                        if (!cleanNumber || cleanNumber.length < 8 || cleanNumber.length > 15) {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ error: 'Invalid phone number' }));
+                            return;
+                        }
                         const configPath = path.join(__dirname, `../data/config/${cleanNumber}.json`);
                         const configDir = path.dirname(configPath);
 
@@ -199,6 +209,11 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
             }
 
             const cleanNumber = number.replace(/[^0-9]/g, '');
+            if (!cleanNumber || cleanNumber.length < 8 || cleanNumber.length > 15) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Invalid phone number' }));
+                return;
+            }
             const sock = sessionManager.getSocket(cleanNumber);
 
             try {
