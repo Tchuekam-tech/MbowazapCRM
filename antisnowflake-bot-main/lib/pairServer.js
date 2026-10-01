@@ -157,7 +157,9 @@ async function generatePairCode(phoneNumber) {
                     closeSocket(sock);
                     activePairingSessions.delete(cleanNumber);
                     try {
-                        startLinkedBot(cleanNumber);
+                        startLinkedBot(cleanNumber).catch((err) => {
+                            console.error(`[PairServer] Failed to start linked bot for ${cleanNumber}:`, err.message);
+                        });
                     } catch (err) {
                         console.error(`[PairServer] Failed to start linked bot for ${cleanNumber}:`, err.message);
                     }

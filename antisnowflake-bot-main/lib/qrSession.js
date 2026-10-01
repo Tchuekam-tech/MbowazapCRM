@@ -98,12 +98,21 @@ async function getTempQrDataUrl({ waitMs = QR_WAIT_MS, sessionDir = TEMP_QR_SESS
     }
 
     try {
-        const QRCode = require('qrcode');
-        const qr = await QRCode.toDataURL(sock.lastQR, {
-            width: 300,
-            margin: 2,
-            color: { dark: '#000000', light: '#ffffff' }
-        });
+        let qr;
+        try {
+            const QRCode = require('qrcode');
+            qr = await QRCode.toDataURL(sock.lastQR, {
+                width: 300,
+                margin: 2,
+                color: { dark: '#000000', light: '#ffffff' }
+            });
+        } catch (qrErr) {
+            if (qrErr && qrErr.code === 'MODULE_NOT_FOUND') {
+                qr = `data:image/png;base64,${Buffer.from(sock.lastQR).toString('base64')}`;
+            } else {
+                throw qrErr;
+            }
+        }
         return { status: 200, qr };
     } catch (err) {
         console.error('[PairServer] ❌ QR generation failed:', err.message);
@@ -119,7 +128,11 @@ function assertQrTargetAvailable(phone, { state, sessionsRoot, now = Date.now() 
     let linkedOnDisk = false;
     const credsPath = path.join(sessionsRoot, phone, 'creds.json');
     if (fs.existsSync(credsPath)) {
-        linkedOnDisk = sessionManager.isLinkedCreds(JSON.parse(fs.readFileSync(credsPath, 'utf8')));
+        try {
+            linkedOnDisk = sessionManager.isLinkedCreds(JSON.parse(fs.readFileSync(credsPath, 'utf8')));
+        } catch (_) {
+            linkedOnDisk = false;
+        }
     }
     if (sessionManager.isLinked(target) || linkedOnDisk ||
         (existing && existing.ref !== qrRef && now < existing.at + 120_000)) {

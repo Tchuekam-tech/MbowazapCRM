@@ -156,8 +156,22 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
 
             if (req.method === 'POST') {
                 let body = '';
-                req.on('data', chunk => body += chunk.toString());
+                let bytes = 0;
+                let tooLarge = false;
+                req.on('data', chunk => {
+                    bytes += chunk.length;
+                    if (bytes > 1024 * 1024) {
+                        tooLarge = true;
+                        return;
+                    }
+                    body += chunk.toString();
+                });
                 req.on('end', () => {
+                    if (tooLarge) {
+                        res.writeHead(413, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: 'Payload too large' }));
+                        return;
+                    }
                     try {
                         const payload = JSON.parse(body);
                         if (!payload.number) {
@@ -242,8 +256,22 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
         // ──────────────────────────────────────────────
         if (pathname === '/api/send' && req.method === 'POST') {
             let body = '';
-            req.on('data', chunk => body += chunk.toString());
+            let bytes = 0;
+            let tooLarge = false;
+            req.on('data', chunk => {
+                bytes += chunk.length;
+                if (bytes > 1024 * 1024) {
+                    tooLarge = true;
+                    return;
+                }
+                body += chunk.toString();
+            });
             req.on('end', async () => {
+                if (tooLarge) {
+                    res.writeHead(413, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Payload too large' }));
+                    return;
+                }
                 try {
                     const payload = JSON.parse(body);
                     const { to, text, number } = payload;
@@ -346,8 +374,22 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
         // ──────────────────────────────────────────────
         if (pathname === '/tally-webhook' && req.method === 'POST') {
             let body = '';
-            req.on('data', chunk => body += chunk.toString());
+            let bytes = 0;
+            let tooLarge = false;
+            req.on('data', chunk => {
+                bytes += chunk.length;
+                if (bytes > 1024 * 1024) {
+                    tooLarge = true;
+                    return;
+                }
+                body += chunk.toString();
+            });
             req.on('end', async () => {
+                if (tooLarge) {
+                    res.writeHead(413, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Payload too large' }));
+                    return;
+                }
                 try {
                     const payload = JSON.parse(body);
                     console.log('[Tally Webhook] Received webhook call:', JSON.stringify(payload));

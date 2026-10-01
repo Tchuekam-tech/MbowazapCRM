@@ -33,7 +33,13 @@ function setSocket(phoneNumber, sock) {
  * @param {string} phoneNumber Business phone number
  */
 function deleteSocket(phoneNumber) {
-    activeSockets.delete(normalizeSessionKey(phoneNumber));
+    const key = normalizeSessionKey(phoneNumber);
+    activeSockets.delete(key);
+    for (const [client, cached] of clientSocketCache.entries()) {
+        if (cached.biz === key) {
+            clientSocketCache.delete(client);
+        }
+    }
 }
 
 /**

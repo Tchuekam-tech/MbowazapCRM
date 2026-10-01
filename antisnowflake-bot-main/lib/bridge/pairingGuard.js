@@ -18,7 +18,7 @@ function createPairingGuard({ state, now, resetPairingSession }) {
             resetPairingSession(session);
             state.setPairingRef(session, ref);
         }
-        const startedAt = state.getPairingLease(session).at;
+        const startedAt = state.getPairingLease(session)?.at ?? now();
         inFlight.add(session);
         try {
             const result = await generate();

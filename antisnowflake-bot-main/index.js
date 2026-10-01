@@ -536,6 +536,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
                 // pending — that would bind it to the wrong wacrm account.
                 const pairingRef = bridgeState.getPairingRef(phoneNumber);
                 getReporter().reportConnection(phoneNumber, 'connected', { phone: loggedIn, name: XeonBotInc.user?.name }, pairingRef);
+                if (pairingRef) bridgeState.clearPairingRef(phoneNumber);
             } catch (_) {}
 
             // Run flows reminder scanner
