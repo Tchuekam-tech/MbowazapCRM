@@ -24,22 +24,32 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (error) throw error;
     if (config?.mbowazap_state === 'pairing') {
-      await getMbowazapClient().cancelPairing(
-        config.mbowazap_session
-          ? {
-              method: 'code',
-              phone: config.mbowazap_session,
-              pairingRef: body.pairingRef,
-            }
-          : { method: 'qr', pairingRef: body.pairingRef }
-      );
+      try {
+        await getMbowazapClient().cancelPairing(
+          config.mbowazap_session
+            ? {
+                method: 'code',
+                phone: config.mbowazap_session,
+                pairingRef: body.pairingRef,
+              }
+            : { method: 'qr', pairingRef: body.pairingRef }
+        );
+      } catch (bridgeErr) {
+        if (bridgeErr instanceof MbowazapBridgeError && bridgeErr.status === 409) {
+          // If the bot indicates pairing is actively in flight, rethrow so caller can retry shortly
+          throw bridgeErr;
+        }
+        // If bridge is unreachable (e.g. offline/network error), log and allow local DB reset
+        // so user is not permanently trapped in 'pairing' state.
+        console.warn('[cancel] Bridge cancelPairing failed; clearing local pairing state anyway:', bridgeErr);
+      }
       const { error: updateError } = await ctx.supabase
         .from('whatsapp_config')
         .update({
           mbowazap_state: 'disconnected',
           status: 'disconnected',
           mbowazap_session: null,
-          mbowazap_pairing_ref: crypto.randomUUID(),
+          mbowazap_pairing_ref: null,
           updated_at: new Date().toISOString(),
         })
         .eq('account_id', ctx.accountId)
