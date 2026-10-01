@@ -68,8 +68,18 @@ export async function reservePairing(
     expiresAt: new Date(now + PAIRING_TTL_MS).toISOString(),
     async rollback() {
       // Never undo a newer request, disconnect, or successful connection event.
-      const operation = previous
-        ? db.from('whatsapp_config').update(previous)
+      let rollbackState = previous;
+      if (rollbackState && rollbackState.mbowazap_state === 'pairing') {
+        rollbackState = {
+          ...rollbackState,
+          mbowazap_state: 'disconnected',
+          status: 'disconnected',
+          mbowazap_session: null,
+          mbowazap_pairing_ref: crypto.randomUUID(),
+        };
+      }
+      const operation = rollbackState
+        ? db.from('whatsapp_config').update(rollbackState)
         : db.from('whatsapp_config').delete();
       const { error } = await operation
         .eq('account_id', accountId)

@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
           mbowazap_state: 'disconnected',
           status: 'disconnected',
           mbowazap_session: null,
-          mbowazap_pairing_ref: null,
+          mbowazap_pairing_ref: crypto.randomUUID(),
           updated_at: new Date().toISOString(),
         })
         .eq('account_id', ctx.accountId)
