@@ -90,14 +90,27 @@ function createNonceCache({ ttlMs = NONCE_TTL_MS, maxEntries = 10000 } = {}) {
         /** True if `nonce` was already used; otherwise records it and returns false. */
         seen(nonce, nowMs) {
             for (const [key, expiresAt] of entries) {
-                if (expiresAt > nowMs) break;
-                entries.delete(key);
+                if (expiresAt <= nowMs) {
+                    entries.delete(key);
+                }
             }
             const expiresAt = entries.get(nonce);
             if (expiresAt !== undefined && expiresAt > nowMs) return true;
             entries.set(nonce, nowMs + ttlMs);
             while (entries.size > maxEntries) {
-                entries.delete(entries.keys().next().value);
+                let earliestKey = null;
+                let earliestExp = Infinity;
+                for (const [k, exp] of entries) {
+                    if (exp < earliestExp) {
+                        earliestExp = exp;
+                        earliestKey = k;
+                    }
+                }
+                if (earliestKey) {
+                    entries.delete(earliestKey);
+                } else {
+                    entries.delete(entries.keys().next().value);
+                }
             }
             return false;
         },

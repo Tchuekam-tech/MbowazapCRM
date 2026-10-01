@@ -60,8 +60,9 @@ function createBridgeState({
     function markCrmSent(messageId) {
         const t = now();
         for (const [id, expiresAt] of crmSentIds) {
-            if (expiresAt > t) break;
-            crmSentIds.delete(id);
+            if (expiresAt <= t) {
+                crmSentIds.delete(id);
+            }
         }
         crmSentIds.set(messageId, t + CRM_SENT_TTL_MS);
     }
