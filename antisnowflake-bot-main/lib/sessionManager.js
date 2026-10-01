@@ -72,12 +72,19 @@ function isLinked(sock) {
     return isLinkedCreds(sock?.authState?.creds);
 }
 
+const clientSocketCache = new Map();
+const CLIENT_CACHE_TTL_MS = 15_000;
+
 /** Whether the socket's WebSocket is closing or closed (i.e. dead, not merely still connecting). */
 function isSocketClosed(sock) {
-    const ws = sock?.ws;
+    if (!sock) return true;
+    if (sock._manuallyEnded || sock._closed) return true;
+    const ws = sock.ws;
     if (!ws) return true;
     if (typeof ws.isClosed === 'boolean') return ws.isClosed || ws.isClosing === true;
-    return ws.readyState > 1;
+    if (typeof ws.readyState === 'number') return ws.readyState > 1;
+    if (ws.isOpen === false && ws.isConnecting === false) return true;
+    return false;
 }
 
 /**
@@ -89,6 +96,14 @@ function isSocketClosed(sock) {
  */
 function findSocketForClient(clientNumber) {
     const cleanClient = clientNumber.replace(/[^0-9]/g, '');
+    const now = Date.now();
+
+    const cached = clientSocketCache.get(cleanClient);
+    if (cached && (now - cached.cachedAt) < CLIENT_CACHE_TTL_MS) {
+        const sock = activeSockets.get(cached.biz);
+        if (sock && isSocketOpen(sock)) return sock;
+    }
+
     const flowRoot = path.join(__dirname, '../data/flow_sessions');
     const targetRoot = fs.existsSync(flowRoot) ? flowRoot : SESSIONS_ROOT;
     if (!fs.existsSync(targetRoot)) return null;
@@ -103,7 +118,10 @@ function findSocketForClient(clientNumber) {
                 const session = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
                 if (session.state === 'TALLY_SENT' && !session.tallySubmitted) {
                     const sock = activeSockets.get(biz);
-                    if (sock) return sock;
+                    if (sock) {
+                        clientSocketCache.set(cleanClient, { biz, cachedAt: now });
+                        return sock;
+                    }
                 }
                 fallbackBiz = biz;
             } catch (_) {}
@@ -112,7 +130,10 @@ function findSocketForClient(clientNumber) {
 
     if (fallbackBiz) {
         const sock = activeSockets.get(fallbackBiz);
-        if (sock) return sock;
+        if (sock) {
+            clientSocketCache.set(cleanClient, { biz: fallbackBiz, cachedAt: now });
+            return sock;
+        }
     }
 
     // Default to the first active socket if none found (as a safety fallback)
