@@ -736,6 +736,9 @@ function createReporter({
             sock._reporterWrapped = true;
         }
 
+        if (sock._reporterListenersAttached) return;
+        sock._reporterListenersAttached = true;
+
         // Messages upsert: incoming messages and outgoing echoes
         sock.ev.on('messages.upsert', (chatUpdate) => {
             try {
