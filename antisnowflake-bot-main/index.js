@@ -30,6 +30,7 @@ const {
     useMultiFileAuthState,
     DisconnectReason,
     fetchLatestBaileysVersion,
+    fetchLatestWaWebVersion,
     generateForwardMessageContent,
     prepareWAMessageMedia,
     generateWAMessageFromContent,
@@ -101,6 +102,9 @@ const useMobile = process.argv.includes("--mobile");
 const PAIRING_INIT_BUFFER_MS = 3000;
 /** How long a pairing-code request waits for WhatsApp to accept a fresh socket. */
 const PAIRING_READY_TIMEOUT_MS = 25_000;
+/** WhatsApp Web revisions change independently of Baileys releases. */
+const WA_VERSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const WA_VERSION_FALLBACK_RETRY_MS = 5 * 60 * 1000;
 /**
  * WhatsApp sometimes closes the first pairing WebSocket right after the noise
  * handshake (Boom "Connection Terminated" / statusCode 428) — anti-abuse
@@ -130,16 +134,40 @@ function numberFromJid(jid) {
     return String(jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 }
 
-// The WhatsApp Web version, fetched once per process. fetchLatestBaileysVersion
-// has no timeout of its own, and it used to run on every socket start — so a
-// slow GitHub response stalled every pairing request behind it.
+// Resolve WhatsApp Web's live revision once and refresh it every six hours.
+// Concurrent socket starts share the same fetch, and both upstream requests
+// have a timeout so a slow version endpoint cannot stall pairing indefinitely.
 let latestWaVersion = null;
+let latestWaVersionFetchedAt = 0;
+let waVersionFetch = null;
 async function getWaVersion() {
-    if (latestWaVersion) return latestWaVersion;
-    // Never throws: on failure it hands back the version bundled with Baileys.
-    const { version, isLatest } = await fetchLatestBaileysVersion({ timeout: WA_VERSION_TIMEOUT_MS });
-    if (isLatest) latestWaVersion = version;
-    return version;
+    const age = Date.now() - latestWaVersionFetchedAt;
+    if (latestWaVersion && age < WA_VERSION_CACHE_TTL_MS) return latestWaVersion;
+    if (waVersionFetch) return waVersionFetch;
+
+    waVersionFetch = (async () => {
+        // WhatsApp Web's live client revision is authoritative. Baileys' own
+        // version file can lag WhatsApp by months while still reporting that
+        // it is the latest Baileys version, which can make WhatsApp reject a
+        // new pairing socket before it emits a QR.
+        const web = await fetchLatestWaWebVersion({ timeout: WA_VERSION_TIMEOUT_MS });
+        if (web.isLatest) {
+            latestWaVersion = web.version;
+            latestWaVersionFetchedAt = Date.now();
+            return latestWaVersion;
+        }
+
+        // Fall back to Baileys' published revision when web.whatsapp.com is
+        // unavailable. Retry the live source sooner after using a fallback.
+        const baileys = await fetchLatestBaileysVersion({ timeout: WA_VERSION_TIMEOUT_MS });
+        latestWaVersion = baileys.version || web.version;
+        latestWaVersionFetchedAt = Date.now() - WA_VERSION_CACHE_TTL_MS + WA_VERSION_FALLBACK_RETRY_MS;
+        return latestWaVersion;
+    })().finally(() => {
+        waVersionFetch = null;
+    });
+
+    return waVersionFetch;
 }
 
 /** Tear down a number's socket (if any) without it reporting or reconnecting. */
@@ -215,26 +243,33 @@ async function adoptQrLinkedCredentials(sock) {
  * decide whether to try again on a fresh socket.
  */
 function waitForPairingReady(sock, timeoutMs) {
+    const closeError = (update) => {
+        const boomErr = update?.lastDisconnect?.error;
+        const statusCode = boomErr?.output?.statusCode || boomErr?.statusCode || null;
+        const reason = boomErr?.message || 'unknown reason';
+        const codeText = statusCode ? `, WhatsApp code ${statusCode}` : '';
+        const err = new Error(`WhatsApp closed the connection before pairing (${reason}${codeText})`);
+        err.statusCode = statusCode;
+        // 428 (connectionClosed), 408 (timedOut/lost) and the raw
+        // "Connection Terminated" string are all the same class of
+        // transient close: the WebSocket dropped before pairing could start.
+        err.transient =
+            statusCode === 428 ||
+            statusCode === 408 ||
+            (!statusCode && /connection (terminated|closed|lost)/i.test(reason));
+        return err;
+    };
+
+    if (sock.lastConnectionUpdate?.connection === 'close') {
+        return Promise.reject(closeError(sock.lastConnectionUpdate));
+    }
     if (sock.lastQR) return Promise.resolve();
     return new Promise((resolve, reject) => {
         const onUpdate = ({ qr, connection, lastDisconnect }) => {
-            if (qr) {
+            if (connection === 'close') {
+                finish(closeError({ connection, lastDisconnect }));
+            } else if (qr) {
                 finish();
-            } else if (connection === 'close') {
-                const boomErr = lastDisconnect?.error;
-                const statusCode = boomErr?.output?.statusCode || boomErr?.statusCode || null;
-                const reason = boomErr?.message || 'unknown reason';
-                const err = new Error(`WhatsApp closed the connection before pairing (${reason})`);
-                err.statusCode = statusCode;
-                // 428 (connectionClosed), 408 (timedOut/lost) and the raw
-                // "Connection Terminated" string are all the same class of
-                // transient close: the WebSocket dropped before pairing
-                // could start, without a real logout / conflict / restart.
-                err.transient =
-                    statusCode === 428 ||
-                    statusCode === 408 ||
-                    /connection (terminated|closed|lost)/i.test(reason);
-                finish(err);
             }
         };
         const timer = setTimeout(() => {
@@ -249,6 +284,14 @@ function waitForPairingReady(sock, timeoutMs) {
             else resolve();
         }
         sock.ev.on('connection.update', onUpdate);
+
+        // The socket's main listener records updates before the pairing wait
+        // is installed. Recheck after subscribing so a close between the
+        // initial check and listener registration cannot become a fake
+        // 25-second timeout (and get mislabeled as a transient throttle).
+        const latest = sock.lastConnectionUpdate;
+        if (latest?.connection === 'close') finish(closeError(latest));
+        else if (latest?.qr || sock.lastQR) finish();
     });
 }
 
@@ -494,6 +537,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
     // Connection updates
     XeonBotInc.ev.on('connection.update', async (s) => {
         const { connection, lastDisconnect, qr } = s;
+        XeonBotInc.lastConnectionUpdate = s;
 
         if (qr) {
             XeonBotInc.lastQR = qr;
@@ -831,15 +875,26 @@ async function generatePairingCode(cleanNumber) {
         } catch (err) {
             // Leave nothing half-paired behind for the next attempt.
             if (sessionManager.getSocket(cleanNumber) === sock) closeSessionSocket(cleanNumber);
-            lastErr = err;
+            const pairingError = err instanceof Error ? err : new Error(String(err));
+            const statusCode = pairingError.output?.statusCode || pairingError.statusCode || null;
+            pairingError.statusCode = statusCode;
+            pairingError.transient = pairingError.transient ?? (
+                statusCode === 428 ||
+                statusCode === 408 ||
+                (!statusCode && /connection (terminated|closed|lost)/i.test(pairingError.message))
+            );
+            if (statusCode && !/WhatsApp code \d+/i.test(pairingError.message)) {
+                pairingError.message = `${pairingError.message} (WhatsApp code ${statusCode})`;
+            }
+            lastErr = pairingError;
 
             // Retry only for transient closes (WhatsApp dropped the socket
             // before the noise handshake finished — 428 / 408 / bare
             // "Connection Terminated"). A logout (401), conflict (440),
             // restart-required (515) or invalid-request Boom should surface
             // straight away, since retrying will only reproduce them.
-            if (err.transient && attempt < PAIRING_MAX_ATTEMPTS) {
-                console.log(chalk.yellow(`[pairing] [${cleanNumber}] Attempt ${attempt} closed transiently (${err.statusCode || 'no code'}): ${err.message}. Retrying...`));
+            if (pairingError.transient && attempt < PAIRING_MAX_ATTEMPTS) {
+                console.log(chalk.yellow(`[pairing] [${cleanNumber}] Attempt ${attempt} closed transiently (${statusCode || 'no code'}): ${pairingError.message}. Retrying...`));
                 continue;
             }
             break;
@@ -978,4 +1033,3 @@ async function gracefulShutdown(signal) {
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-
