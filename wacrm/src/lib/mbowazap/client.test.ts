@@ -3,7 +3,7 @@ import {
   createMbowazapClient,
   getMbowazapClient,
   MbowazapBridgeError,
-  SLOW_TIMEOUT_MS,
+  PAIRING_TIMEOUT_MS,
 } from './client';
 import { normalizeOrigin, readMbowazapEnv } from './env';
 import { createNonceCache, verifyBridgeRequest } from './signature';
@@ -201,7 +201,7 @@ describe('createMbowazapClient', () => {
     ).rejects.toMatchObject({ code: 'timeout' });
   });
 
-  it('gives slow commands the longer timeout', async () => {
+  it('gives pairing enough time for the gateway retry window', async () => {
     const spy = vi.spyOn(AbortSignal, 'timeout');
     const { client } = setup();
     await client.pair({
@@ -209,7 +209,7 @@ describe('createMbowazapClient', () => {
       method: 'code',
       phone: '237600000001',
     });
-    expect(spy).toHaveBeenLastCalledWith(SLOW_TIMEOUT_MS);
+    expect(spy).toHaveBeenLastCalledWith(PAIRING_TIMEOUT_MS);
     spy.mockRestore();
   });
 });

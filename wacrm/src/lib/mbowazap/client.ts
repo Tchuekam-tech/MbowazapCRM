@@ -103,18 +103,21 @@ export function describeBridgeError(err: MbowazapBridgeError): {
         message: 'TchuekBot is still preparing the WhatsApp QR code. Try again in a few seconds.',
       };
     case 'pairing_failed': {
-      // WhatsApp closes the pairing socket before it emits a QR when its
-      // edge is throttling this IP or still holds a stale handshake for the
-      // number. TchuekBot already retried once — a further, human-paced
-      // retry after a short wait is the right move (and often what fixes it).
+      // Keep non-transient WhatsApp close codes visible. In particular, a
+      // client-version or authentication rejection is not a throttle and
+      // needs a different fix than waiting before retrying.
+      const closeCode = err.message.match(/WhatsApp code (\d+)/i)?.[1];
       const closedBeforePairing = /closed the connection before pairing|Connection Terminated|Connection Closed|Connection Lost/i.test(
         err.message
       );
-      if (closedBeforePairing) {
+      if (
+        closedBeforePairing &&
+        (!closeCode || closeCode === '408' || closeCode === '428')
+      ) {
         return {
           status: 502,
           message:
-            'WhatsApp dropped the pairing connection twice in a row. This is usually a short-lived throttle from WhatsApp — wait about a minute and try again. If it persists, double-check the phone number and that this WhatsApp account is not already linked on too many companion devices.',
+            'WhatsApp dropped the pairing connection twice in a row. This can be temporary — wait about a minute and try again. If it persists, check the TchuekBot logs and confirm this WhatsApp account can link another device.',
         };
       }
       return { status: 502, message: err.message };
@@ -126,11 +129,13 @@ export function describeBridgeError(err: MbowazapBridgeError): {
 
 /** Status reads and switches are quick. */
 export const DEFAULT_TIMEOUT_MS = 15_000;
-/**
- * Sends wait behind the bot's per-chat pacing (4–6 s) and global token
- * bucket; pairing waits for a fresh socket to produce a code or QR.
- */
+/** Outbound commands may wait behind the gateway's pacing and token bucket. */
 export const SLOW_TIMEOUT_MS = 45_000;
+/**
+ * Pairing can use two fresh sockets, each with its own 25-second readiness
+ * window, plus a cooldown and a bounded WhatsApp version lookup.
+ */
+export const PAIRING_TIMEOUT_MS = 70_000;
 /**
  * Typing presence is cosmetic and sits on the AI reply path (it is
  * awaited before generation starts), so a stalled bot must not hold a
@@ -260,7 +265,7 @@ export function createMbowazapClient({
   return {
     ping: () => call('GET', BOT_PATHS.ping, undefined, DEFAULT_TIMEOUT_MS),
 
-    pair: (request) => call('POST', BOT_PATHS.pair, request, SLOW_TIMEOUT_MS),
+    pair: (request) => call('POST', BOT_PATHS.pair, request, PAIRING_TIMEOUT_MS),
     cancelPairing: (request) => call('POST', BOT_PATHS.cancelPairing, request, DEFAULT_TIMEOUT_MS),
 
     getSession: async (session) => {
