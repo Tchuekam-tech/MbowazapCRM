@@ -781,7 +781,7 @@ export function MboWazapConfig() {
           </CardHeader>
           <CardContent className="pt-2">
             <p className="text-xs text-muted-foreground leading-relaxed">
-              WhatsApp links must be confirmed promptly on your mobile device. If your phone lost internet connection or you mistyped the number, you can retry immediately.
+              If WhatsApp dropped the pairing connection, wait a minute before retrying. Keep your phone online and double-check the number you entered before trying again.
             </p>
           </CardContent>
           <CardFooter className="flex justify-end border-t border-border pt-4">
