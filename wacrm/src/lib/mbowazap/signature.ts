@@ -232,3 +232,5 @@ export function verifyBridgeRequest({
   }
   return { ok: true };
 }
+
+// [format] validate nonce format regex pattern strictly
