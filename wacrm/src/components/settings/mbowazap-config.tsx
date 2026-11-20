@@ -109,7 +109,9 @@ export function MboWazapConfig() {
   const [pairMode, setPairMode] = useState<'code' | 'qr'>('code');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [pairingLoading, setPairingLoading] = useState(false);
+  const [cancellingPairing, setCancellingPairing] = useState(false);
   const [activePairing, setActivePairing] = useState<ActivePairingSession | null>(null);
+  const [isLinking, setIsLinking] = useState(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
 
   // Explicit failure / error state
@@ -127,6 +129,9 @@ export function MboWazapConfig() {
 
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const copyTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const mountedRef = useRef(true);
+  const attemptSeqRef = useRef(0);
 
   // 1. Fetch current status from /api/mbowazap/status. A stale server-side
   // "expired" pairing is shown as a note on the connect form, not as a
@@ -135,28 +140,34 @@ export function MboWazapConfig() {
     try {
       const res = await fetch('/api/mbowazap/status', { cache: 'no-store' });
       const data: StatusResponse = await res.json();
+      if (!mountedRef.current) return;
       if (data.ok) {
         setStatusData(data);
         if (data.status === 'connected' || data.status === 'connecting') {
           setActivePairing(null);
+          setIsLinking(false);
           setErrorState(null);
         }
       } else {
         toast.error((data as { error?: string }).error || 'Failed to fetch WhatsApp status');
       }
     } catch (err) {
+      if (!mountedRef.current) return;
       console.error('[MboWazapConfig] fetch error:', err);
       toast.error('Network error loading WhatsApp status');
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     fetchStatus();
     return () => {
+      mountedRef.current = false;
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, [fetchStatus]);
 
@@ -176,7 +187,9 @@ export function MboWazapConfig() {
 
     const targetTime = Date.parse(pairingExpiresAt);
     const updateCountdown = () => {
-      const remaining = Math.max(0, Math.floor((targetTime - Date.now()) / 1000));
+      const remaining = Number.isFinite(targetTime)
+        ? Math.max(0, Math.floor((targetTime - Date.now()) / 1000))
+        : 0;
       setSecondsRemaining(remaining);
       if (remaining <= 0) {
         if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
@@ -185,6 +198,7 @@ export function MboWazapConfig() {
           reason: 'The pairing request expired. WhatsApp links must be confirmed within 2 minutes.',
         });
         setActivePairing(null);
+        setIsLinking(false);
       }
     };
 
@@ -198,6 +212,7 @@ export function MboWazapConfig() {
 
   // 3. Real-time short-polling during pairing or connecting state
   useEffect(() => {
+    setIsLinking(false);
     if (!pairingRef) {
       if (pollTimerRef.current) {
         clearInterval(pollTimerRef.current);
@@ -206,7 +221,9 @@ export function MboWazapConfig() {
       return;
     }
 
+    let cancelled = false;
     const stopPolling = () => {
+      cancelled = true;
       if (pollTimerRef.current) {
         clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
@@ -219,13 +236,24 @@ export function MboWazapConfig() {
           cache: 'no-store',
         });
         const json = await res.json();
-        if (!json.ok) return;
+        if (cancelled || !mountedRef.current || !json.ok) return;
         if (json.connected) {
           stopPolling();
           toast.success('WhatsApp connected successfully!');
           setActivePairing(null);
+          setIsLinking(false);
           setErrorState(null);
           fetchStatus();
+        } else if (json.state === 'linking') {
+          setIsLinking(true);
+        } else if (json.state === 'failed') {
+          stopPolling();
+          setErrorState({
+            failed: true,
+            reason: json.reason || 'WhatsApp pairing failed. Please try again.',
+          });
+          setActivePairing(null);
+          setIsLinking(false);
         } else if (json.state === 'expired' || json.state === 'logged_out') {
           // 'expired': the account no longer carries this ref — a newer
           // pairing (another tab) or a disconnect replaced it.
@@ -238,6 +266,7 @@ export function MboWazapConfig() {
                 : 'WhatsApp unlinked the device right after pairing.',
           });
           setActivePairing(null);
+          setIsLinking(false);
         }
       } catch {
         // Ignore transient network errors during background polling
@@ -250,8 +279,9 @@ export function MboWazapConfig() {
   // 3b. WhatsApp rotates the linking QR (60 s for the first one, 20 s after
   // that), so a QR shown once goes stale long before the countdown ends.
   useEffect(() => {
-    if (!pairingRef || pairingMethod !== 'qr') return;
+    if (!pairingRef || pairingMethod !== 'qr' || isLinking) return;
 
+    let cancelled = false;
     const timer = setInterval(async () => {
       try {
         const res = await fetch('/api/mbowazap/pair/qr', {
@@ -261,7 +291,22 @@ export function MboWazapConfig() {
           cache: 'no-store',
         });
         const json = await res.json();
-        if (!json.ok || !json.qr) return;
+        if (cancelled || !mountedRef.current) return;
+        if (!res.ok || !json.ok) {
+          if (json.code === 'pairing_closed' || json.code === 'pairing_expired') {
+            clearInterval(timer);
+          } else if (json.code === 'pairing_failed') {
+            clearInterval(timer);
+            setErrorState({
+              failed: true,
+              reason: json.error || 'WhatsApp closed the QR session. Please try again.',
+            });
+            setActivePairing(null);
+            setIsLinking(false);
+          }
+          return;
+        }
+        if (!json.qr) return;
         setActivePairing((prev) =>
           prev && prev.pairingRef === pairingRef && prev.qr !== json.qr
             ? { ...prev, qr: json.qr }
@@ -272,14 +317,19 @@ export function MboWazapConfig() {
       }
     }, QR_REFRESH_MS);
 
-    return () => clearInterval(timer);
-  }, [pairingRef, pairingMethod]);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pairingRef, pairingMethod, isLinking]);
 
   // 4. Initiate Pairing
   async function handleStartPairing() {
-    if (!canEdit) return;
+    if (!canEdit || pairingLoading) return;
+    const seq = ++attemptSeqRef.current;
     setPairingLoading(true);
     setErrorState(null);
+    setIsLinking(false);
 
     try {
       const res = await fetch('/api/mbowazap/pair', {
@@ -292,6 +342,7 @@ export function MboWazapConfig() {
       });
 
       const json = await res.json();
+      if (!mountedRef.current || seq !== attemptSeqRef.current) return;
       if (!res.ok || !json.ok) {
         throw new Error(json.error || 'Failed to request pairing code');
       }
@@ -310,6 +361,7 @@ export function MboWazapConfig() {
         toast.info('QR Code ready! Scan it using WhatsApp on your phone.');
       }
     } catch (err) {
+      if (!mountedRef.current || seq !== attemptSeqRef.current) return;
       const message = err instanceof Error ? err.message : '';
       setErrorState({
         failed: true,
@@ -317,7 +369,9 @@ export function MboWazapConfig() {
       });
       toast.error(message || 'Pairing request failed');
     } finally {
-      setPairingLoading(false);
+      if (mountedRef.current && seq === attemptSeqRef.current) {
+        setPairingLoading(false);
+      }
     }
   }
 
@@ -372,30 +426,63 @@ export function MboWazapConfig() {
     }
   }
 
-  function handleCopyCode() {
+  async function handleCopyCode() {
     if (!activePairing?.code) return;
-    navigator.clipboard.writeText(activePairing.code);
-    setCopiedCode(true);
-    toast.success('Pairing code copied to clipboard');
-    setTimeout(() => setCopiedCode(false), 2500);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard unavailable');
+      }
+      await navigator.clipboard.writeText(activePairing.code);
+      setCopiedCode(true);
+      toast.success('Pairing code copied to clipboard');
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) setCopiedCode(false);
+      }, 2500);
+    } catch {
+      toast.error('Could not copy automatically — please select and copy the code manually.');
+    }
+  }
+
+  async function cancelPairingRef(refToCancel: string): Promise<boolean> {
+    setCancellingPairing(true);
+    try {
+      const res = await fetch('/api/mbowazap/pair/cancel', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pairingRef: refToCancel }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.ok) {
+        throw new Error(result.error || 'Could not cancel pairing');
+      }
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not cancel pairing');
+      return false;
+    } finally {
+      if (mountedRef.current) setCancellingPairing(false);
+    }
   }
 
   async function handleResetToTryAgain() {
+    attemptSeqRef.current += 1;
     if (activePairing) {
-      try {
-        const res = await fetch('/api/mbowazap/pair/cancel', {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ pairingRef: activePairing.pairingRef }),
-        });
-        const result = await res.json();
-        if (!res.ok || !result.ok) throw new Error(result.error || 'Could not cancel pairing');
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Could not cancel pairing');
-        return;
-      }
+      const cancelled = await cancelPairingRef(activePairing.pairingRef);
+      if (!cancelled) return;
     }
     setActivePairing(null);
+    setIsLinking(false);
     setErrorState(null);
+    await fetchStatus();
+  }
+
+  async function handleCancelServerPairing() {
+    const serverRef = statusData?.pairing?.ref;
+    if (!serverRef || cancellingPairing) return;
+    const cancelled = await cancelPairingRef(serverRef);
+    if (!cancelled) return;
+    toast.success('Previous pairing cancelled. You can start a new connection now.');
     await fetchStatus();
   }
 
@@ -644,10 +731,16 @@ export function MboWazapConfig() {
                 <div className="text-xs font-semibold uppercase tracking-wider text-primary">
                   WhatsApp
                 </div>
-                <CardTitle className="text-xl">Connecting...</CardTitle>
+                <CardTitle className="text-xl">
+                  {isLinking ? 'Finalizing link...' : 'Connecting...'}
+                </CardTitle>
                 <CardDescription className="flex items-center gap-2 mt-1">
                   <span className="size-2 rounded-full bg-amber-500 inline-block animate-ping" />
-                  <span>Waiting for confirmation from your phone</span>
+                  <span>
+                    {isLinking
+                      ? 'WhatsApp accepted the link — completing handshake...'
+                      : 'Waiting for confirmation from your phone'}
+                  </span>
                 </CardDescription>
               </div>
               {secondsRemaining > 0 && (
@@ -697,16 +790,21 @@ export function MboWazapConfig() {
 
                   <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin text-primary" />
-                    <span>Waiting for phone handshake...</span>
+                    <span>
+                      {isLinking
+                        ? 'Confirming WhatsApp link...'
+                        : 'Waiting for phone handshake...'}
+                    </span>
                   </div>
 
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={cancellingPairing}
                     onClick={handleResetToTryAgain}
                     className="mt-2"
                   >
-                    Cancel / Change Number
+                    {cancellingPairing ? 'Cancelling...' : 'Cancel / Change Number'}
                   </Button>
                 </div>
               ) : activePairing.method === 'qr' && activePairing.qr ? (
@@ -732,7 +830,11 @@ export function MboWazapConfig() {
 
                   <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin text-primary" />
-                    <span>Waiting for QR scan confirmation...</span>
+                    <span>
+                      {isLinking
+                        ? 'Confirming WhatsApp link...'
+                        : 'Waiting for QR scan confirmation...'}
+                    </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     WhatsApp renews this code every few seconds; it updates here automatically.
@@ -741,10 +843,11 @@ export function MboWazapConfig() {
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={cancellingPairing}
                     onClick={handleResetToTryAgain}
                     className="mt-2"
                   >
-                    Cancel
+                    {cancellingPairing ? 'Cancelling...' : 'Cancel'}
                   </Button>
                 </div>
               ) : (
@@ -820,13 +923,32 @@ export function MboWazapConfig() {
 
           <CardContent className="space-y-6">
             {(serverStatus === 'expired' || serverStatus === 'pairing') && (
-              <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-                <Info className="mt-0.5 size-4 shrink-0 text-primary" />
-                <span>
-                  {serverStatus === 'expired'
-                    ? 'Your last pairing attempt expired before it was confirmed on the phone. Start a new one below.'
-                    : 'A pairing started earlier is still waiting for confirmation. Starting a new one replaces it.'}
-                </span>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                <div className="flex items-start gap-2">
+                  <Info className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <span>
+                    {serverStatus === 'expired'
+                      ? 'Your last pairing attempt expired before it was confirmed on the phone. Start a new one below.'
+                      : 'A pairing started earlier is still waiting for confirmation. Cancel it before starting a new one.'}
+                  </span>
+                </div>
+                {serverStatus === 'pairing' && statusData?.pairing?.ref && canEdit && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={cancellingPairing}
+                    onClick={handleCancelServerPairing}
+                  >
+                    {cancellingPairing ? (
+                      <>
+                        <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                        Cancelling...
+                      </>
+                    ) : (
+                      'Cancel active pairing'
+                    )}
+                  </Button>
+                )}
               </div>
             )}
 
@@ -856,6 +978,18 @@ export function MboWazapConfig() {
                       placeholder="e.g. 237653683174 (international format with country code)"
                       value={phoneNumber}
                       onChange={(e) => setPhoneNumber(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (
+                          e.key === 'Enter' &&
+                          canEdit &&
+                          !pairingLoading &&
+                          isConfigured &&
+                          phoneNumber.trim()
+                        ) {
+                          e.preventDefault();
+                          handleStartPairing();
+                        }
+                      }}
                       disabled={!canEdit || pairingLoading || !isConfigured}
                       className="max-w-md font-mono"
                     />
