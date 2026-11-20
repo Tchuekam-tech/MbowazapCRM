@@ -212,5 +212,3 @@ test('socket browser identity avoids Mac OS / Windows DARWIN/WIN32 subplatform 4
         assert.match(src, /Browsers\.ubuntu\s*\(\s*['"]Chrome['"]\s*\)/);
     }
 });
-
-// [spec] test transient 428 retry resilience
