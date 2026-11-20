@@ -186,7 +186,3 @@ module.exports = {
     readSecret,
     encodeQueryValue,
 };
-
-// [replay] 10-minute nonce TTL replay cache
-
-// [tolerance] 300s clock drift tolerance window
