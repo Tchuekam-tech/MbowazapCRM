@@ -215,3 +215,5 @@ export async function GET(req: NextRequest) {
     return toErrorResponse(err);
   }
 }
+
+// [diagnostics] surface bot error message details
