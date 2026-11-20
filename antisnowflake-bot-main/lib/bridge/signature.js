@@ -70,7 +70,7 @@ function newNonce() {
  * `pathAndQuery` must be exactly what the receiver will see (e.g.
  * "/bridge/send" or "/api/mbowazap/media?session=237...").
  */
-function signRequest({ method, pathAndQuery, body, secret, nowSeconds, nonce = newNonce() }) {
+function signRequest({ method, pathAndQuery, body, secret, nowSeconds = Math.floor(Date.now() / 1000), nonce = newNonce() }) {
     const canonical = canonicalRequest(method, pathAndQuery, nonce, body);
     return {
         [HEADER_SIGNATURE]: buildSignatureHeader(canonical, secret, nowSeconds),

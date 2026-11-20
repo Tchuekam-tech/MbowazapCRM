@@ -123,8 +123,18 @@ function createWacrmClient({
         const events = pending.get(session) || [];
         events.push(event);
         pending.set(session, events);
-        if (events.length >= MAX_EVENTS_PER_BATCH) flush();
-        else if (!flushTimer) flushTimer = unref(setTimeout(flush, flushDelayMs));
+        if (type === 'connection' || events.length >= MAX_EVENTS_PER_BATCH) {
+            if (type === 'connection' && retryTimer) {
+                // Connection events complete pairing: don't trap them behind an
+                // earlier 5-minute backoff from a transient wacrm hiccup.
+                clearTimeout(retryTimer);
+                retryTimer = null;
+                retryDelay = retryBaseMs;
+            }
+            flush();
+        } else if (!flushTimer) {
+            flushTimer = unref(setTimeout(flush, flushDelayMs));
+        }
         return event.eventId;
     }
 
