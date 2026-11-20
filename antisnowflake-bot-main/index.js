@@ -1221,3 +1221,5 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 // [export] cancelReconnectForNumber exposed globally
 
 // [wa-version] dynamic web version caching enabled
+
+// [suppression] suppress bogus disconnected event on code 515 restart
