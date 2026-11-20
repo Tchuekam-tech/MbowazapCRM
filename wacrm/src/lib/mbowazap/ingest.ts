@@ -585,8 +585,13 @@ async function applyConnection(
   }
 
   if (account.state === 'pairing' || !account.session) {
-    if (!e.pairingRef || e.pairingRef !== account.pairingRef ||
-        !account.updatedAt || e.at >= Date.parse(account.updatedAt) + 120_000) {
+    const updatedMs = account.updatedAt ? Date.parse(account.updatedAt) : Number.NaN;
+    if (
+      !e.pairingRef ||
+      e.pairingRef !== account.pairingRef ||
+      !Number.isFinite(updatedMs) ||
+      e.at >= updatedMs + 120_000
+    ) {
       throw new IngestRejection('pairing reference is missing, replaced, or expired');
     }
     // A registration restart emits disconnected before the final open. Keep

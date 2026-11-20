@@ -36,12 +36,15 @@ try {
     }
 } catch (e) { console.error('[Anti-Ban] Failed to load persisted IDs:', e.message); }
 // Persist processedIds to disk every 5 minutes
-setInterval(() => {
+const processedIdsTimer = setInterval(() => {
     try {
         const arr = Array.from(processedIds).slice(-2000);
         fs.writeFileSync(PROCESSED_IDS_FILE, JSON.stringify(arr), 'utf8');
     } catch (_) {}
 }, 300_000);
+if (typeof processedIdsTimer.unref === 'function') {
+    processedIdsTimer.unref();
+}
 
 const activeFeatures = new Map();
 const lastSentAt = new Map();
@@ -235,7 +238,33 @@ function saveJsonFile(filePath, data) {
 }
 
 let botSentIdsList = loadJsonFile(BOT_SENT_IDS_FILE, []);
-let botSentIdsSet = new Set(botSentIdsList);
+let botSentIdsSet = new Set(Array.isArray(botSentIdsList) ? botSentIdsList : []);
+
+// Keep reply counts in memory (bounded to 2000 entries) rather than reading/writing
+// an unbounded file on every single incoming message.
+const replyCountsMap = new Map(Object.entries(loadJsonFile(REPLY_COUNTS_FILE, {}) || {}).slice(-2000));
+let replyCountsDirty = false;
+const replyCountsTimer = setInterval(() => {
+    if (!replyCountsDirty) return;
+    replyCountsDirty = false;
+    saveJsonFile(REPLY_COUNTS_FILE, Object.fromEntries(replyCountsMap));
+}, 60_000);
+if (typeof replyCountsTimer.unref === 'function') {
+    replyCountsTimer.unref();
+}
+
+function getDoualaHour() {
+    try {
+        const formatted = new Intl.DateTimeFormat('en-GB', {
+            hour: 'numeric',
+            hour12: false,
+            timeZone: 'Africa/Douala',
+        }).format(new Date());
+        const hour = Number.parseInt(formatted, 10);
+        if (Number.isFinite(hour)) return hour % 24;
+    } catch (_) {}
+    return (new Date().getUTCHours() + 1) % 24;
+}
 
 async function handleMessages(sock, messageUpdate, printLog) {
     try {
@@ -275,10 +304,17 @@ async function handleMessages(sock, messageUpdate, printLog) {
             }
         }
 
-        // FIX 3 — Daily Message Cap per sender
+        // FIX 3 — Daily Message Cap per sender (prune previous days to prevent memory leaks)
         global._dailyCounts = global._dailyCounts || new Map();
         global._dailyCountsDry = global._dailyCountsDry || new Map();
-        const dailyKey = `${senderId}:${new Date().toDateString()}`;
+        const todaySuffix = `:${new Date().toDateString()}`;
+        for (const k of global._dailyCounts.keys()) {
+            if (!k.endsWith(todaySuffix)) {
+                global._dailyCounts.delete(k);
+                global._dailyCountsDry.delete(k);
+            }
+        }
+        const dailyKey = `${senderId}${todaySuffix}`;
         const dailyCount = (global._dailyCounts.get(dailyKey) || 0) + 1;
         global._dailyCounts.set(dailyKey, dailyCount);
         if (dailyCount > 30) {
@@ -289,8 +325,8 @@ async function handleMessages(sock, messageUpdate, printLog) {
             return;
         }
 
-        // FIX 4 — Quiet Hours: 11PM-6AM (Africa/Cameroon timezone = UTC+1)
-        const nowHour = new Date().getHours();
+        // FIX 4 — Quiet Hours: 11PM-6AM (Africa/Douala timezone = UTC+1)
+        const nowHour = getDoualaHour();
         const isQuietHours = nowHour >= 23 || nowHour < 6;
         if (isQuietHours && !message.key.fromMe) {
             // Silently absorb non-owner messages at night
@@ -298,8 +334,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
         }
 
         // 1. Double-Reply Prevention: Ignore message if it has already received 2 or more replies
-        let replyCounts = loadJsonFile(REPLY_COUNTS_FILE, {});
-        const currentReplies = replyCounts[msgId] || 0;
+        const currentReplies = replyCountsMap.get(msgId) || 0;
         if (currentReplies >= 2) {
             console.log(`[Double-Reply Protection] Silently ignoring message ${msgId} (Replies: ${currentReplies})`);
             return;
@@ -313,9 +348,13 @@ async function handleMessages(sock, messageUpdate, printLog) {
             // Otherwise, it was manually typed by the owner. Process normally!
         }
 
-        // Track the reply count for this message ID on disk
-        replyCounts[msgId] = currentReplies + 1;
-        saveJsonFile(REPLY_COUNTS_FILE, replyCounts);
+        // Track the reply count for this message ID (bounded to 2000 entries)
+        replyCountsMap.set(msgId, currentReplies + 1);
+        if (replyCountsMap.size > 2000) {
+            const oldestKey = replyCountsMap.keys().next().value;
+            if (oldestKey !== undefined) replyCountsMap.delete(oldestKey);
+        }
+        replyCountsDirty = true;
 
         if (!message.message) return; // FIXED: Ignore empty messages
         if (message.key.id && processedIds.has(message.key.id)) return; // FIXED: Message deduplication
@@ -335,7 +374,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 const sNow = Date.now();
                 const ownerNum = settings.ownerNumber || '237653683174';
                 const cleanedOwner = ownerNum.replace(/[^0-9]/g, '');
-                const cleanedJid = jid.split('@')[0].replace(/[^0-9]/g, '');
+                const cleanedJid = String(jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
                 // 1. Sanitize payload to strip deceptive newsletter & spoofed forward metadata
                 const content = sanitizeOutgoingContent(rawContent);
@@ -364,6 +403,10 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 }
 
                 lastSentAt.set(jid, Date.now());
+                if (lastSentAt.size > 2000) {
+                    const oldestJid = lastSentAt.keys().next().value;
+                    if (oldestJid !== undefined) lastSentAt.delete(oldestJid);
+                }
                 return result;
             };
             sock._antiBanWrapped = true;
@@ -491,7 +534,6 @@ async function handleMessages(sock, messageUpdate, printLog) {
             if (isGroup) {
                 await handleChatbotResponse(sock, chatId, message, userMessage, senderId);
                 await Antilink(message, sock);
-                await handleBadwordDetection(sock, chatId, message, userMessage, senderId);
                 await handleTagDetection(sock, chatId, message, senderId);
             }
             return;
@@ -585,7 +627,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 await sock.sendMessage(chatId, { react: { text: "❌", key: message.key } });
                 await new Promise(resolve => setTimeout(resolve, 500));
                 {
-                    const mentionedJidListKick = message.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
+                    const mentionedJidListKick = msgContent?.extendedTextMessage?.contextInfo?.mentionedJid || message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
                     await kickCommand(sock, chatId, senderId, mentionedJidListKick, message);
                 }
                 break;
@@ -767,7 +809,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 await sock.sendMessage(chatId, { react: { text: "⚠️", key: message.key } });
                 await new Promise(resolve => setTimeout(resolve, 500));
                 {
-                    const mentionedJidListWarnings = message.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
+                    const mentionedJidListWarnings = msgContent?.extendedTextMessage?.contextInfo?.mentionedJid || message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
                     await warningsCommand(sock, chatId, mentionedJidListWarnings);
                 }
                 break;
@@ -776,7 +818,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 await sock.sendMessage(chatId, { react: { text: "⚠️", key: message.key } });
                 await new Promise(resolve => setTimeout(resolve, 500));
                 {
-                    const mentionedJidListWarn = message.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
+                    const mentionedJidListWarn = msgContent?.extendedTextMessage?.contextInfo?.mentionedJid || message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
                     await warnCommand(sock, chatId, senderId, mentionedJidListWarn, message);
                 }
                 break;

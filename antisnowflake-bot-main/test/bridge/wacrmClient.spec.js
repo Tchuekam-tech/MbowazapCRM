@@ -244,3 +244,29 @@ test('normalizeBaseUrl accepts http(s) origins only', () => {
     assert.equal(normalizeBaseUrl('not a url'), null);
     assert.equal(normalizeBaseUrl(''), null);
 });
+
+test('connection events flush immediately and bypass pending retry backoff', async (t) => {
+    const wacrm = await startFakeWacrm(t);
+    const files = tempFiles();
+    let failFirst = true;
+    wacrm.setResponder(() => (failFirst
+        ? { status: 503, body: { ok: false } }
+        : { status: 200, body: { ok: true, accepted: 1, rejected: [] } }));
+
+    // Deliberately huge backoff & flush delay so the test fails if connection events wait on them.
+    const client = makeClient(t, wacrm.baseUrl, files, {
+        flushDelayMs: 5_000,
+        retryBaseMs: 30_000,
+        retryMaxMs: 60_000,
+    });
+
+    client.emit(SESSION, 'status', STATUS_EVENT);
+    await client.flush(); // triggers first 503 and arms 30s retryTimer
+
+    failFirst = false;
+    const t0 = Date.now();
+    client.emit(SESSION, 'connection', { status: 'connected', me: { phone: SESSION } });
+
+    await waitFor(() => wacrm.received.some((b) => b.events.some((e) => e.type === 'connection')), 2000);
+    assert.ok(Date.now() - t0 < 2000, 'connection event should deliver immediately without waiting on 30s backoff');
+});

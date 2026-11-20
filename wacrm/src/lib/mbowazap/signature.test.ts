@@ -218,4 +218,13 @@ describe('createNonceCache', () => {
     cache.seen('c'.repeat(16), 1003);
     expect(cache.size).toBe(2);
   });
+
+  it('prunes expired entries even when timestamps arrive out of order', () => {
+    const cache = createNonceCache({ ttlMs: 1000, maxEntries: 10 });
+    expect(cache.seen('a'.repeat(16), 2000)).toBe(false); // expires 3000
+    expect(cache.seen('b'.repeat(16), 1000)).toBe(false); // expires 2000
+    // At t=2500, 'a' is still live (3000) while 'b' is expired (2000)
+    expect(cache.seen('c'.repeat(16), 2500)).toBe(false);
+    expect(cache.size).toBe(2); // 'b' was pruned despite coming after 'a'
+  });
 });

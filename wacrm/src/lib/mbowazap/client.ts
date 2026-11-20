@@ -12,10 +12,13 @@ import { readMbowazapEnv } from './env';
 import {
   BOT_PATHS,
   CONTACT_PATTERN,
+  PAIRING_REF_PATTERN,
   SESSION_PATTERN,
   TEMP_QR_SESSION,
+  normalizeQrDataUrl,
   type BridgeErrorCode,
   type ContactAiRequest,
+  type PairingInfo,
   type PairRequest,
   type PairResult,
   type PresenceKind,
@@ -154,6 +157,7 @@ export interface MbowazapClientOptions {
 export interface MbowazapClient {
   ping(): Promise<{ protocol: string; time: number }>;
   pair(request: PairRequest): Promise<PairResult>;
+  getPairing(pairingRef: string): Promise<PairingInfo>;
   cancelPairing(request: PairRequest): Promise<{ cancelled: boolean }>;
   getSession(session: string): Promise<SessionInfo>;
   logout(session: string): Promise<{ session: string; status: 'disconnected' }>;
@@ -265,7 +269,41 @@ export function createMbowazapClient({
   return {
     ping: () => call('GET', BOT_PATHS.ping, undefined, DEFAULT_TIMEOUT_MS),
 
-    pair: (request) => call('POST', BOT_PATHS.pair, request, PAIRING_TIMEOUT_MS),
+    pair: async (request) => {
+      const result = await call<PairResult>(
+        'POST',
+        BOT_PATHS.pair,
+        request,
+        PAIRING_TIMEOUT_MS
+      );
+      if (result && typeof result === 'object' && 'qr' in result && result.qr !== undefined) {
+        const safeQr = normalizeQrDataUrl(result.qr);
+        if (!safeQr) {
+          throw new MbowazapBridgeError(
+            'bad_response',
+            'TchuekBot returned an invalid QR image payload'
+          );
+        }
+        return { ...result, qr: safeQr };
+      }
+      return result;
+    },
+
+    getPairing: async (pairingRef) => {
+      if (!PAIRING_REF_PATTERN.test(pairingRef)) {
+        throw new MbowazapBridgeError(
+          'invalid_request',
+          'pairingRef must be a valid UUID'
+        );
+      }
+      return call(
+        'GET',
+        BOT_PATHS.pairing(pairingRef),
+        undefined,
+        DEFAULT_TIMEOUT_MS
+      );
+    },
+
     cancelPairing: (request) => call('POST', BOT_PATHS.cancelPairing, request, DEFAULT_TIMEOUT_MS),
 
     getSession: async (session) => {

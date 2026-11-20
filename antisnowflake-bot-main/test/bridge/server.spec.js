@@ -568,3 +568,70 @@ test('cancellation is owner-scoped and permits immediate retry with fresh creden
     assert.equal((await call('POST', '/bridge/pair', { method: 'qr', pairingRef: OTHER_REF })).status, 200);
     assert.equal(resets.length, 3);
 });
+
+test('GET /bridge/pairings/:ref reports waiting, linking, connected, failed, unknown and validates UUID', async (t) => {
+    const { call, state } = await startBridge(t);
+
+    // Invalid UUID -> 400
+    const bad = await call('GET', '/bridge/pairings/not-a-uuid');
+    assert.equal(bad.status, 400);
+    assert.equal(bad.json.error.code, 'invalid_request');
+
+    // Unknown ref
+    const unknown = await call('GET', `/bridge/pairings/${OTHER_REF}`);
+    assert.equal(unknown.status, 200);
+    assert.equal(unknown.json.state, 'unknown');
+
+    // Active pairing -> waiting
+    assert.equal((await call('POST', '/bridge/pair', { method: 'qr', pairingRef: REF })).status, 200);
+    const waiting = await call('GET', `/bridge/pairings/${REF}`);
+    assert.equal(waiting.status, 200);
+    assert.equal(waiting.json.state, 'waiting');
+
+    // Recorded linking -> linking
+    state.recordPairingStatus(REF, { state: 'linking', session: SESSION });
+    const linking = await call('GET', `/bridge/pairings/${REF}`);
+    assert.equal(linking.status, 200);
+    assert.equal(linking.json.state, 'linking');
+    assert.equal(linking.json.session, SESSION);
+
+    // Recorded connected -> connected with me
+    state.recordPairingStatus(REF, { state: 'connected', session: SESSION, me: { phone: SESSION, name: 'Shop' } });
+    const connected = await call('GET', `/bridge/pairings/${REF}`);
+    assert.equal(connected.status, 200);
+    assert.equal(connected.json.state, 'connected');
+    assert.deepEqual(connected.json.me, { phone: SESSION, name: 'Shop' });
+});
+
+test('failed pairing releases the lease immediately and records failed status', async (t) => {
+    let shouldFail = true;
+    const { call, state } = await startBridge(t, {
+        getTempQr: async () => (shouldFail
+            ? { status: 502, qr: null, error: 'Connection Failure, code 405' }
+            : { status: 200, qr: 'fresh-qr-after-fail' }),
+    });
+
+    const first = await call('POST', '/bridge/pair', { method: 'qr', pairingRef: REF });
+    assert.equal(first.status, 502);
+    assert.equal(first.json.error.code, 'pairing_failed');
+    assert.equal(state.getPairingRef('temp_qr'), null, 'lease must not stay stuck after terminal failure');
+
+    const status = await call('GET', `/bridge/pairings/${REF}`);
+    assert.equal(status.status, 200);
+    assert.equal(status.json.state, 'failed');
+    assert.match(status.json.reason, /405/);
+
+    // Another account (or retry) can pair immediately without waiting 120s
+    shouldFail = false;
+    const retry = await call('POST', '/bridge/pair', { method: 'qr', pairingRef: OTHER_REF });
+    assert.equal(retry.status, 200);
+});
+
+test('QR pair returns 503 pairing_pending when temp_qr is already linked and finalizing', async (t) => {
+    const { call, sockets } = await startBridge(t);
+    sockets.set('temp_qr', fakeSocket({ open: true, registered: true }));
+
+    const res = await call('POST', '/bridge/pair', { method: 'qr', pairingRef: REF });
+    assert.equal(res.status, 503);
+    assert.equal(res.json.error.code, 'pairing_pending');
+});

@@ -7,7 +7,12 @@ import {
   MbowazapBridgeError,
   type MbowazapClient,
 } from '@/lib/mbowazap/client';
-import { type PairRequest, type PairResult } from '@/lib/mbowazap/protocol';
+import {
+  normalizeQrDataUrl,
+  type PairRequest,
+  type PairResult,
+} from '@/lib/mbowazap/protocol';
+import { whatsappProvider } from '@/lib/whatsapp/provider';
 
 import {
   reservePairing,
@@ -124,21 +129,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const client = createMbowazapClient(envResult.env);
-
     if (
-      existingConfig?.mbowazap_state === 'connected' &&
-      existingConfig.mbowazap_session &&
-      (await isStillLinkedOnBot(client, existingConfig.mbowazap_session))
+      existingConfig &&
+      whatsappProvider(existingConfig) === 'meta' &&
+      existingConfig.status === 'connected'
     ) {
       return NextResponse.json(
         {
           ok: false,
-          error: `WhatsApp is already connected for number +${existingConfig.mbowazap_session}. Disconnect first before initiating a new pairing.`,
-          code: 'already_connected',
+          error:
+            'This account is connected through the official Meta WhatsApp Cloud API. Disconnect it first before pairing MboWazap.',
+          code: 'provider_conflict',
         },
         { status: 409 }
       );
+    }
+
+    const client = createMbowazapClient(envResult.env);
+
+    let previousWasDisconnectedOnBot = false;
+    if (
+      existingConfig?.mbowazap_state === 'connected' &&
+      existingConfig.mbowazap_session
+    ) {
+      if (await isStillLinkedOnBot(client, existingConfig.mbowazap_session)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `WhatsApp is already connected for number +${existingConfig.mbowazap_session}. Disconnect first before initiating a new pairing.`,
+            code: 'already_connected',
+          },
+          { status: 409 }
+        );
+      }
+      previousWasDisconnectedOnBot = true;
     }
 
     const pairingRef = crypto.randomUUID();
@@ -151,7 +175,9 @@ export async function POST(req: NextRequest) {
         ctx.userId,
         existingConfig as PairingConfig | null,
         pairingRef,
-        cleanPhone ?? null
+        cleanPhone ?? null,
+        Date.now(),
+        { previousWasDisconnectedOnBot }
       );
       pairResult = await requestPairing(
         client,
@@ -159,6 +185,16 @@ export async function POST(req: NextRequest) {
           ? { pairingRef, method: 'code', phone: cleanPhone! }
           : { pairingRef, method: 'qr' }
       );
+      if ('qr' in pairResult) {
+        const safeQr = normalizeQrDataUrl(pairResult.qr);
+        if (!safeQr) {
+          throw new MbowazapBridgeError(
+            'bad_response',
+            'TchuekBot returned an invalid QR image payload'
+          );
+        }
+        pairResult = { ...pairResult, qr: safeQr };
+      }
       if (Date.now() >= Date.parse(reservation.expiresAt)) {
         throw new MbowazapBridgeError(
           'pairing_expired',

@@ -701,3 +701,54 @@ test('group, broadcast and newsletter traffic is never reported as a 1:1 convers
     assert.equal(state.isContactPaused(CUSTOMER_PHONE), false);
     assert.equal(state.isContactPaused(SESSION), false);
 });
+
+test('historical outbound messages from history sync never pause Davila as human takeover', async () => {
+    const client = mockWacrmClient();
+    const state = tempState();
+    let cancelled = false;
+    state.registerActiveDavilaRun(CUSTOMER_PHONE, { abort: () => { cancelled = true; } });
+    const reporter = createReporter({ getClient: () => client, state });
+
+    await reporter.processMessage(SESSION, {
+        key: { id: 'HIST_OUT_1', remoteJid: `${CUSTOMER_PHONE}@s.whatsapp.net`, fromMe: true },
+        message: { conversation: 'Old reply from last week' },
+        messageTimestamp: 1727130000,
+    }, { historical: true });
+
+    assert.equal(client.emitted.length, 1);
+    assert.equal(client.emitted[0].payload.origin, 'phone');
+    assert.equal(client.emitted[0].payload.history, true);
+    assert.equal(state.isContactPaused(CUSTOMER_PHONE), false);
+    assert.equal(cancelled, false);
+});
+
+test('sendMessage pre-marks messageId so synchronous upsert echo does not trigger human takeover', async () => {
+    const client = mockWacrmClient();
+    const state = tempState();
+    const reporter = createReporter({ getClient: () => client, state });
+    const listeners = new Map();
+
+    const sock = {
+        ev: { on: (name, cb) => listeners.set(name, cb) },
+        sendMessage: async (jid, content, options) => {
+            // Simulate Baileys emitting messages.upsert BEFORE sendMessage resolves.
+            const id = options?.messageId || 'FALLBACK_ID';
+            await listeners.get('messages.upsert')({
+                type: 'notify',
+                messages: [{
+                    key: { id, remoteJid: jid, fromMe: true },
+                    message: { conversation: content.text },
+                }],
+            });
+            return { key: { id, remoteJid: jid, fromMe: true } };
+        },
+    };
+    reporter.attachSocket(sock, SESSION);
+
+    await sock.sendMessage(`${CUSTOMER_PHONE}@s.whatsapp.net`, { text: 'Auto reply' }, { _origin: 'davila' });
+    await new Promise((r) => setImmediate(r));
+
+    assert.equal(client.emitted.length, 1);
+    assert.equal(client.emitted[0].payload.origin, 'davila');
+    assert.equal(state.isContactPaused(CUSTOMER_PHONE), false);
+});

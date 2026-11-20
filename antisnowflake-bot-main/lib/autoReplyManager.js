@@ -137,7 +137,8 @@ async function readImageContent(imageBuffer, mimeType = 'image/jpeg') {
     }
 
     // Fallback: Try Gemini Vision
-    if (settings.geminiApiKey) {
+    const geminiKey = settings.geminiApiKey || process.env.GEMINI_API_KEY || settings.tchuekamApiKey;
+    if (geminiKey) {
         try {
             console.log(chalk.cyan('[Vision] Requesting description from Gemini Vision...'));
             const requestBody = {
@@ -157,7 +158,7 @@ async function readImageContent(imageBuffer, mimeType = 'image/jpeg') {
                 }
             };
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${settings.geminiApiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -184,11 +185,20 @@ async function readImageContent(imageBuffer, mimeType = 'image/jpeg') {
  * Verifies if a specific phone number has submitted the Tally form
  */
 async function verifyTallySubmission(phoneNumber) {
+    const tallyApiKey = (process.env.TALLY_API_KEY || '').trim();
+    if (!tallyApiKey) {
+        return false;
+    }
+    const cleanTargetNum = String(phoneNumber || '').split(':')[0].replace(/[^0-9]/g, '');
+    if (!cleanTargetNum) {
+        return false;
+    }
+    const tallyFormId = (process.env.TALLY_FORM_ID || 'J9eWDX').trim();
     try {
-        const response = await fetch('https://api.tally.so/forms/J9eWDX/submissions', {
+        const response = await fetch(`https://api.tally.so/forms/${encodeURIComponent(tallyFormId)}/submissions`, {
             method: 'GET',
             headers: {
-                'Authorization': 'Bearer tly-0pWkRKIoRqG7PKSiOEKB8cMosYx5uRZl',
+                'Authorization': `Bearer ${tallyApiKey}`,
                 'Content-Type': 'application/json'
             },
             signal: AbortSignal.timeout(15000)
@@ -201,9 +211,6 @@ async function verifyTallySubmission(phoneNumber) {
 
         const data = await response.json();
         const submissions = data.submissions || [];
-        
-        // Extract digits only for robust matching
-        const cleanTargetNum = phoneNumber.replace(/[^0-9]/g, '');
         
         for (const sub of submissions) {
             const answers = sub.answers || [];
@@ -224,6 +231,25 @@ async function verifyTallySubmission(phoneNumber) {
     }
 }
 
+function safeContactFilename(senderId) {
+    const base = String(senderId || '').split('@')[0].split(':')[0];
+    const clean = base.replace(/[^0-9A-Za-z_-]/g, '');
+    return clean || 'unknown';
+}
+
+function getDoualaHour() {
+    try {
+        const formatted = new Intl.DateTimeFormat('en-GB', {
+            hour: 'numeric',
+            hour12: false,
+            timeZone: 'Africa/Douala',
+        }).format(new Date());
+        const hour = Number.parseInt(formatted, 10);
+        if (Number.isFinite(hour)) return hour % 24;
+    } catch (_) {}
+    return new Date().getUTCHours() + 1 >= 24 ? (new Date().getUTCHours() + 1) % 24 : new Date().getUTCHours() + 1;
+}
+
 // Helper to load persistent memory for a specific contact from disk
 async function loadContactMemory(senderId) {
     let memory = {
@@ -241,7 +267,7 @@ async function loadContactMemory(senderId) {
         history: []
     };
 
-    const contactNumber = senderId.split('@')[0];
+    const contactNumber = safeContactFilename(senderId);
     const MEMORY_DIR = path.join(__dirname, '../data/memory');
     if (!fs.existsSync(MEMORY_DIR)) {
         fs.mkdirSync(MEMORY_DIR, { recursive: true });
@@ -267,7 +293,7 @@ async function saveContactMemory(senderId, memory) {
         memory.history = memory.history.slice(-20);
     }
 
-    const contactNumber = senderId.split('@')[0];
+    const contactNumber = safeContactFilename(senderId);
     const MEMORY_DIR = path.join(__dirname, '../data/memory');
     if (!fs.existsSync(MEMORY_DIR)) {
         fs.mkdirSync(MEMORY_DIR, { recursive: true });
@@ -383,19 +409,9 @@ async function handleAutoReply(sock, chatId, senderId, message, settingsParam) {
     if (!activeSettings.autoReply) return;
     if (!isDavilaAllowed(sock, senderId)) return;
 
-    // Quiet hours check: no auto-replies 11PM-6AM
-    const nowHour = new Date().getHours();
+    // Quiet hours check: no auto-replies 11PM-6AM (Africa/Douala = UTC+1)
+    const nowHour = getDoualaHour();
     if (nowHour >= 23 || nowHour < 6) return;
-
-    // Daily auto-reply cap per sender
-    global._dailyReplies = global._dailyReplies || new Map();
-    const dailyKey = `${senderId}:${new Date().toDateString()}`;
-    const dailyCount = (global._dailyReplies.get(dailyKey) || 0) + 1;
-    global._dailyReplies.set(dailyKey, dailyCount);
-    if (dailyCount > 20) {
-        console.log(`[Daily AutoReply Cap] ${senderId.split('@')[0]} hit 20/day, silent.`);
-        return;
-    }
 
     // Detect media types using recursive unwrapper
     const msgContent = getInnerMessage(message.message);
@@ -412,6 +428,22 @@ async function handleAutoReply(sock, chatId, senderId, message, settingsParam) {
 
     // Skip empty messages (unless there is media to process) or bot commands
     if ((!userMessage && !hasAudio && !hasImage) || (userMessage && userMessage.startsWith('.'))) return;
+
+    // Daily auto-reply cap per sender (evict previous days to prevent unbounded growth)
+    global._dailyReplies = global._dailyReplies || new Map();
+    const todaySuffix = `:${new Date().toDateString()}`;
+    for (const k of global._dailyReplies.keys()) {
+        if (!k.endsWith(todaySuffix)) {
+            global._dailyReplies.delete(k);
+        }
+    }
+    const dailyKey = `${senderId}${todaySuffix}`;
+    const dailyCount = (global._dailyReplies.get(dailyKey) || 0) + 1;
+    global._dailyReplies.set(dailyKey, dailyCount);
+    if (dailyCount > 20) {
+        console.log(`[Daily AutoReply Cap] ${senderId.split('@')[0]} hit 20/day, silent.`);
+        return;
+    }
 
     const senderName = message.pushName || 'Unknown';
 
@@ -445,6 +477,13 @@ async function handleAutoReply(sock, chatId, senderId, message, settingsParam) {
             console.log(chalk.green(`[Tally] ✅ Form submission verified for ${senderId.split('@')[0]}`));
             memory.formFilled = true;
             await saveContactMemory(senderId, memory);
+            try {
+                const session = bridgeState.sessionKeyForSocket(sock);
+                if (session) {
+                    const chatRef = extractChatRef(chatId, senderId);
+                    getReporter().reportTallySubmitted(session, chatRef);
+                }
+            } catch (_) {}
         }
     }
 
@@ -488,7 +527,7 @@ async function handleAutoReply(sock, chatId, senderId, message, settingsParam) {
                 if (imageBuffer) {
                     const imageDesc = await readImageContent(imageBuffer);
                     if (imageDesc) {
-                        const caption = message.message?.imageMessage?.caption?.trim() || '';
+                        const caption = msgContent?.imageMessage?.caption?.trim() || '';
                         userMessage = `[Sent image: ${imageDesc}]${caption ? ` - Caption: ${caption}` : ''}`;
                     } else {
                         throw new Error('Vision returned empty description');
@@ -519,7 +558,7 @@ async function handleAutoReply(sock, chatId, senderId, message, settingsParam) {
         // Trigger phrases for Catalog Image Request Detection
         const catalogTriggers = [
             "show me", "montrez moi", "send image", "envoie une image",
-            "got a picture", "vous avez une image", "can I see",
+            "got a picture", "vous avez une image", "can i see",
             "je veux voir", "send me the catalog", "envoie le catalogue"
         ];
         const isCatalogRequested = catalogTriggers.some(phrase => userMsgLower.includes(phrase));
@@ -679,13 +718,6 @@ Never send catalog images if catalogImagesSent is true.`;
         if (isTallyRequested && !memory.tallyLinkSent) {
             memory.tallyLinkSent = true;
             await saveContactMemory(senderId, memory);
-            try {
-                const session = bridgeState.sessionKeyForSocket(sock);
-                if (session) {
-                    const chatRef = extractChatRef(chatId, senderId);
-                    getReporter().reportTallySubmitted(session, chatRef);
-                }
-            } catch (_) {}
             await new Promise(r => setTimeout(r, 1500));
             const tallyFormLink = activeSettings.tallyFormLink || 'https://tally.so/r/J9eWDX';
             await sock.sendMessage(chatId, {

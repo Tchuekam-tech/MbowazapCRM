@@ -22,6 +22,7 @@ const BUCKET_CAPACITY = 15;
 const REFILL_RATE_MS = 4000; // 1 token every 4 seconds = 15 tokens / minute
 let currentTokens = BUCKET_CAPACITY;
 let lastRefillTime = Date.now();
+let slotQueue = Promise.resolve();
 
 function refillTokens() {
     const now = Date.now();
@@ -29,26 +30,34 @@ function refillTokens() {
     const tokensToAdd = Math.floor(elapsed / REFILL_RATE_MS);
     if (tokensToAdd > 0) {
         currentTokens = Math.min(BUCKET_CAPACITY, currentTokens + tokensToAdd);
-        lastRefillTime = now;
+        lastRefillTime += tokensToAdd * REFILL_RATE_MS;
+        if (currentTokens === BUCKET_CAPACITY) {
+            lastRefillTime = now;
+        }
     }
 }
 
 /**
  * Ensures global dispatch rate does not exceed 15 messages/minute.
- * Suspends execution asynchronously until a token slot becomes available.
+ * Serialized so concurrent callers cannot all fire simultaneously after one sleep.
  */
-async function acquireGlobalSendSlot() {
-    refillTokens();
-    if (currentTokens > 0) {
-        currentTokens--;
-        return;
-    }
+function acquireGlobalSendSlot() {
+    const next = slotQueue.then(async () => {
+        refillTokens();
+        if (currentTokens > 0) {
+            currentTokens--;
+            return;
+        }
 
-    const waitTime = REFILL_RATE_MS;
-    console.log(chalk.yellow(`[TokenBucket] ⏳ Global bucket exhausted. Pacing message by ${waitTime / 1000}s...`));
-    await new Promise(resolve => setTimeout(resolve, waitTime));
-    refillTokens();
-    currentTokens = Math.max(0, currentTokens - 1);
+        const elapsed = Date.now() - lastRefillTime;
+        const waitTime = Math.max(250, REFILL_RATE_MS - elapsed);
+        console.log(chalk.yellow(`[TokenBucket] ⏳ Global bucket exhausted. Pacing message by ${(waitTime / 1000).toFixed(1)}s...`));
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        refillTokens();
+        currentTokens = Math.max(0, currentTokens - 1);
+    });
+    slotQueue = next.catch(() => {});
+    return next;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -104,13 +113,20 @@ function saveOptOutSet(set) {
 
 let optOutContacts = loadOptOutSet();
 
+function extractDigitsFromJid(senderId) {
+    if (typeof senderId !== 'string' || !senderId) return '';
+    return senderId.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+}
+
 function isContactOptedOut(senderId) {
-    const clean = senderId.split('@')[0].replace(/[^0-9]/g, '');
+    const clean = extractDigitsFromJid(senderId);
+    if (!clean) return false;
     return optOutContacts.has(clean);
 }
 
 function registerOptOut(senderId) {
-    const clean = senderId.split('@')[0].replace(/[^0-9]/g, '');
+    const clean = extractDigitsFromJid(senderId);
+    if (!clean) return;
     optOutContacts.add(clean);
     saveOptOutSet(optOutContacts);
 }
@@ -167,10 +183,26 @@ function getWarmupDailyLimit() {
 
 // Helper to check if a sender is the owner
 function isOwner(senderId, activeSettings) {
-    const ownerNum = activeSettings.ownerNumber || '237653683174';
+    const ownerNum = String((activeSettings && activeSettings.ownerNumber) || '237653683174');
     const cleanedOwner = ownerNum.replace(/[^0-9]/g, '');
-    const cleanedSender = senderId.split('@')[0].replace(/[^0-9]/g, '');
-    return cleanedSender === cleanedOwner;
+    const cleanedSender = extractDigitsFromJid(senderId);
+    return !!cleanedSender && cleanedSender === cleanedOwner;
+}
+
+function getOrInitContactState(senderId, now) {
+    if (!state.has(senderId)) {
+        if (state.size >= 2000) {
+            const oldestKey = state.keys().next().value;
+            if (oldestKey !== undefined) state.delete(oldestKey);
+        }
+        state.set(senderId, {
+            hourlyCount: 0,
+            hourStart: now,
+            unansweredCount: 0,
+            blacklisted: false
+        });
+    }
+    return state.get(senderId);
 }
 
 /**
@@ -266,16 +298,7 @@ async function processSecurityCheck(sock, senderId, senderName, activeSettings, 
     }
 
     // Initialize in-memory state if not present
-    if (!state.has(senderId)) {
-        state.set(senderId, {
-            hourlyCount: 0,
-            hourStart: now,
-            unansweredCount: 0,
-            blacklisted: false
-        });
-    }
-
-    const contactState = state.get(senderId);
+    const contactState = getOrInitContactState(senderId, now);
 
     // Rule 2 Check & Reset: If prospect messages us, lift any unanswered blacklist
     if (contactState.blacklisted) {
@@ -315,16 +338,7 @@ async function recordBotResponse(sock, senderId, senderName, activeSettings) {
     warmupState.dailyCounts[todayKey] = (warmupState.dailyCounts[todayKey] || 0) + 1;
     saveWarmupState(warmupState);
 
-    if (!state.has(senderId)) {
-        state.set(senderId, {
-            hourlyCount: 0,
-            hourStart: Date.now(),
-            unansweredCount: 0,
-            blacklisted: false
-        });
-    }
-
-    const contactState = state.get(senderId);
+    const contactState = getOrInitContactState(senderId, Date.now());
 
     if (Date.now() - contactState.hourStart > 3600000) {
         contactState.hourlyCount = 0;
