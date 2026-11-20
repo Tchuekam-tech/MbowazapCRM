@@ -95,6 +95,7 @@ describe('createMbowazapClient', () => {
       pairingRef: '1b4e28ba-2fa1-41d2-883f-0016d3cca427',
       method: 'qr',
     });
+    await client.getPairing('1b4e28ba-2fa1-41d2-883f-0016d3cca427');
     await client.getSession('temp_qr');
     await client.logout('237600000001');
     await client.setBrain('237600000001', false);
@@ -117,6 +118,7 @@ describe('createMbowazapClient', () => {
     ).toEqual([
       'GET /bridge/ping',
       'POST /bridge/pair',
+      'GET /bridge/pairings/1b4e28ba-2fa1-41d2-883f-0016d3cca427',
       'GET /bridge/sessions/temp_qr',
       'POST /bridge/sessions/237600000001/logout',
       'PUT /bridge/sessions/237600000001/brain',
@@ -141,7 +143,27 @@ describe('createMbowazapClient', () => {
     await expect(
       client.setContactAi('abc', { session: '237600000001', paused: false })
     ).rejects.toMatchObject({ code: 'invalid_request' });
+    await expect(client.getPairing('not-a-uuid')).rejects.toMatchObject({
+      code: 'invalid_request',
+    });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-image QR payloads in pair() with bad_response', async () => {
+    const { client } = setup(() =>
+      jsonResponse(200, {
+        ok: true,
+        method: 'qr',
+        qr: 'data:image/png;base64,bm90LWFuLWltYWdl',
+        session: 'temp_qr',
+      })
+    );
+    await expect(
+      client.pair({
+        pairingRef: '1b4e28ba-2fa1-41d2-883f-0016d3cca427',
+        method: 'qr',
+      })
+    ).rejects.toMatchObject({ code: 'bad_response' });
   });
 
   it('surfaces the bot error envelope as MbowazapBridgeError', async () => {

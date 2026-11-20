@@ -12,7 +12,9 @@ const h = vi.hoisted(() => {
     },
     clientMock: {
       getSession: vi.fn(),
+      getPairing: vi.fn(),
       pair: vi.fn(),
+      cancelPairing: vi.fn(),
       setBrain: vi.fn(),
       logout: vi.fn(),
     },
@@ -50,10 +52,14 @@ import { MbowazapBridgeError } from '@/lib/mbowazap/client';
 import { GET as getSession } from './session/route';
 import { GET as getStatus } from './status/route';
 import { POST as postPair } from './pair/route';
+import { POST as postCancelPair } from './pair/cancel/route';
 import { POST as postQrRefresh } from './pair/qr/route';
 import { GET as getPoll } from './poll/route';
 import { PUT as putBrain } from './brain/route';
 import { POST as postDisconnect } from './disconnect/route';
+
+const MOCK_QR_PNG_1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const MOCK_QR_PNG_2 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
 describe('MboWazap Gateway Control Routes', () => {
   let storedConfig: Record<string, any> | null = null;
@@ -77,26 +83,43 @@ describe('MboWazap Gateway Control Routes', () => {
       mbowazap_brain: 'tchuekbot',
       mbowazap_last_event_at: '2026-09-24T00:00:00.000Z',
       connected_at: '2026-09-24T00:00:00.000Z',
+      updated_at: '2026-09-24T00:00:00.000Z',
       status: 'connected',
+    };
+
+    const matchesFilters = (
+      row: Record<string, any> | null,
+      filters: Array<['eq' | 'is', string, any]>
+    ) => {
+      if (!row) return false;
+      return filters.every(([op, col, val]) => {
+        const cur = row[col] ?? null;
+        return op === 'is' ? cur === val : cur === val;
+      });
     };
 
     h.accountContext.supabase = {
       from: (table: string) => {
         if (table !== 'whatsapp_config') throw new Error(`Unexpected table ${table}`);
         return {
-          select: () => ({
-            eq: (_col: string, val: string) => ({
-              maybeSingle: async () => ({ data: storedConfig, error: null }),
-              eq: (_col2: string, val2: string) => ({
-                maybeSingle: async () => {
-                  if (storedConfig && storedConfig.mbowazap_pairing_ref === val2) {
-                    return { data: storedConfig, error: null };
-                  }
-                  return { data: null, error: null };
-                },
+          select: () => {
+            const filters: Array<['eq' | 'is', string, any]> = [];
+            const selectQuery: any = {
+              eq: (col: string, val: any) => {
+                filters.push(['eq', col, val]);
+                return selectQuery;
+              },
+              is: (col: string, val: any) => {
+                filters.push(['is', col, val]);
+                return selectQuery;
+              },
+              maybeSingle: async () => ({
+                data: matchesFilters(storedConfig, filters) ? { ...storedConfig } : null,
+                error: null,
               }),
-            }),
-          }),
+            };
+            return selectQuery;
+          },
           upsert: async (patch: any) => {
             if (nextUpsertError) {
               const error = nextUpsertError;
@@ -106,38 +129,84 @@ describe('MboWazap Gateway Control Routes', () => {
             storedConfig = { ...(storedConfig || {}), ...patch };
             return { error: null };
           },
+          insert: (patch: any) => {
+            const execute = () => {
+              if (nextUpsertError) {
+                const error = nextUpsertError;
+                nextUpsertError = null;
+                return { data: null, error };
+              }
+              storedConfig = { id: 'cfg-new', ...patch };
+              return { data: { ...storedConfig }, error: null };
+            };
+            return {
+              select: () => ({
+                maybeSingle: async () => execute(),
+              }),
+              then: (resolve: any, reject: any) =>
+                Promise.resolve().then(execute).then(resolve, reject),
+            };
+          },
           update: (patch: any) => {
-            const filters: Array<[string, string]> = [];
-            const updateQuery = {
-              eq: (column: string, value: string) => {
-                filters.push([column, value]);
+            const filters: Array<['eq' | 'is', string, any]> = [];
+            const execute = () => {
+              if (nextUpsertError) {
+                const error = nextUpsertError;
+                nextUpsertError = null;
+                return { data: null, error };
+              }
+              if (matchesFilters(storedConfig, filters)) {
+                storedConfig = { ...storedConfig, ...patch };
+                return { data: { ...storedConfig }, error: null };
+              }
+              return { data: null, error: null };
+            };
+            const updateQuery: any = {
+              eq: (column: string, value: any) => {
+                filters.push(['eq', column, value]);
                 return updateQuery;
               },
-              then: (
-                resolve: (value: { error: null }) => unknown,
-                reject: (reason: unknown) => unknown
-              ) =>
-                Promise.resolve()
-                  .then(() => {
-                    if (
-                      storedConfig &&
-                      filters.every(
-                        ([column, value]) => storedConfig?.[column] === value
-                      )
-                    ) {
-                      storedConfig = { ...storedConfig, ...patch };
-                    }
-                    return { error: null };
-                  })
-                  .then(resolve, reject),
+              is: (column: string, value: any) => {
+                filters.push(['is', column, value]);
+                return updateQuery;
+              },
+              select: () => ({
+                maybeSingle: async () => execute(),
+              }),
+              then: (resolve: any, reject: any) =>
+                Promise.resolve().then(execute).then(resolve, reject),
             };
             return updateQuery;
+          },
+          delete: () => {
+            const filters: Array<['eq' | 'is', string, any]> = [];
+            const execute = () => {
+              if (matchesFilters(storedConfig, filters)) {
+                storedConfig = null;
+              }
+              return { error: null };
+            };
+            const deleteQuery: any = {
+              eq: (column: string, value: any) => {
+                filters.push(['eq', column, value]);
+                return deleteQuery;
+              },
+              is: (column: string, value: any) => {
+                filters.push(['is', column, value]);
+                return deleteQuery;
+              },
+              then: (resolve: any, reject: any) =>
+                Promise.resolve().then(execute).then(resolve, reject),
+            };
+            return deleteQuery;
           },
         };
       },
     };
 
     vi.clearAllMocks();
+    h.clientMock.cancelPairing.mockResolvedValue({ cancelled: true });
+    h.clientMock.getPairing.mockResolvedValue({ pairingRef: '', state: 'waiting' });
   });
 
   afterEach(() => {
@@ -223,7 +292,22 @@ describe('MboWazap Gateway Control Routes', () => {
       const res = await postPair(req);
       expect(res.status).toBe(400);
       const json = await res.json();
-      expect(json.error).toMatch(/Phone number must be between 6 and 15 digits/);
+      expect(json.error).toMatch(/Phone number must be between 8 and 15 digits/);
+    });
+
+    it('refuses overwriting an active Meta Cloud API connection with 409', async () => {
+      storedConfig = {
+        ...storedConfig,
+        provider: 'meta',
+        status: 'connected',
+        phone_number_id: 'pn-123',
+        access_token: 'tok',
+      };
+      const res = await postPair(pairRequest({ method: 'qr' }));
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.code).toBe('provider_conflict');
+      expect(h.clientMock.pair).not.toHaveBeenCalled();
     });
 
     it('rejects pairing when already connected', async () => {
@@ -270,7 +354,7 @@ describe('MboWazap Gateway Control Routes', () => {
       h.clientMock.pair
         .mockRejectedValueOnce(new MbowazapBridgeError('pairing_pending', 'not yet', 503))
         .mockRejectedValueOnce(new MbowazapBridgeError('pairing_pending', 'not yet', 503))
-        .mockResolvedValueOnce({ method: 'qr', qr: 'data:image/png;base64,late', session: 'temp_qr' });
+        .mockResolvedValueOnce({ method: 'qr', qr: MOCK_QR_PNG_1, session: 'temp_qr' });
 
       const pending = postPair(pairRequest({ method: 'qr' }));
       await vi.advanceTimersByTimeAsync(5_000);
@@ -278,7 +362,7 @@ describe('MboWazap Gateway Control Routes', () => {
 
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json.qr).toBe('data:image/png;base64,late');
+      expect(json.qr).toBe(MOCK_QR_PNG_1);
       expect(h.clientMock.pair).toHaveBeenCalledTimes(3);
     });
 
@@ -361,7 +445,40 @@ describe('MboWazap Gateway Control Routes', () => {
       const res = await postPair(pairRequest({ method: 'code', phone: '237600000009' }));
       expect(res.status).toBe(409);
       const json = await res.json();
-      expect(json.error).toMatch(/already linked to another wacrm account/);
+      expect(json.error).toMatch(/already linked to or reserved by another wacrm account/);
+    });
+
+    it('rejects a non-image QR payload from the bot with 502 bad_response and rolls back', async () => {
+      storedConfig!.mbowazap_state = 'disconnected';
+      storedConfig!.mbowazap_session = null;
+      h.clientMock.pair.mockResolvedValueOnce({
+        method: 'qr',
+        qr: 'javascript:alert(1)',
+        session: 'temp_qr',
+      });
+
+      const res = await postPair(pairRequest({ method: 'qr' }));
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe('bad_response');
+      expect(storedConfig?.mbowazap_state).toBe('disconnected');
+    });
+
+    it('rolls back a bot-disconnected previous session to disconnected instead of stale connected', async () => {
+      h.clientMock.getSession.mockResolvedValueOnce({
+        session: '237653683174',
+        status: 'disconnected',
+        me: null,
+        davila: true,
+      });
+      h.clientMock.pair.mockRejectedValueOnce(
+        new MbowazapBridgeError('pairing_failed', 'WhatsApp rejected pairing', 502)
+      );
+
+      const res = await postPair(pairRequest({ method: 'code', phone: '237653683174' }));
+      expect(res.status).toBe(502);
+      expect(storedConfig?.mbowazap_state).toBe('disconnected');
+      expect(storedConfig?.mbowazap_session).toBeNull();
     });
 
     it('successfully initiates pairing code with TchuekBot', async () => {
@@ -394,7 +511,7 @@ describe('MboWazap Gateway Control Routes', () => {
 
       h.clientMock.pair.mockResolvedValueOnce({
         method: 'qr',
-        qr: 'data:image/png;base64,mockqr',
+        qr: MOCK_QR_PNG_1,
         session: 'temp_qr',
       });
 
@@ -407,7 +524,71 @@ describe('MboWazap Gateway Control Routes', () => {
       const json = await res.json();
       expect(json.ok).toBe(true);
       expect(json.method).toBe('qr');
-      expect(json.qr).toBe('data:image/png;base64,mockqr');
+      expect(json.qr).toBe(MOCK_QR_PNG_1);
+    });
+  });
+
+  describe('POST /api/mbowazap/pair/cancel', () => {
+    const REF = '00000000-0000-4000-8000-000000000002';
+
+    it('validates JSON body and UUID pairingRef', async () => {
+      const badJson = new NextRequest('http://localhost/api/mbowazap/pair/cancel', {
+        method: 'POST',
+        body: '{bad',
+      });
+      expect((await postCancelPair(badJson)).status).toBe(400);
+
+      const badUuid = new NextRequest('http://localhost/api/mbowazap/pair/cancel', {
+        method: 'POST',
+        body: JSON.stringify({ pairingRef: 'not-a-uuid' }),
+      });
+      expect((await postCancelPair(badUuid)).status).toBe(400);
+    });
+
+    it('rethrows 409 pairing_busy from bot so active handshake is not torn down', async () => {
+      storedConfig = {
+        ...storedConfig,
+        mbowazap_state: 'pairing',
+        mbowazap_session: null,
+        mbowazap_pairing_ref: REF,
+        updated_at: new Date().toISOString(),
+      };
+      h.clientMock.cancelPairing.mockRejectedValueOnce(
+        new MbowazapBridgeError('pairing_busy', 'Pairing in flight', 409)
+      );
+
+      const req = new NextRequest('http://localhost/api/mbowazap/pair/cancel', {
+        method: 'POST',
+        body: JSON.stringify({ pairingRef: REF }),
+      });
+      const res = await postCancelPair(req);
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.code).toBe('pairing_busy');
+      expect(storedConfig?.mbowazap_state).toBe('pairing');
+    });
+
+    it('clears local pairing state even if the bridge is unreachable', async () => {
+      storedConfig = {
+        ...storedConfig,
+        mbowazap_state: 'pairing',
+        mbowazap_session: '237653683174',
+        mbowazap_pairing_ref: REF,
+        updated_at: new Date().toISOString(),
+      };
+      h.clientMock.cancelPairing.mockRejectedValueOnce(
+        new MbowazapBridgeError('network_error', 'ECONNREFUSED')
+      );
+
+      const req = new NextRequest('http://localhost/api/mbowazap/pair/cancel', {
+        method: 'POST',
+        body: JSON.stringify({ pairingRef: REF }),
+      });
+      const res = await postCancelPair(req);
+      expect(res.status).toBe(200);
+      expect(storedConfig?.mbowazap_state).toBe('disconnected');
+      expect(storedConfig?.mbowazap_session).toBeNull();
+      expect(storedConfig?.mbowazap_pairing_ref).not.toBe(REF);
     });
   });
 
@@ -420,6 +601,7 @@ describe('MboWazap Gateway Control Routes', () => {
         mbowazap_state: 'pairing',
         mbowazap_session: null,
         mbowazap_pairing_ref: REF,
+        updated_at: new Date().toISOString(),
       };
     }
 
@@ -427,13 +609,13 @@ describe('MboWazap Gateway Control Routes', () => {
       qrPairingInFlight();
       h.clientMock.pair.mockResolvedValueOnce({
         method: 'qr',
-        qr: 'data:image/png;base64,rotated',
+        qr: MOCK_QR_PNG_2,
         session: 'temp_qr',
       });
 
       const res = await postQrRefresh(qrRefreshRequest({ pairingRef: REF }));
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ ok: true, qr: 'data:image/png;base64,rotated' });
+      expect(await res.json()).toEqual({ ok: true, qr: MOCK_QR_PNG_2 });
       expect(h.clientMock.pair).toHaveBeenCalledWith({ pairingRef: REF, method: 'qr' });
     });
 
@@ -489,6 +671,87 @@ describe('MboWazap Gateway Control Routes', () => {
       const json = await res.json();
       expect(json.ok).toBe(true);
       expect(json.connected).toBe(false);
+    });
+
+    it('recovers connected state directly from TchuekBot when webhook is delayed', async () => {
+      const REF = '00000000-0000-4000-8000-000000000009';
+      storedConfig = {
+        ...storedConfig,
+        mbowazap_state: 'pairing',
+        mbowazap_session: null,
+        mbowazap_pairing_ref: REF,
+        updated_at: new Date().toISOString(),
+      };
+      h.clientMock.getPairing.mockResolvedValueOnce({
+        pairingRef: REF,
+        state: 'connected',
+        session: '237699887766',
+        me: { phone: '237699887766', name: 'Atelier' },
+      });
+
+      const res = await getPoll(
+        new NextRequest(`http://localhost/api/mbowazap/poll?ref=${REF}`)
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json).toEqual({
+        ok: true,
+        connected: true,
+        state: 'connected',
+        session: '237699887766',
+        displayName: 'Atelier',
+      });
+      expect(storedConfig?.mbowazap_state).toBe('connected');
+      expect(storedConfig?.mbowazap_session).toBe('237699887766');
+    });
+
+    it('surfaces bot failure immediately and releases the DB reservation', async () => {
+      const REF = '00000000-0000-4000-8000-000000000010';
+      storedConfig = {
+        ...storedConfig,
+        mbowazap_state: 'pairing',
+        mbowazap_session: null,
+        mbowazap_pairing_ref: REF,
+        updated_at: new Date().toISOString(),
+      };
+      h.clientMock.getPairing.mockResolvedValueOnce({
+        pairingRef: REF,
+        state: 'failed',
+        reason: 'Connection Failure, code 405',
+      });
+
+      const res = await getPoll(
+        new NextRequest(`http://localhost/api/mbowazap/poll?ref=${REF}`)
+      );
+      const json = await res.json();
+      expect(json.connected).toBe(false);
+      expect(json.state).toBe('failed');
+      expect(json.reason).toContain('405');
+      expect(storedConfig?.mbowazap_state).toBe('disconnected');
+      expect(storedConfig?.mbowazap_pairing_ref).not.toBe(REF);
+    });
+
+    it('reports linking state during WhatsApp 515 handshake restart', async () => {
+      const REF = '00000000-0000-4000-8000-000000000011';
+      storedConfig = {
+        ...storedConfig,
+        mbowazap_state: 'pairing',
+        mbowazap_session: '237653683174',
+        mbowazap_pairing_ref: REF,
+        updated_at: new Date().toISOString(),
+      };
+      h.clientMock.getPairing.mockResolvedValueOnce({
+        pairingRef: REF,
+        state: 'linking',
+        session: '237653683174',
+      });
+
+      const res = await getPoll(
+        new NextRequest(`http://localhost/api/mbowazap/poll?ref=${REF}`)
+      );
+      const json = await res.json();
+      expect(json.connected).toBe(false);
+      expect(json.state).toBe('linking');
     });
   });
 
@@ -553,6 +816,21 @@ describe('MboWazap Gateway Control Routes', () => {
       expect(h.clientMock.logout).toHaveBeenCalledWith('237653683174');
       expect(storedConfig?.mbowazap_state).toBe('disconnected');
       expect(storedConfig?.mbowazap_session).toBeNull();
+    });
+
+    it('does not touch a Meta Cloud API configuration row', async () => {
+      storedConfig = {
+        ...storedConfig,
+        provider: 'meta',
+        status: 'connected',
+        phone_number_id: 'pn-1',
+        access_token: 'tok-1',
+      };
+      const res = await postDisconnect();
+      expect(res.status).toBe(200);
+      expect(h.clientMock.logout).not.toHaveBeenCalled();
+      expect(storedConfig?.provider).toBe('meta');
+      expect(storedConfig?.status).toBe('connected');
     });
   });
 

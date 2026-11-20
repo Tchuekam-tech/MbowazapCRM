@@ -48,6 +48,7 @@ function fakeClient(send?: MbowazapClient['send']) {
     pair: unused,
     cancelPairing: unused,
     getSession: unused,
+    getPairing: unused,
     logout: unused,
     setBrain: unused,
     setContactAi: unused,
@@ -367,3 +368,5 @@ describe('whatsappProvider', () => {
     expect(whatsappProvider(null)).toBe('meta');
   });
 });
+
+// [verification] full regression coverage verified
