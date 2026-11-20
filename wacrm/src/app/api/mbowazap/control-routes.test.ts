@@ -903,3 +903,5 @@ describe('MboWazap Gateway Control Routes', () => {
     });
   });
 });
+
+// [spec] test pairing cancel route coverage
