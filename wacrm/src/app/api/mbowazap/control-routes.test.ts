@@ -903,9 +903,3 @@ describe('MboWazap Gateway Control Routes', () => {
     });
   });
 });
-
-// [spec] test pairing cancel route coverage
-
-// [spec] test QR refresh endpoint coverage
-
-// [spec] test bot active recovery polling coverage
