@@ -797,5 +797,3 @@ export async function ingestBatch(
 
   return { accepted, rejected };
 }
-
-// [idempotency] deduplicate incoming message events safely
