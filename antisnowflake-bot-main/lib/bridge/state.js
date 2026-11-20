@@ -18,12 +18,15 @@ const { SESSION_PATTERN, CONTACT_PATTERN } = require('./protocol');
 
 const DEFAULT_BASE_DIR = path.join(__dirname, '../../data/bridge');
 const CRM_SENT_TTL_MS = 10 * 60 * 1000;
+const PAIRING_STATUS_TTL_MS = 10 * 60 * 1000;
 /** 9999-12-31T23:59:59Z — "paused until turned back on". */
 const PAUSE_FOREVER = 253402300799000;
 
+let atomicCounter = 0;
+
 function writeJsonAtomic(file, data) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
+    const tmp = `${file}.${process.pid}.${++atomicCounter}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
     fs.renameSync(tmp, file);
 }
@@ -54,6 +57,7 @@ function createBridgeState({
     const crmSentIds = new Map(); // messageId -> expiresAt
     const pairingRefsFile = path.join(baseDir, 'pairing-refs.json');
     const pairingRefs = new Map(Object.entries(readJson(pairingRefsFile, {}))); // survives restart
+    const pairingStatuses = new Map(); // pairingRef -> { state, session, me, reason, updatedAt, expiresAt }
     const davilaCache = new Map(); // session -> boolean
     let pauses = null; // contact -> pausedUntil (ms); loaded lazily
 
@@ -97,6 +101,46 @@ function createBridgeState({
     function clearPairingRef(sessionKey) {
         pairingRefs.delete(sessionKey);
         writeJsonAtomic(pairingRefsFile, Object.fromEntries(pairingRefs));
+    }
+
+    function findPairingLeaseByRef(ref) {
+        if (!ref) return null;
+        for (const [session, entry] of pairingRefs) {
+            if (entry?.ref === ref) return { session, ref: entry.ref, at: entry.at };
+        }
+        return null;
+    }
+
+    function recordPairingStatus(ref, patch) {
+        if (!ref) return;
+        const t = now();
+        for (const [k, v] of pairingStatuses) {
+            if (v.expiresAt <= t) pairingStatuses.delete(k);
+        }
+        const prev = pairingStatuses.get(ref) || {};
+        pairingStatuses.set(ref, {
+            ...prev,
+            ...patch,
+            pairingRef: ref,
+            updatedAt: t,
+            expiresAt: t + PAIRING_STATUS_TTL_MS,
+        });
+    }
+
+    function getPairingStatus(ref) {
+        if (!ref) return null;
+        const entry = pairingStatuses.get(ref);
+        if (!entry) return null;
+        if (entry.expiresAt <= now()) {
+            pairingStatuses.delete(ref);
+            return null;
+        }
+        const { expiresAt: _ignored, ...publicStatus } = entry;
+        return publicStatus;
+    }
+
+    function clearPairingStatus(ref) {
+        if (ref) pairingStatuses.delete(ref);
     }
 
     function sessionFile(session) {
@@ -214,6 +258,10 @@ function createBridgeState({
         getPairingLease,
         movePairingRef,
         clearPairingRef,
+        findPairingLeaseByRef,
+        recordPairingStatus,
+        getPairingStatus,
+        clearPairingStatus,
         isDavilaEnabled,
         setDavilaEnabled,
         sessionKeyForSocket,
