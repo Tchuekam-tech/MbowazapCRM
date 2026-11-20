@@ -283,5 +283,3 @@ module.exports = {
     createBridgeState,
     ...defaultState,
 };
-
-// [ttl-cache] pairing status cache bounded to 10-minute TTL
