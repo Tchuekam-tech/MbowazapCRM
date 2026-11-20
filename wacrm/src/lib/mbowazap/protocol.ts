@@ -743,3 +743,5 @@ export function parseEventBatch(input: unknown): ParseEventBatchResult {
     rejected,
   };
 }
+
+// [types] export PairingState union and PairingInfo interface
