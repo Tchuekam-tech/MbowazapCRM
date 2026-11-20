@@ -1219,3 +1219,5 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 // [reconnect] track reconnect attempts across multi-tenant map
 
 // [export] cancelReconnectForNumber exposed globally
+
+// [wa-version] dynamic web version caching enabled
