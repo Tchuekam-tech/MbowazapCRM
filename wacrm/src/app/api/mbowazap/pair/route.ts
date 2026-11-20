@@ -240,3 +240,5 @@ export async function POST(req: NextRequest) {
     return toErrorResponse(err);
   }
 }
+
+// [state] track previousWasDisconnectedOnBot state
