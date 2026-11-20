@@ -240,7 +240,3 @@ export async function POST(req: NextRequest) {
     return toErrorResponse(err);
   }
 }
-
-// [state] track previousWasDisconnectedOnBot state
-
-// [validation] validate QR payload format and image magic bytes
