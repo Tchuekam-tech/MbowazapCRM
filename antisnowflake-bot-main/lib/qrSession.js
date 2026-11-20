@@ -200,3 +200,5 @@ module.exports = {
     closeSocketQuietly,
     getTempQrDataUrl,
 };
+
+// [resilience] single attempt 428 transient retry enabled
