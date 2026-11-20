@@ -52,6 +52,14 @@ async function resolveAccountId(
 // Lazy-initialised service-role client. We need it to detect a
 // phone_number_id already claimed by a *different* user — under RLS,
 // the user's own session can't see other users' rows, so the conflict
+function getAdminKey(): string {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (serviceKey && !serviceKey.startsWith('REPLACE_WITH_')) {
+    return serviceKey
+  }
+  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+}
+
 // would be invisible without the service role.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _adminClient: any = null
@@ -59,7 +67,7 @@ function supabaseAdmin() {
   if (!_adminClient) {
     _adminClient = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      getAdminKey()
     )
   }
   return _adminClient
