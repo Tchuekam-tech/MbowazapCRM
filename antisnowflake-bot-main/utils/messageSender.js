@@ -101,7 +101,7 @@ class MessageSender {
      * @param {object} [quoted] Message to reply to
      */
     async sendImage(chatId, image, caption = "", quoted = null) {
-        const content = typeof image === 'string' ? { url: image } : { image };
+        const content = typeof image === 'string' ? { image: { url: image } } : { image };
         return await this.sock.sendMessage(chatId, { ...content, caption }, { quoted });
     }
 }

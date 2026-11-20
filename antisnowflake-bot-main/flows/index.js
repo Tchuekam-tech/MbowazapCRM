@@ -5,6 +5,7 @@ const MessageSender = require('../utils/messageSender');
 const { getAIResponse } = require('../lib/aiProvider');
 const { getPolicyConfig } = require('../lib/policyGuard');
 const bridgeState = require('../lib/bridge/state');
+const { getReporter, extractChatRef } = require('../lib/bridge/reporter');
 const settings = require('../settings');
 const chalk = require('chalk');
 
@@ -31,8 +32,9 @@ if (!fs.existsSync(SESSIONS_DIR)) {
  * @returns {string} Path to JSON session
  */
 function getSessionPath(senderId, businessNumber) {
-    const contactNumber = senderId.split('@')[0];
-    const bizFolder = path.join(SESSIONS_DIR, businessNumber);
+    const contactNumber = String(senderId || '').split('@')[0].split(':')[0].replace(/[^0-9A-Za-z_-]/g, '') || 'unknown';
+    const cleanBiz = String(businessNumber || '').split('@')[0].split(':')[0].replace(/[^0-9A-Za-z_-]/g, '') || 'default';
+    const bizFolder = path.join(SESSIONS_DIR, cleanBiz);
     if (!fs.existsSync(bizFolder)) {
         fs.mkdirSync(bizFolder, { recursive: true });
     }
@@ -122,7 +124,8 @@ function loadBusinessConfig(businessNumber) {
  */
 async function handleFlow(sock, chatId, senderId, m) {
     const body = (m.body || m.text || "").trim();
-    const businessNumber = sock.user.id.split(':')[0].replace(/[^0-9]/g, '');
+    const businessNumber = String(sock?.user?.id || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+    if (!businessNumber) return;
 
     const sender = new MessageSender(sock);
     let session = loadSession(senderId, businessNumber);
@@ -403,9 +406,15 @@ async function sendFAQList(sender, chatId, m) {
  * @param {string} jid Client WhatsApp JID
  */
 async function handleTallyWebhook(sock, jid) {
-    const businessNumber = sock.user.id.split(':')[0].replace(/[^0-9]/g, '');
+    const businessNumber = String(sock?.user?.id || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+    if (!businessNumber) return false;
     const session = loadSession(jid, businessNumber);
     session.tallySubmitted = true;
+
+    try {
+        const chatRef = extractChatRef(jid);
+        getReporter().reportTallySubmitted(businessNumber, chatRef);
+    } catch (_) {}
     
     if (session.state === 'TALLY_SENT') {
         session.state = 'AWAITING_NAME';
@@ -428,7 +437,7 @@ async function handleTallyWebhook(sock, jid) {
 async function runDavilaFallback(sock, chatId, senderId, m, session) {
     const userMessage = m.body || m.text || "";
     const sender = new MessageSender(sock);
-    const businessNumber = sock.user.id.split(':')[0].replace(/[^0-9]/g, '');
+    const businessNumber = String(sock?.user?.id || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
 
     // Load custom configuration if present
     const customConfig = loadBusinessConfig(businessNumber);
@@ -519,7 +528,7 @@ function initFlowScanner(sock) {
                 
                 const clientFiles = fs.readdirSync(bizFolder);
                 const bizSock = sessionManager.getSocket(biz);
-                if (!bizSock) continue; // Skip if socket is not currently connected
+                if (!bizSock || !sessionManager.isSocketOpen(bizSock)) continue; // Skip if socket is not currently connected
                 // wacrm bridge: no Davila follow-ups when wacrm is the brain for this number
                 if (!bridgeState.isDavilaEnabled(biz)) continue;
 
@@ -553,6 +562,9 @@ function initFlowScanner(sock) {
             console.error('[Flow Scanner] Error scanning session directories:', err.message);
         }
     }, 60000); // scan every minute
+    if (typeof scannerInterval.unref === 'function') {
+        scannerInterval.unref();
+    }
 }
 
 module.exports = {
