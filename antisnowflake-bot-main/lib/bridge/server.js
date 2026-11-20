@@ -26,6 +26,7 @@ const {
     BridgeError,
     assertSession,
     assertContact,
+    assertPairingRef,
     recipientJid,
     recipientKey,
     parsePairRequest,
@@ -49,6 +50,7 @@ const ROUTES = [
     { method: 'GET', pattern: /^\/bridge\/ping$/, name: 'ping' },
     { method: 'POST', pattern: /^\/bridge\/pair$/, name: 'pair' },
     { method: 'POST', pattern: /^\/bridge\/pair\/cancel$/, name: 'cancelPairing' },
+    { method: 'GET', pattern: /^\/bridge\/pairings\/([^/]+)$/, name: 'pairing', param: 'pairingRef' },
     { method: 'GET', pattern: /^\/bridge\/sessions\/([^/]+)$/, name: 'session', param: 'session' },
     { method: 'POST', pattern: /^\/bridge\/sessions\/([^/]+)\/logout$/, name: 'logout', param: 'session' },
     { method: 'PUT', pattern: /^\/bridge\/sessions\/([^/]+)\/brain$/, name: 'brain', param: 'session' },
@@ -71,18 +73,27 @@ function productionDeps() {
             const request = global.requestPairingCodeForNumber || require('../pairServer').generatePairCode;
             return request(phone);
         },
+        cancelReconnect: (session) => {
+            if (typeof global.cancelReconnectForNumber === 'function') {
+                global.cancelReconnectForNumber(session);
+            }
+        },
         resetPairingSession: (session) => {
+            if (typeof global.cancelReconnectForNumber === 'function') {
+                global.cancelReconnectForNumber(session);
+            }
             const sock = sessionManager.getSocket(session);
             if (sessionManager.isLinked(sock)) {
                 throw new BridgeError(409, 'already_connected', 'This device has already linked. Wait for connection confirmation.');
             }
             // A startup/restart may have linked credentials on disk but no socket yet.
-            const dir = path.join(SESSIONS_ROOT, session);
-            const creds = path.join(dir, 'creds.json');
-            if (fs.existsSync(creds) && sessionManager.isLinkedCreds(JSON.parse(fs.readFileSync(creds, 'utf8')))) {
+            // Corrupted/truncated creds.json is treated as unlinked and cleaned up.
+            if (sessionManager.isLinkedOnDisk(session, SESSIONS_ROOT)) {
                 throw new BridgeError(409, 'already_connected', 'This device is already linked.');
             }
+            const dir = path.join(SESSIONS_ROOT, session);
             if (sock) {
+                sock._manuallyEnded = true;
                 clearInterval(sock.watchdogInterval);
                 clearInterval(sock.heartbeatInterval);
                 clearTimeout(sock._presenceTimeout);
@@ -264,6 +275,10 @@ function createBridgeHandler(overrides = {}) {
             const cmd = parsePairRequest(body);
             const session = cmd.method === 'code' ? cmd.phone : TEMP_QR_SESSION;
             if (d.isLinked(d.getSocket(session))) {
+                if (cmd.method === 'qr') {
+                    // temp_qr just finished scanning and is being migrated to its number.
+                    throw new BridgeError(503, 'pairing_pending', 'QR scan is being finalized. Wait for the device to finish linking.');
+                }
                 throw new BridgeError(409, 'already_connected', `${session} is already linked`);
             }
             return withPairing(session, cmd.pairingRef, async () => {
@@ -299,6 +314,62 @@ function createBridgeHandler(overrides = {}) {
             });
         },
 
+        async pairing(_body, { pairingRef }) {
+            assertPairingRef(pairingRef);
+            const recorded = d.state.getPairingStatus?.(pairingRef) || null;
+            if (recorded && (recorded.state === 'connected' || recorded.state === 'failed')) {
+                return {
+                    pairingRef,
+                    state: recorded.state,
+                    session: recorded.session || undefined,
+                    me: recorded.me || undefined,
+                    reason: recorded.reason || undefined,
+                };
+            }
+            const lease = d.state.findPairingLeaseByRef?.(pairingRef) || null;
+            if (lease) {
+                const sock = d.getSocket(lease.session);
+                if (lease.session !== TEMP_QR_SESSION && sock && d.isLinked(sock)) {
+                    const liveStatus = sessionStatus(sock);
+                    if (liveStatus === 'connected') {
+                        return {
+                            pairingRef,
+                            state: 'connected',
+                            session: lease.session,
+                            me: describeMe(sock),
+                        };
+                    }
+                    return {
+                        pairingRef,
+                        state: 'linking',
+                        session: lease.session,
+                    };
+                }
+                if (lease.session === TEMP_QR_SESSION && sock && d.isLinked(sock)) {
+                    return {
+                        pairingRef,
+                        state: 'linking',
+                        session: recorded?.session || undefined,
+                    };
+                }
+                return {
+                    pairingRef,
+                    state: recorded?.state || 'waiting',
+                    session: recorded?.session || (lease.session !== TEMP_QR_SESSION ? lease.session : undefined),
+                };
+            }
+            if (recorded) {
+                return {
+                    pairingRef,
+                    state: recorded.state,
+                    session: recorded.session || undefined,
+                    me: recorded.me || undefined,
+                    reason: recorded.reason || undefined,
+                };
+            }
+            return { pairingRef, state: 'unknown' };
+        },
+
         async session(_body, { session }) {
             if (session !== TEMP_QR_SESSION) assertSession(session);
             const sock = d.getSocket(session);
@@ -312,13 +383,20 @@ function createBridgeHandler(overrides = {}) {
 
         async logout(_body, { session }) {
             assertSession(session);
+            d.cancelReconnect?.(session);
             const sock = d.getSocket(session);
             if (sock) {
+                sock._manuallyEnded = true;
+                clearInterval(sock.watchdogInterval);
+                clearInterval(sock.heartbeatInterval);
+                clearTimeout(sock._presenceTimeout);
                 try {
                     await withTimeout(Promise.resolve(sock.logout()), LOGOUT_TIMEOUT_MS);
                 } catch (_) {
                     try { sock.end(loggedOutError()); } catch (_) {}
                 }
+                try { sock.ev?.removeAllListeners(); } catch (_) {}
+                try { sock.ws?.close(); } catch (_) {}
                 d.deleteSocket(session);
             }
             d.removeSessionFiles(session);
