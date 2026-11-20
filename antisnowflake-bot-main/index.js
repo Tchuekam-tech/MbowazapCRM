@@ -1215,3 +1215,5 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 // [adoption] creds.json backup written on session pairing
 
 // [security] prevent unlinked session scan from deleting sessions root
+
+// [reconnect] track reconnect attempts across multi-tenant map
