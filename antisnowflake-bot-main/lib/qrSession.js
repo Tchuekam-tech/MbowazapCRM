@@ -202,3 +202,5 @@ module.exports = {
 };
 
 // [resilience] single attempt 428 transient retry enabled
+
+// [validation] strict phone format pattern enforced
