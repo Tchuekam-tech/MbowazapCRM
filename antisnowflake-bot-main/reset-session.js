@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const chalk = require('chalk');
+const sessionManager = require('./lib/sessionManager');
 
 const SESSIONS_DIR = path.resolve(__dirname, './data/sessions');
 const BACKUP_DIR = path.resolve(__dirname, './data/session_backup');
@@ -23,10 +24,11 @@ function getSessionStatus(sessionPath) {
         const raw = fs.readFileSync(credsFile, 'utf8').trim();
         if (raw.length === 0) return { exists: true, registered: false, status: 'Empty File' };
         const creds = JSON.parse(raw);
+        const linked = sessionManager.isLinkedCreds(creds);
         return {
             exists: true,
-            registered: !!creds.registered,
-            status: creds.registered ? 'Connected & Registered' : 'Unregistered (Awaiting Pairing)'
+            registered: linked,
+            status: linked ? 'Connected & Linked' : 'Unregistered (Awaiting Pairing)'
         };
     } catch (_) {
         return { exists: true, registered: false, status: 'Corrupted' };
@@ -34,9 +36,19 @@ function getSessionStatus(sessionPath) {
 }
 
 function resetTargetSession(number) {
-    const cleanNumber = number.replace(/[^0-9]/g, '');
-    const sessionPath = path.join(SESSIONS_DIR, cleanNumber);
-    const backupPath = path.join(BACKUP_DIR, cleanNumber);
+    const cleanNumber = String(number || '').replace(/[^0-9]/g, '');
+    if (!/^\d{6,15}$/.test(cleanNumber)) {
+        console.error(chalk.red(`❌ Invalid phone number "${number}". Expected 6–15 digits.`));
+        process.exitCode = 1;
+        return;
+    }
+    const sessionPath = path.resolve(SESSIONS_DIR, cleanNumber);
+    const backupPath = path.resolve(BACKUP_DIR, cleanNumber);
+    if (!sessionPath.startsWith(SESSIONS_DIR + path.sep) || !backupPath.startsWith(BACKUP_DIR + path.sep)) {
+        console.error(chalk.red(`❌ Refusing to remove path outside sessions directory.`));
+        process.exitCode = 1;
+        return;
+    }
 
     let removed = false;
     if (fs.existsSync(sessionPath)) {
