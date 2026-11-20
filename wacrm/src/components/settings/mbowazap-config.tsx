@@ -1103,3 +1103,5 @@ export function MboWazapConfig() {
 }
 
 // [polling] stop QR refresh polling on terminal failure states
+
+// [controls] add cancel pairing button when reloading during active pairing
