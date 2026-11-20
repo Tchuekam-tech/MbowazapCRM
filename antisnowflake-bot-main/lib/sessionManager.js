@@ -78,6 +78,19 @@ function isLinked(sock) {
     return isLinkedCreds(sock?.authState?.creds);
 }
 
+/** Whether linked credentials exist on disk for `phoneNumber` (corrupt files count as unlinked). */
+function isLinkedOnDisk(phoneNumber, sessionsRoot = SESSIONS_ROOT) {
+    const key = normalizeSessionKey(phoneNumber);
+    if (!key) return false;
+    const credsPath = path.join(sessionsRoot, key, 'creds.json');
+    if (!fs.existsSync(credsPath)) return false;
+    try {
+        return isLinkedCreds(JSON.parse(fs.readFileSync(credsPath, 'utf8')));
+    } catch (_) {
+        return false;
+    }
+}
+
 const clientSocketCache = new Map();
 const CLIENT_CACHE_TTL_MS = 15_000;
 
@@ -85,6 +98,7 @@ const CLIENT_CACHE_TTL_MS = 15_000;
 function isSocketClosed(sock) {
     if (!sock) return true;
     if (sock._manuallyEnded || sock._closed) return true;
+    if (sock.lastConnectionUpdate?.connection === 'close') return true;
     const ws = sock.ws;
     if (!ws) return true;
     if (typeof ws.isClosed === 'boolean') return ws.isClosed || ws.isClosing === true;
@@ -101,7 +115,8 @@ function isSocketClosed(sock) {
  * @returns {object|null} Matching business socket instance
  */
 function findSocketForClient(clientNumber) {
-    const cleanClient = clientNumber.replace(/[^0-9]/g, '');
+    const cleanClient = String(clientNumber || '').replace(/[^0-9]/g, '');
+    if (!cleanClient) return null;
     const now = Date.now();
 
     const cached = clientSocketCache.get(cleanClient);
@@ -159,6 +174,7 @@ module.exports = {
     normalizeSessionKey,
     isLinkedCreds,
     isLinked,
+    isLinkedOnDisk,
     isSocketOpen,
     isSocketClosed
 };
