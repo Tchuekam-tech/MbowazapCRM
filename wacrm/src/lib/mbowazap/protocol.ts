@@ -30,15 +30,81 @@ const MESSAGE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const EVENT_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A pairing ref: the UUID wacrm hands the bot in /bridge/pair. */
+export const PAIRING_REF_PATTERN = UUID_PATTERN;
 const MIME_PATTERN = /^[\w.+-]+\/[\w.+-]+(\s*;.*)?$/;
 
 export const MAX_TEXT_LENGTH = 65536;
 export const MAX_EVENTS_PER_BATCH = 100;
 
-/** Endpoints the bot serves. Path params must be pre-validated digits. */
+/** A QR PNG is a few KB; this is a generous ceiling on what the bot may send. */
+export const MAX_QR_LENGTH = 256 * 1024;
+
+const QR_DATA_URL_PATTERN =
+  /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})$/;
+const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+
+function mimeForImage(bytes: Uint8Array): string | null {
+  if (bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    return 'image/png';
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (bytes.length >= 4 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
+    return 'image/gif';
+  }
+  // RIFF....WEBP
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  return null;
+}
+
+/**
+ * The QR image the bot sent, as a data-URL that is safe to hand to `<img src>`,
+ * or null when it isn't a valid PNG / JPEG / GIF / WebP image.
+ */
+export function normalizeQrDataUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw || raw.length > MAX_QR_LENGTH) return null;
+
+  const dataUrl = QR_DATA_URL_PATTERN.exec(raw);
+  const base64 = dataUrl ? dataUrl[1]! : BASE64_PATTERN.test(raw) ? raw : null;
+  if (!base64) return null;
+
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(Buffer.from(base64, 'base64'));
+  } catch {
+    return null;
+  }
+  const mime = mimeForImage(bytes);
+  if (!mime) return null;
+
+  return `data:${mime};base64,${base64}`;
+}
+
+export function isPendingPairingCode(code: string): boolean {
+  return code === 'pairing_pending' || code === 'pairing_busy';
+}
+
+/** Endpoints the bot serves. Path params must be pre-validated digits/UUIDs. */
 export const BOT_PATHS = {
   ping: '/bridge/ping',
   pair: '/bridge/pair',
+  pairing: (pairingRef: string) => `/bridge/pairings/${pairingRef}`,
   cancelPairing: '/bridge/pair/cancel',
   session: (session: string) => `/bridge/sessions/${session}`,
   logout: (session: string) => `/bridge/sessions/${session}/logout`,
@@ -72,6 +138,26 @@ export type PairRequest =
 export type PairResult =
   | { method: 'code'; code: string; session: string }
   | { method: 'qr'; qr: string; session: typeof TEMP_QR_SESSION };
+
+/**
+ * Live state of a pairing attempt on the bot (GET /bridge/pairings/:ref):
+ * `waiting` for the code/scan, `linking` once WhatsApp accepted it and the
+ * socket restarts, then `connected` or `failed`. `unknown` if not tracked.
+ */
+export type PairingState =
+  | 'waiting'
+  | 'linking'
+  | 'connected'
+  | 'failed'
+  | 'unknown';
+
+export interface PairingInfo {
+  pairingRef: string;
+  state: PairingState;
+  session?: string;
+  me?: { phone: string; name?: string | null } | null;
+  reason?: string;
+}
 
 export type SessionStatus =
   'connected' | 'reconnecting' | 'pairing' | 'disconnected';
