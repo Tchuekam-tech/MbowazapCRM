@@ -18,12 +18,30 @@ const TEMP_QR_SESSION_DIR = path.join(__dirname, '../data/sessions', TEMP_QR_SES
  */
 const QR_WAIT_MS = 20_000;
 const QR_POLL_MS = 250;
+const QR_MAX_ATTEMPTS = 2;
+const QR_RETRY_COOLDOWN_MS = 1_500;
+const PHONE_PATTERN = /^\d{6,15}$/;
+
+let startingTempQr = null;
 
 function closeSocketQuietly(sock) {
     if (!sock) return;
+    sock._manuallyEnded = true;
+    clearInterval(sock.watchdogInterval);
+    clearInterval(sock.heartbeatInterval);
+    clearTimeout(sock._presenceTimeout);
     try { sock.ev?.removeAllListeners(); } catch (_) {}
     try { sock.end(); } catch (_) {}
     try { sock.ws?.close(); } catch (_) {}
+}
+
+function isTransientQrClose(sock) {
+    const reason = String(sock?.lastCloseReason || '');
+    const codeMatch = reason.match(/code\s+(\d+)/i);
+    const code = codeMatch ? Number(codeMatch[1]) : null;
+    if (code === 428 || code === 408) return true;
+    if (!code && /connection (terminated|closed|lost)/i.test(reason)) return true;
+    return false;
 }
 
 function hasLinkedTempQrCredentials(sock, sessionDir) {
@@ -37,6 +55,30 @@ function hasLinkedTempQrCredentials(sock, sessionDir) {
     }
 }
 
+async function ensureFreshTempQrSocket(sessionDir) {
+    if (startingTempQr) return startingTempQr;
+    startingTempQr = (async () => {
+        const sock = sessionManager.getSocket(TEMP_QR_SESSION);
+        if (!sessionManager.isSocketClosed(sock)) return sock;
+        if (hasLinkedTempQrCredentials(sock, sessionDir)) {
+            return { finalizing: true };
+        }
+
+        console.log('[QR] Initializing clean ephemeral temp_qr socket...');
+        if (sock) closeSocketQuietly(sock);
+        sessionManager.deleteSocket(TEMP_QR_SESSION);
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+
+        if (typeof global.startXeonBotInc !== 'function') {
+            return null;
+        }
+        return await global.startXeonBotInc(TEMP_QR_SESSION);
+    })().finally(() => {
+        startingTempQr = null;
+    });
+    return startingTempQr;
+}
+
 /**
  * Resolves to { status: 200, qr: <data URL> } when a QR is ready,
  * { status: 200, qr: null, error } while it is still being generated, or
@@ -47,72 +89,89 @@ function hasLinkedTempQrCredentials(sock, sessionDir) {
  * showing it should ask again periodically; this always returns the
  * current one.
  */
-async function getTempQrDataUrl({ waitMs = QR_WAIT_MS, sessionDir = TEMP_QR_SESSION_DIR } = {}) {
-    let sock = sessionManager.getSocket(TEMP_QR_SESSION);
+async function getTempQrDataUrl({ waitMs = QR_WAIT_MS, sessionDir = TEMP_QR_SESSION_DIR, retryCooldownMs = QR_RETRY_COOLDOWN_MS } = {}) {
+    const deadline = Date.now() + waitMs;
+    let sock = null;
 
-    // A closed temp_qr socket is spent (its QR refs ran out, or WhatsApp
-    // dropped it): QR linking always starts over on fresh, unlinked creds.
-    if (sessionManager.isSocketClosed(sock)) {
-        if (hasLinkedTempQrCredentials(sock, sessionDir)) {
-            return {
-                status: 200,
-                qr: null,
-                error: 'QR scan is being finalized. Wait for the device to finish linking.',
-            };
-        }
+    for (let attempt = 1; attempt <= QR_MAX_ATTEMPTS; attempt++) {
+        sock = sessionManager.getSocket(TEMP_QR_SESSION);
 
-        console.log('[QR] Initializing clean ephemeral temp_qr socket...');
-        if (sock) closeSocketQuietly(sock);
-        sessionManager.deleteSocket(TEMP_QR_SESSION);
-        fs.rmSync(sessionDir, { recursive: true, force: true });
-        sock = undefined;
+        // A closed temp_qr socket is spent (its QR refs ran out, or WhatsApp
+        // dropped it): QR linking always starts over on fresh, unlinked creds.
+        if (sessionManager.isSocketClosed(sock)) {
+            if (hasLinkedTempQrCredentials(sock, sessionDir)) {
+                return {
+                    status: 200,
+                    qr: null,
+                    error: 'QR scan is being finalized. Wait for the device to finish linking.',
+                };
+            }
 
-        if (typeof global.startXeonBotInc === 'function') {
+            if (attempt > 1) {
+                const remaining = deadline - Date.now();
+                if (remaining <= 0) break;
+                await new Promise((r) => setTimeout(r, Math.min(retryCooldownMs, remaining)));
+            }
+
             try {
-                sock = await global.startXeonBotInc(TEMP_QR_SESSION);
+                const started = await ensureFreshTempQrSocket(sessionDir);
+                if (started?.finalizing) {
+                    return {
+                        status: 200,
+                        qr: null,
+                        error: 'QR scan is being finalized. Wait for the device to finish linking.',
+                    };
+                }
+                sock = started;
             } catch (err) {
                 console.error('[QR] ❌ temp_qr socket failed to start:', err.message);
                 return { status: 503, qr: null, error: `QR socket could not be started: ${err.message}` };
             }
         }
-    }
 
-    if (!sock) {
-        return { status: 503, qr: null, error: 'QR socket could not be initialized. Restart the bot.' };
-    }
+        if (!sock) {
+            return { status: 503, qr: null, error: 'QR socket could not be initialized. Restart the bot.' };
+        }
 
-    // Wait for the first QR whether this request started the socket or an
-    // earlier one did and it is still connecting.
-    const deadline = Date.now() + waitMs;
-    while (!sock.lastQR && Date.now() < deadline) {
-        if (sessionManager.getSocket(TEMP_QR_SESSION) !== sock || sessionManager.isSocketClosed(sock)) break;
-        await new Promise((r) => setTimeout(r, QR_POLL_MS));
-    }
+        // Wait for the first QR whether this request started the socket or an
+        // earlier one did and it is still connecting.
+        while (!sock.lastQR && Date.now() < deadline) {
+            if (sessionManager.getSocket(TEMP_QR_SESSION) !== sock || sessionManager.isSocketClosed(sock)) break;
+            await new Promise((r) => setTimeout(r, QR_POLL_MS));
+        }
 
-    if (!sock.lastQR) {
+        if (sock.lastQR) break;
+
         if (sessionManager.isSocketClosed(sock)) {
+            if (hasLinkedTempQrCredentials(sock, sessionDir)) {
+                return {
+                    status: 200,
+                    qr: null,
+                    error: 'QR scan is being finalized. Wait for the device to finish linking.',
+                };
+            }
+            if (attempt < QR_MAX_ATTEMPTS && isTransientQrClose(sock) && Date.now() < deadline) {
+                console.log(`[QR] Attempt ${attempt} closed transiently (${sock.lastCloseReason}). Retrying...`);
+                continue;
+            }
             const why = sock.lastCloseReason ? ` (${sock.lastCloseReason})` : '';
             return { status: 502, qr: null, error: `WhatsApp closed the QR socket before sending a QR code${why}. Try again.` };
         }
         return { status: 200, qr: null, error: 'QR code not generated yet. Please wait 5 seconds and refresh.' };
     }
 
+    if (!sock?.lastQR) {
+        const why = sock?.lastCloseReason ? ` (${sock.lastCloseReason})` : '';
+        return { status: 502, qr: null, error: `WhatsApp closed the QR socket before sending a QR code${why}. Try again.` };
+    }
+
     try {
-        let qr;
-        try {
-            const QRCode = require('qrcode');
-            qr = await QRCode.toDataURL(sock.lastQR, {
-                width: 300,
-                margin: 2,
-                color: { dark: '#000000', light: '#ffffff' }
-            });
-        } catch (qrErr) {
-            if (qrErr && qrErr.code === 'MODULE_NOT_FOUND') {
-                qr = `data:image/png;base64,${Buffer.from(sock.lastQR).toString('base64')}`;
-            } else {
-                throw qrErr;
-            }
-        }
+        const QRCode = require('qrcode');
+        const qr = await QRCode.toDataURL(sock.lastQR, {
+            width: 300,
+            margin: 2,
+            color: { dark: '#000000', light: '#ffffff' }
+        });
         return { status: 200, qr };
     } catch (err) {
         console.error('[PairServer] ❌ QR generation failed:', err.message);
@@ -122,18 +181,13 @@ async function getTempQrDataUrl({ waitMs = QR_WAIT_MS, sessionDir = TEMP_QR_SESS
 
 /** Never overwrite another linked device or another active code attempt on QR adoption. */
 function assertQrTargetAvailable(phone, { state, sessionsRoot, now = Date.now() }) {
+    if (typeof phone !== 'string' || !PHONE_PATTERN.test(phone)) {
+        throw new Error('Could not determine a valid phone number for the scanned device.');
+    }
     const target = sessionManager.getSocket(phone);
     const existing = state.getPairingLease(phone);
     const qrRef = state.getPairingRef(TEMP_QR_SESSION);
-    let linkedOnDisk = false;
-    const credsPath = path.join(sessionsRoot, phone, 'creds.json');
-    if (fs.existsSync(credsPath)) {
-        try {
-            linkedOnDisk = sessionManager.isLinkedCreds(JSON.parse(fs.readFileSync(credsPath, 'utf8')));
-        } catch (_) {
-            linkedOnDisk = false;
-        }
-    }
+    const linkedOnDisk = sessionManager.isLinkedOnDisk(phone, sessionsRoot);
     if (sessionManager.isLinked(target) || linkedOnDisk ||
         (existing && existing.ref !== qrRef && now < existing.at + 120_000)) {
         throw new Error('This phone already has a connection or another pairing attempt.');
