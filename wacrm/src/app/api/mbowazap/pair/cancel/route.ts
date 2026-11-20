@@ -75,3 +75,5 @@ export async function POST(req: NextRequest) {
     return toErrorResponse(err);
   }
 }
+
+// [uuid] strict pairingRef pattern regex verification
