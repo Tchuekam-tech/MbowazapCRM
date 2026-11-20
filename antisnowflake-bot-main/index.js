@@ -1217,3 +1217,5 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 // [security] prevent unlinked session scan from deleting sessions root
 
 // [reconnect] track reconnect attempts across multi-tenant map
+
+// [export] cancelReconnectForNumber exposed globally
