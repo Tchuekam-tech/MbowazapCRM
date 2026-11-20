@@ -97,6 +97,13 @@ function assertContact(contact) {
     return contact;
 }
 
+function assertPairingRef(pairingRef) {
+    if (typeof pairingRef !== 'string' || !UUID_PATTERN.test(pairingRef)) {
+        throw invalid('pairingRef must be a valid UUID');
+    }
+    return pairingRef;
+}
+
 /** `to` is exactly one of { phone } or { lid }. */
 function parseRecipient(value) {
     if (!isRecord(value)) throw invalid('to must be an object with phone or lid');
@@ -223,6 +230,7 @@ module.exports = {
     SESSION_PATTERN,
     CONTACT_PATTERN,
     MESSAGE_ID_PATTERN,
+    UUID_PATTERN,
     SEND_KINDS,
     SEND_ORIGINS,
     PRESENCE_KINDS,
@@ -230,6 +238,7 @@ module.exports = {
     BridgeError,
     assertSession,
     assertContact,
+    assertPairingRef,
     recipientJid,
     recipientKey,
     parsePairRequest,
