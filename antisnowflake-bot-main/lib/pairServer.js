@@ -10,19 +10,31 @@ const {
     default: makeWASocket,
     useMultiFileAuthState,
     makeCacheableSignalKeyStore,
+    fetchLatestWaWebVersion,
+    fetchLatestBaileysVersion,
     DisconnectReason,
     Browsers
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const QRCode = require('qrcode');
+const sessionManager = require('./sessionManager');
 
-const TEMP_SESSION_DIR = path.join(__dirname, '..', 'tmp', 'pair_sessions');
 const BUSINESS_SESSION_DIR = path.join(__dirname, '..', 'data', 'sessions');
 const MAX_CONCURRENT_SESSIONS = 2;
-const PAIRING_INIT_BUFFER_MS = 3000;
+const WA_VERSION_TIMEOUT_MS = 5000;
 const activePairingSessions = new Map();
+
+async function resolveWaVersion() {
+    try {
+        const web = await fetchLatestWaWebVersion({ timeout: WA_VERSION_TIMEOUT_MS });
+        if (web?.isLatest && web.version) return web.version;
+        const baileys = await fetchLatestBaileysVersion({ timeout: WA_VERSION_TIMEOUT_MS });
+        return baileys?.version || web?.version;
+    } catch (_) {
+        return undefined;
+    }
+}
 
 function cleanupSession(sessionDir) {
     try {
@@ -51,10 +63,11 @@ async function startLinkedBot(phoneNumber) {
     }
 }
 
-function makeSocketOptions(state) {
+function makeSocketOptions(state, version) {
     return {
+        ...(version ? { version } : {}),
         logger: pino({ level: 'silent' }),
-        browser: Browsers.macOS('Google Chrome'),
+        browser: Browsers.ubuntu('Chrome'),
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' })),
@@ -77,8 +90,12 @@ async function generatePairCode(phoneNumber) {
         throw new Error('Invalid phone number. Provide full international number without + or spaces.');
     }
 
+    if (sessionManager.isLinkedOnDisk(cleanNumber, BUSINESS_SESSION_DIR)) {
+        return { code: null, error: 'Bot is already linked/connected!', isConnected: true };
+    }
+
     const existing = activePairingSessions.get(cleanNumber);
-    if (existing?.code && Date.now() - existing.createdAt < 60_000) {
+    if (existing?.code && !sessionManager.isSocketClosed(existing.sock) && Date.now() - existing.createdAt < 60_000) {
         return { code: existing.code };
     }
     if (existing?.promise) {
@@ -99,8 +116,9 @@ async function generatePairCode(phoneNumber) {
         }
         fs.mkdirSync(sessionDir, { recursive: true });
 
+        const version = await resolveWaVersion();
         const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-        sock = makeWASocket(makeSocketOptions(state));
+        sock = makeWASocket(makeSocketOptions(state, version));
         activePairingSessions.set(cleanNumber, {
             createdAt: Date.now(),
             promise,
@@ -116,18 +134,14 @@ async function generatePairCode(phoneNumber) {
             const timeout = setTimeout(() => {
                 reject(new Error('Pairing request timed out after 45 seconds.'));
             }, 45_000);
-            const initTimer = setTimeout(() => {
-                requestCode();
-            }, PAIRING_INIT_BUFFER_MS);
 
             const fail = (err) => {
-                clearTimeout(initTimer);
                 clearTimeout(timeout);
                 reject(err);
             };
 
             const requestCode = async () => {
-                if (requested || sock.authState.creds.registered) return;
+                if (requested || sessionManager.isLinked(sock)) return;
                 requested = true;
 
                 try {
@@ -141,7 +155,6 @@ async function generatePairCode(phoneNumber) {
                         entry.createdAt = Date.now();
                     }
 
-                    clearTimeout(initTimer);
                     clearTimeout(timeout);
                     resolve(pairingCode);
                 } catch (err) {
@@ -151,6 +164,10 @@ async function generatePairCode(phoneNumber) {
 
             sock.ev.on('connection.update', (update) => {
                 const { qr, connection, lastDisconnect } = update || {};
+
+                if (qr && !requested) {
+                    void requestCode();
+                }
 
                 if (connection === 'open') {
                     if (cleanupTimer) clearTimeout(cleanupTimer);
@@ -167,6 +184,7 @@ async function generatePairCode(phoneNumber) {
                 }
 
                 if (connection === 'close') {
+                    sock._closed = true;
                     const statusCode = disconnectCode(lastDisconnect);
                     if (resolvedCode && (statusCode === DisconnectReason.restartRequired || statusCode === 515)) {
                         if (cleanupTimer) clearTimeout(cleanupTimer);
@@ -184,6 +202,13 @@ async function generatePairCode(phoneNumber) {
 
                     if (!resolvedCode) {
                         fail(new Error(`Connection closed during pairing (code: ${statusCode || 'unknown'})`));
+                    } else if (!sessionManager.isLinked(sock)) {
+                        // Pairing socket died before phone confirmed: evict so retries don't hand out a dead code.
+                        if (cleanupTimer) clearTimeout(cleanupTimer);
+                        if (activePairingSessions.get(cleanNumber)?.sock === sock) {
+                            activePairingSessions.delete(cleanNumber);
+                        }
+                        cleanupSession(sessionDir);
                     }
                 }
             });
@@ -191,7 +216,7 @@ async function generatePairCode(phoneNumber) {
 
         cleanupTimer = setTimeout(() => {
             const entry = activePairingSessions.get(cleanNumber);
-            if (entry?.sock === sock && !sock.authState.creds.registered) {
+            if (entry?.sock === sock && !sessionManager.isLinked(sock)) {
                 closeSocket(sock);
                 activePairingSessions.delete(cleanNumber);
                 cleanupSession(sessionDir);
