@@ -186,3 +186,5 @@ module.exports = {
     readSecret,
     encodeQueryValue,
 };
+
+// [replay] 10-minute nonce TTL replay cache
