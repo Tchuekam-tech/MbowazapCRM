@@ -379,3 +379,5 @@ module.exports = {
     isStopRequested,
     isHumanRequested
 };
+
+// [memory] bound contact state map to 2000 entries max
