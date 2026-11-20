@@ -163,4 +163,52 @@ test('QR adoption cannot overwrite a code reservation or linked credentials', (t
     fs.writeFileSync(path.join(root, phone, 'creds.json'), JSON.stringify({ account: { details: 'linked' } }));
     assert.throws(() => assertQrTargetAvailable(phone, options), /already has/);
     assert.equal(JSON.parse(fs.readFileSync(path.join(root, phone, 'creds.json'))).account.details, 'linked');
+    assert.throws(() => assertQrTargetAvailable('', options), /valid phone number/);
+    assert.throws(() => assertQrTargetAvailable('../evil', options), /valid phone number/);
+});
+
+test('concurrent getTempQrDataUrl calls share a single temp_qr socket startup', async (t) => {
+    const started = useTempQrStarter(t, (sock) => {
+        setTimeout(() => { sock.lastQR = 'concurrent-ref,noise,identity,adv'; }, 150);
+    });
+
+    const [a, b] = await Promise.all([
+        getTempQrDataUrl({ waitMs: 2000 }),
+        getTempQrDataUrl({ waitMs: 2000 }),
+    ]);
+
+    assert.equal(started.length, 1);
+    assert.equal(a.status, 200);
+    assert.equal(b.status, 200);
+    assert.match(a.qr, /^data:image\/png;base64,/);
+    assert.match(b.qr, /^data:image\/png;base64,/);
+});
+
+test('transient 428 close before QR retries once and succeeds on attempt 2', async (t) => {
+    let attempt = 0;
+    const started = useTempQrStarter(t, (sock) => {
+        attempt += 1;
+        if (attempt === 1) {
+            setTimeout(() => sock.close('Connection Closed, code 428'), 50);
+        } else {
+            setTimeout(() => { sock.lastQR = 'retry-ok,noise,identity,adv'; }, 50);
+        }
+    });
+
+    const result = await getTempQrDataUrl({ waitMs: 2500 });
+    assert.equal(started.length, 2);
+    assert.equal(result.status, 200);
+    assert.match(result.qr, /^data:image\/png;base64,/);
+});
+
+test('socket browser identity avoids Mac OS / Windows DARWIN/WIN32 subplatform 428 rejection', () => {
+    for (const rel of ['../index.js', '../lib/pairServer.js']) {
+        const src = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+        assert.doesNotMatch(
+            src,
+            /Browsers\.(macOS|windows)\s*\(/,
+            `${rel} must not use Browsers.macOS/windows (triggers retired DARWIN/WIN32 subplatform with syncFullHistory)`
+        );
+        assert.match(src, /Browsers\.ubuntu\s*\(\s*['"]Chrome['"]\s*\)/);
+    }
 });
