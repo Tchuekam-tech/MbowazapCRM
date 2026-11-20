@@ -18,11 +18,16 @@ export async function reservePairing(
   previous: PairingConfig | null,
   ref: string,
   phone: string | null,
-  now: number = Date.now()
+  now: number = Date.now(),
+  options: { previousWasDisconnectedOnBot?: boolean } = {}
 ) {
+  const previousUpdatedMs = previous?.updated_at
+    ? Date.parse(previous.updated_at)
+    : Number.NaN;
   if (
     previous?.mbowazap_state === 'pairing' &&
-    now < Date.parse(previous.updated_at ?? '') + PAIRING_TTL_MS
+    Number.isFinite(previousUpdatedMs) &&
+    now < previousUpdatedMs + PAIRING_TTL_MS
   ) {
     throw new MbowazapBridgeError(
       'pairing_busy',
@@ -37,6 +42,7 @@ export async function reservePairing(
     mbowazap_state: 'pairing',
     status: 'disconnected',
     mbowazap_session: phone,
+    mbowazap_display_name: null,
     mbowazap_brain: 'tchuekbot',
     updated_at: new Date(now).toISOString(),
   };
@@ -56,7 +62,15 @@ export async function reservePairing(
         : query.eq('mbowazap_pairing_ref', previous.mbowazap_pairing_ref);
   }
   const { data, error } = await query.select('id').maybeSingle();
-  if (error?.code === '23505' || (!error && !data)) {
+  if (error?.code === '23505') {
+    throw new MbowazapBridgeError(
+      'pairing_busy',
+      phone
+        ? `Phone number +${phone} is already linked to or reserved by another wacrm account.`
+        : 'The account or phone number is already reserved by another connection attempt.'
+    );
+  }
+  if (!error && !data) {
     throw new MbowazapBridgeError(
       'pairing_busy',
       'The account or phone number is already reserved by another connection attempt.'
@@ -69,13 +83,20 @@ export async function reservePairing(
     async rollback() {
       // Never undo a newer request, disconnect, or successful connection event.
       let rollbackState = previous;
-      if (rollbackState && rollbackState.mbowazap_state === 'pairing') {
+      if (
+        rollbackState &&
+        (rollbackState.mbowazap_state === 'pairing' ||
+          (options.previousWasDisconnectedOnBot &&
+            rollbackState.mbowazap_state === 'connected'))
+      ) {
         rollbackState = {
           ...rollbackState,
           mbowazap_state: 'disconnected',
           status: 'disconnected',
           mbowazap_session: null,
+          mbowazap_display_name: null,
           mbowazap_pairing_ref: crypto.randomUUID(),
+          updated_at: new Date().toISOString(),
         };
       }
       const operation = rollbackState
