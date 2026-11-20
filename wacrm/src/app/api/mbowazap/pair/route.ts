@@ -242,3 +242,5 @@ export async function POST(req: NextRequest) {
 }
 
 // [state] track previousWasDisconnectedOnBot state
+
+// [validation] validate QR payload format and image magic bytes
