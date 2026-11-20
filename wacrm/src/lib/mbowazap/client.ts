@@ -377,5 +377,3 @@ export function getMbowazapClient(
   }
   return createMbowazapClient(result.env);
 }
-
-// [validation] validate QR data URL format and image headers
