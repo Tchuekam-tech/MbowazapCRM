@@ -31,6 +31,14 @@ import {
 // plan's ceiling). Tune as needed.
 export const maxDuration = 60
 
+function getAdminKey(): string {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (serviceKey && !serviceKey.startsWith('REPLACE_WITH_')) {
+    return serviceKey
+  }
+  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+}
+
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _adminClient: any = null
@@ -38,7 +46,7 @@ function supabaseAdmin() {
   if (!_adminClient) {
     _adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      getAdminKey()
     )
   }
   return _adminClient

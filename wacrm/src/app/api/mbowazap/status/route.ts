@@ -85,8 +85,12 @@ export async function GET(req: NextRequest) {
         }
       }
     } else if (rawState === 'pairing') {
-      const updatedAtMs = config.updated_at ? Date.parse(config.updated_at) : 0;
-      const isExpired = Date.now() - updatedAtMs > PAIRING_EXPIRY_MS;
+      const updatedAtMs = config.updated_at
+        ? Date.parse(config.updated_at)
+        : Number.NaN;
+      const isExpired =
+        !Number.isFinite(updatedAtMs) ||
+        Date.now() - updatedAtMs >= PAIRING_EXPIRY_MS;
 
       if (isExpired) {
         normalizedStatus = 'expired';
@@ -145,8 +149,9 @@ export async function GET(req: NextRequest) {
           ? {
               ref: config.mbowazap_pairing_ref,
               expiresAt: new Date(
-                (config.updated_at ? Date.parse(config.updated_at) : Date.now()) +
-                  PAIRING_EXPIRY_MS
+                (config.updated_at && Number.isFinite(Date.parse(config.updated_at))
+                  ? Date.parse(config.updated_at)
+                  : Date.now()) + PAIRING_EXPIRY_MS
               ).toISOString(),
             }
           : null,

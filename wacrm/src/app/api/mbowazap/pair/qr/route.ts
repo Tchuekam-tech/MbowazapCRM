@@ -6,11 +6,12 @@ import {
   describeBridgeError,
   MbowazapBridgeError,
 } from '@/lib/mbowazap/client';
+import {
+  normalizeQrDataUrl,
+  PAIRING_REF_PATTERN,
+} from '@/lib/mbowazap/protocol';
 
 export const dynamic = 'force-dynamic';
-
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * POST /api/mbowazap/pair/qr — the current QR for an in-flight QR pairing.
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => null);
     const pairingRef = (body as { pairingRef?: unknown } | null)?.pairingRef;
-    if (typeof pairingRef !== 'string' || !UUID_PATTERN.test(pairingRef)) {
+    if (typeof pairingRef !== 'string' || !PAIRING_REF_PATTERN.test(pairingRef)) {
       return NextResponse.json(
         {
           ok: false,
@@ -64,11 +65,15 @@ export async function POST(req: NextRequest) {
 
     // Only a QR pairing that is still waiting (code pairings carry the
     // number from the start; a newer pairing replaces the ref).
+    const updatedAtMs = config?.updated_at
+      ? Date.parse(config.updated_at)
+      : Number.NaN;
     if (
       !config ||
       config.mbowazap_state !== 'pairing' ||
       config.mbowazap_session ||
-      Date.now() >= Date.parse(config.updated_at ?? '') + 120_000
+      !Number.isFinite(updatedAtMs) ||
+      Date.now() >= updatedAtMs + 120_000
     ) {
       return NextResponse.json(
         {
@@ -85,9 +90,16 @@ export async function POST(req: NextRequest) {
         pairingRef,
         method: 'qr',
       });
+      const safeQr = 'qr' in result ? normalizeQrDataUrl(result.qr) : null;
+      if (!safeQr) {
+        throw new MbowazapBridgeError(
+          'bad_response',
+          'TchuekBot returned an invalid QR image payload'
+        );
+      }
       return NextResponse.json({
         ok: true,
-        qr: 'qr' in result ? result.qr : null,
+        qr: safeQr,
       });
     } catch (err) {
       if (!(err instanceof MbowazapBridgeError)) throw err;
@@ -101,3 +113,5 @@ export async function POST(req: NextRequest) {
     return toErrorResponse(err);
   }
 }
+
+// [date] safe date arithmetic on QR refresh

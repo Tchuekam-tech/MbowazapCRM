@@ -9,7 +9,7 @@ export async function POST() {
 
     const { data: config, error: configError } = await ctx.supabase
       .from('whatsapp_config')
-      .select('id, mbowazap_session, mbowazap_state')
+      .select('id, provider, mbowazap_session, mbowazap_state, mbowazap_pairing_ref')
       .eq('account_id', ctx.accountId)
       .maybeSingle();
 
@@ -20,14 +20,32 @@ export async function POST() {
       );
     }
 
+    if (!config || config.provider !== 'mbowazap') {
+      return NextResponse.json({ ok: true, disconnected: true });
+    }
+
     // Sever Baileys socket and cleanup credentials on the bot
     const envResult = readMbowazapEnv();
-    if (envResult.ok && config?.mbowazap_session) {
-      try {
-        const client = createMbowazapClient(envResult.env);
-        await client.logout(config.mbowazap_session);
-      } catch (err) {
-        console.warn('[mbowazap/disconnect] remote logout warning:', err);
+    if (envResult.ok) {
+      const client = createMbowazapClient(envResult.env);
+      if (config.mbowazap_session) {
+        try {
+          await client.logout(config.mbowazap_session);
+        } catch (err) {
+          console.warn('[mbowazap/disconnect] remote logout warning:', err);
+        }
+      } else if (
+        config.mbowazap_state === 'pairing' &&
+        config.mbowazap_pairing_ref
+      ) {
+        try {
+          await client.cancelPairing({
+            method: 'qr',
+            pairingRef: config.mbowazap_pairing_ref,
+          });
+        } catch (err) {
+          console.warn('[mbowazap/disconnect] remote QR cancel warning:', err);
+        }
       }
     }
 
@@ -41,7 +59,8 @@ export async function POST() {
         mbowazap_display_name: null,
         updated_at: new Date().toISOString(),
       })
-      .eq('account_id', ctx.accountId);
+      .eq('account_id', ctx.accountId)
+      .eq('provider', 'mbowazap');
 
     if (updateError) {
       return NextResponse.json(
