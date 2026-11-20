@@ -441,7 +441,9 @@ function createReporter({
         let origin = 'customer';
         if (isFromMe) {
             origin = isDavilaSent(messageId) ? 'davila' : 'phone';
-            if (origin === 'phone') {
+            // Historical messages imported on initial connect must never trigger
+            // a live human takeover pause across the entire address book.
+            if (!historical && origin === 'phone') {
                 const contact = chat.phone || chat.lid;
                 if (contact) {
                     const until = now() + (Number(process.env.MBOWAZAP_HANDOFF_MINUTES) || 120) * 60 * 1000;
@@ -728,9 +730,25 @@ function createReporter({
         if (!sock._reporterWrapped) {
             const originalSendMessage = sock.sendMessage.bind(sock);
             sock.sendMessage = async (jid, content, options = {}) => {
-                const result = await originalSendMessage(jid, content, options);
-                const msgId = result?.key?.id || options?.messageId;
-                if (msgId) markDavilaSent(msgId);
+                // Pre-register the message id BEFORE sending when known (or
+                // generate one for real Baileys sockets) so an immediate echo
+                // on messages.upsert can never race ahead and trigger a false
+                // human-takeover pause.
+                let sendOptions = options;
+                let preId = options?.messageId;
+                if (!preId && sock.user?.id) {
+                    try {
+                        const { generateMessageIDV2 } = require('@whiskeysockets/baileys');
+                        if (typeof generateMessageIDV2 === 'function') {
+                            preId = generateMessageIDV2(sock.user.id);
+                            sendOptions = { ...options, messageId: preId };
+                        }
+                    } catch (_) {}
+                }
+                if (preId) markDavilaSent(preId);
+                const result = await originalSendMessage(jid, content, sendOptions);
+                const msgId = result?.key?.id || preId;
+                if (msgId && msgId !== preId) markDavilaSent(msgId);
                 return result;
             };
             sock._reporterWrapped = true;
