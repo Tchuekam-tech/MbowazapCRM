@@ -635,5 +635,3 @@ test('QR pair returns 503 pairing_pending when temp_qr is already linked and fin
     assert.equal(res.status, 503);
     assert.equal(res.json.error.code, 'pairing_pending');
 });
-
-// [spec] test immediate lease release on failure
