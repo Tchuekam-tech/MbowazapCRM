@@ -67,12 +67,12 @@ async function callDeepSeek(apiKey, prompt, systemPrompt) {
         signal: AbortSignal.timeout(12000) // 12s timeout for reliable response
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
     if (response.status !== 200) {
         throw { status: response.status, data, message: data?.error?.message || `DeepSeek HTTP ${response.status}` };
     }
 
-    return data.choices?.[0]?.message?.content;
+    return data?.choices?.[0]?.message?.content;
 }
 
 /**
@@ -101,12 +101,12 @@ async function callGroq(apiKey, prompt, systemPrompt) {
         signal: AbortSignal.timeout(10000) // 10s timeout for primary
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
     if (response.status !== 200) {
         throw { status: response.status, data, message: data?.error?.message || `Groq HTTP ${response.status}` };
     }
 
-    return data.choices?.[0]?.message?.content;
+    return data?.choices?.[0]?.message?.content;
 }
 
 /**
@@ -140,12 +140,12 @@ async function callTchuekam(apiKey, prompt, systemPrompt) {
         signal: AbortSignal.timeout(10000) // 10s timeout for fallback
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
     if (response.status !== 200) {
         throw { status: response.status, data, message: data?.error?.message || `Tchuekam HTTP ${response.status}` };
     }
 
-    return data.candidates?.[0]?.content?.parts?.[0]?.text;
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text;
 }
 
 /**

@@ -489,6 +489,15 @@
     let linkMode = 'pair';
     let qrPollInterval = null;
 
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     // Switch views
     function showView(viewId) {
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -592,13 +601,13 @@
 
         const data = await res.json();
         if (data.code) {
-          display.innerHTML = '<span class="success-text">' + data.code + '</span>';
+          display.innerHTML = '<span class="success-text">' + escapeHtml(data.code) + '</span>';
           startStatusPolling(); // start checking connection
         } else {
-          display.innerHTML = '<span class="error-text"><i class="fas fa-exclamation-circle"></i> ' + (data.error || 'Erreur inconnue') + '</span>';
+          display.innerHTML = '<span class="error-text"><i class="fas fa-exclamation-circle"></i> ' + escapeHtml(data.error || 'Erreur inconnue') + '</span>';
         }
       } catch (err) {
-        display.innerHTML = '<span class="error-text"><i class="fas fa-exclamation-circle"></i> ' + (err.message || 'Impossible de joindre le serveur') + '</span>';
+        display.innerHTML = '<span class="error-text"><i class="fas fa-exclamation-circle"></i> ' + escapeHtml(err.message || 'Impossible de joindre le serveur') + '</span>';
       } finally {
         spinner.style.display = 'none';
       }
@@ -620,23 +629,24 @@
         }
 
         const data = await res.json();
-        if (data.qr) {
+        if (data.qr && typeof data.qr === 'string' && data.qr.startsWith('data:image/')) {
           qrImage.src = data.qr;
           qrImage.style.display = 'block';
-          inst.innerHTML = data.instructions.map(s => '<div>' + s + '</div>').join('');
+          const list = Array.isArray(data.instructions) ? data.instructions : [];
+          inst.innerHTML = list.map(s => '<div>' + escapeHtml(s) + '</div>').join('');
         } else {
           qrImage.style.display = 'none';
-          inst.innerHTML = '<span class="error-text">' + (data.error || 'Génération du QR en cours...') + '</span>';
+          inst.innerHTML = '<span class="error-text">' + escapeHtml(data.error || 'Génération du QR en cours...') + '</span>';
         }
 
         if (data.error && data.error.includes('Already Connected')) {
-          clearInterval(qrPollInterval);
+          stopQRPolling();
           showView('viewLogin');
           document.getElementById('loginFeedback').innerHTML = '<span class="success-text" style="font-size: 13px;"><i class="fas fa-check-circle"></i> Appareil connecté ! Veuillez entrer son numéro pour configurer.</span>';
         }
       } catch (err) {
         qrImage.style.display = 'none';
-        inst.innerHTML = '<span class="error-text">' + (err.message || 'Echec du chargement du code QR') + '</span>';
+        inst.innerHTML = '<span class="error-text">' + escapeHtml(err.message || 'Echec du chargement du code QR') + '</span>';
       } finally {
         if (showSpinner) spinner.style.display = 'none';
       }
@@ -679,7 +689,7 @@
           feedback.innerHTML = '<span class="success-text" style="font-size: 13px;"><i class="fas fa-check-circle"></i> Configuration enregistrée !</span>';
           setTimeout(() => feedback.innerHTML = '', 3000);
         } else {
-          feedback.innerHTML = '<span class="error-text">' + (data.error || 'Erreur lors de la sauvegarde') + '</span>';
+          feedback.innerHTML = '<span class="error-text">' + escapeHtml(data.error || 'Erreur lors de la sauvegarde') + '</span>';
         }
       } catch (err) {
         feedback.innerHTML = '<span class="error-text">Erreur réseau</span>';
@@ -705,7 +715,7 @@
           currentNumber = '';
           showView('viewLogin');
         } else {
-          feedback.innerHTML = '<span class="error-text">' + (data.error || 'Erreur lors de la déconnexion') + '</span>';
+          feedback.innerHTML = '<span class="error-text">' + escapeHtml(data.error || 'Erreur lors de la déconnexion') + '</span>';
         }
       } catch (err) {
         feedback.innerHTML = '<span class="error-text">Erreur réseau</span>';
@@ -716,14 +726,14 @@
 
     // Status polling for QR/Pair code validation
     function startStatusPolling() {
-      if (qrPollInterval) clearInterval(qrPollInterval);
+      stopQRPolling();
       qrPollInterval = setInterval(async () => {
         if (!currentNumber) return;
         try {
-          const res = await fetch('/api/status?number=' + currentNumber);
+          const res = await fetch('/api/status?number=' + encodeURIComponent(currentNumber));
           const data = await res.json();
           if (data.status === 'connected') {
-            clearInterval(qrPollInterval);
+            stopQRPolling();
             await loadDashboardConfig();
             showView('viewDashboard');
           }
@@ -732,8 +742,20 @@
     }
 
     function startQRPolling() {
-      if (qrPollInterval) clearInterval(qrPollInterval);
+      stopQRPolling();
       qrPollInterval = setInterval(async () => {
+        if (currentNumber) {
+          try {
+            const statusRes = await fetch('/api/status?number=' + encodeURIComponent(currentNumber));
+            const statusData = await statusRes.json();
+            if (statusData.status === 'connected') {
+              stopQRPolling();
+              await loadDashboardConfig();
+              showView('viewDashboard');
+              return;
+            }
+          } catch (_) {}
+        }
         await fetchQR(false);
       }, 5000);
     }
