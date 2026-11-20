@@ -852,3 +852,5 @@ module.exports = {
     createReporter,
     getReporter,
 };
+
+// [echo-prevention] mark messageId before sending to avoid CRM races
