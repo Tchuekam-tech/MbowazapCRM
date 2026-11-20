@@ -1211,15 +1211,3 @@ async function gracefulShutdown(signal) {
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-
-// [adoption] creds.json backup written on session pairing
-
-// [security] prevent unlinked session scan from deleting sessions root
-
-// [reconnect] track reconnect attempts across multi-tenant map
-
-// [export] cancelReconnectForNumber exposed globally
-
-// [wa-version] dynamic web version caching enabled
-
-// [suppression] suppress bogus disconnected event on code 515 restart
