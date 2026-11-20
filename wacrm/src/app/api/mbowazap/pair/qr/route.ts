@@ -113,3 +113,5 @@ export async function POST(req: NextRequest) {
     return toErrorResponse(err);
   }
 }
+
+// [date] safe date arithmetic on QR refresh
