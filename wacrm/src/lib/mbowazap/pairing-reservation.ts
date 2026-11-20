@@ -111,5 +111,3 @@ export async function reservePairing(
     },
   };
 }
-
-// [cleanup] clear mbowazap_display_name on new pairing attempt
