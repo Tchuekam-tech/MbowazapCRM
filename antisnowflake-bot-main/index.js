@@ -1213,3 +1213,5 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // [adoption] creds.json backup written on session pairing
+
+// [security] prevent unlinked session scan from deleting sessions root
