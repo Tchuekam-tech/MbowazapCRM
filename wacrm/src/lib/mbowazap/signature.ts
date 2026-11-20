@@ -116,18 +116,32 @@ export function createNonceCache({
 
   return {
     seen(nonce, nowMs) {
-      // Insertion order is time order: stop at the first live entry.
+      // Scan all entries because clock skew or non-monotonic timestamps can
+      // insert out-of-order expiries.
       for (const [key, expiresAt] of entries) {
-        if (expiresAt > nowMs) break;
-        entries.delete(key);
+        if (expiresAt <= nowMs) {
+          entries.delete(key);
+        }
       }
       const expiresAt = entries.get(nonce);
       if (expiresAt !== undefined && expiresAt > nowMs) return true;
       entries.set(nonce, nowMs + ttlMs);
       while (entries.size > maxEntries) {
-        const oldest = entries.keys().next().value;
-        if (oldest === undefined) break;
-        entries.delete(oldest);
+        let earliestKey: string | null = null;
+        let earliestExp = Infinity;
+        for (const [k, exp] of entries) {
+          if (exp < earliestExp) {
+            earliestExp = exp;
+            earliestKey = k;
+          }
+        }
+        if (earliestKey !== null) {
+          entries.delete(earliestKey);
+        } else {
+          const oldest = entries.keys().next().value;
+          if (oldest === undefined) break;
+          entries.delete(oldest);
+        }
       }
       return false;
     },
