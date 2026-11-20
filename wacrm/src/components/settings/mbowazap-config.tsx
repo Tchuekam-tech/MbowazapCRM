@@ -1101,3 +1101,5 @@ export function MboWazapConfig() {
     </div>
   );
 }
+
+// [polling] stop QR refresh polling on terminal failure states
