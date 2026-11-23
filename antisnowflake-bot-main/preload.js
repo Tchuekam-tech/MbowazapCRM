@@ -11,6 +11,10 @@
  */
 
 require('dotenv').config();
+const dns = require('dns');
+try {
+    dns.setDefaultResultOrder('ipv4first');
+} catch (_) {}
 const Module = require('module');
 const path = require('path');
 
