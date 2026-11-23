@@ -26,6 +26,17 @@ import {
   whatsappProvider,
 } from '@/lib/whatsapp/provider'
 
+function isMbowazapActive(
+  row: { provider?: string | null; mbowazap_state?: string | null; status?: string | null } | null | undefined
+): boolean {
+  if (whatsappProvider(row) !== 'mbowazap') return false
+  return (
+    row?.mbowazap_state === 'connected' ||
+    row?.mbowazap_state === 'pairing' ||
+    row?.status === 'connected'
+  )
+}
+
 /**
  * Resolve the caller's account_id from their profile. Inlined here
  * (rather than going through `@/lib/auth/account.getCurrentAccount`)
@@ -160,17 +171,29 @@ export async function GET() {
       )
     }
 
-    // The account's one connection is MboWazap: there is no Meta token
+    // The account's active connection is MboWazap: there is no Meta token
     // to check, and treating the NULL token as corrupted would steer the
     // user to "Reset Configuration" — deleting the MboWazap row without
-    // unlinking the bot session.
-    if (whatsappProvider(config) === 'mbowazap') {
+    // unlinking the bot session. If MboWazap was disconnected/logged_out,
+    // treat the row as not yet configured for Meta instead of attempting to
+    // decrypt a NULL access_token.
+    if (isMbowazapActive(config)) {
       return NextResponse.json(
         {
           connected: false,
           reason: 'mbowazap',
           provider: 'mbowazap',
           message: MBOWAZAP_CONNECTED_MESSAGE,
+        },
+        { status: 200 }
+      )
+    }
+    if (whatsappProvider(config) === 'mbowazap') {
+      return NextResponse.json(
+        {
+          connected: false,
+          reason: 'no_config',
+          message: 'No WhatsApp configuration saved yet. Fill in the form and click Save Configuration.',
         },
         { status: 200 }
       )
@@ -304,7 +327,7 @@ export async function POST(request: Request) {
       .select('*')
       .eq('account_id', accountId)
       .maybeSingle()
-    if (whatsappProvider(current) === 'mbowazap') {
+    if (isMbowazapActive(current)) {
       return NextResponse.json(
         { error: MBOWAZAP_CONNECTED_MESSAGE, code: 'provider_conflict' },
         { status: 409 }
@@ -540,6 +563,12 @@ export async function POST(request: Request) {
     // store the credentials and the error so the UI can guide the
     // user through a retry.
     const baseRow = {
+      provider: 'meta',
+      mbowazap_session: null,
+      mbowazap_pairing_ref: null,
+      mbowazap_state: null,
+      mbowazap_display_name: null,
+      mbowazap_last_event_at: null,
       phone_number_id,
       waba_id: waba_id || null,
       access_token: encryptedAccessToken,
@@ -655,7 +684,7 @@ export async function DELETE() {
       .select('*')
       .eq('account_id', accountId)
       .maybeSingle()
-    if (whatsappProvider(current) === 'mbowazap') {
+    if (isMbowazapActive(current)) {
       return NextResponse.json(
         { error: MBOWAZAP_CONNECTED_MESSAGE, code: 'provider_conflict' },
         { status: 409 }

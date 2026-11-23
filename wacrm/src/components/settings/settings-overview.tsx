@@ -31,6 +31,13 @@ interface WhatsAppStatus {
   connected: boolean;
 }
 
+interface MbowazapOverviewStatus {
+  configured: boolean;
+  connected: boolean;
+  hasRow: boolean;
+  phone: string | null;
+}
+
 export function SettingsOverview({
   onSelect,
 }: {
@@ -50,6 +57,7 @@ export function SettingsOverview({
   // queries. Gating it independently keeps a slow/flaky Meta round-trip
   // from blanking the rest of the landing.
   const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
+  const [mbowazap, setMbowazap] = useState<MbowazapOverviewStatus | null>(null);
   const [whatsappLoading, setWhatsappLoading] = useState(true);
 
   useEffect(() => {
@@ -117,21 +125,30 @@ export function SettingsOverview({
       setCountsLoading(false);
     })();
 
-    // WhatsApp connection status — slower, independent.
+    // WhatsApp & MboWazap connection status — slower, independent.
     (async () => {
       setWhatsappLoading(true);
-      const [row, health] = await Promise.allSettled([
+      const [row, health, mbo] = await Promise.allSettled([
         supabase
           .from('whatsapp_config')
-          .select('phone_number_id')
+          .select('phone_number_id, provider, mbowazap_session, mbowazap_state')
           .eq('account_id', acctId)
           .maybeSingle(),
         fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
+        fetch('/api/mbowazap/status', { cache: 'no-store' }).then((r) => r.json()),
       ]);
       if (cancelled) return;
+      const rowData = row.status === 'fulfilled' ? row.value.data : null;
       setWhatsapp({
-        configured: row.status === 'fulfilled' && !!row.value.data?.phone_number_id,
+        configured: !!rowData?.phone_number_id,
         connected: health.status === 'fulfilled' && !!health.value?.connected,
+      });
+      const mboOk = mbo.status === 'fulfilled' && mbo.value?.ok;
+      setMbowazap({
+        configured: mboOk ? !!mbo.value.configured : false,
+        connected: mboOk ? mbo.value.status === 'connected' : false,
+        hasRow: rowData?.provider === 'mbowazap' && !!rowData?.mbowazap_session,
+        phone: mboOk ? mbo.value.phone ?? null : null,
       });
       setWhatsappLoading(false);
     })();
@@ -175,8 +192,19 @@ export function SettingsOverview({
     },
     {
       section: 'mbowazap',
-      loading: false,
-      subtitle: 'Baileys companion gateway & Davila AI',
+      loading: whatsappLoading,
+      subtitle: mbowazap?.connected ? (
+        <>
+          <StatusDot tone="ok" />{' '}
+          {mbowazap.phone ? `${t('connected')} · ${mbowazap.phone}` : t('connected')}
+        </>
+      ) : mbowazap?.hasRow ? (
+        <>
+          <StatusDot tone="muted" /> {t('needsReconnecting')}
+        </>
+      ) : (
+        t('notSetup')
+      ),
     },
     {
       section: 'members',

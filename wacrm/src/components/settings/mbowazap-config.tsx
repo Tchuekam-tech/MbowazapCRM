@@ -254,7 +254,11 @@ export function MboWazapConfig() {
           });
           setActivePairing(null);
           setIsLinking(false);
-        } else if (json.state === 'expired' || json.state === 'logged_out') {
+        } else if (
+          json.state === 'expired' ||
+          json.state === 'logged_out' ||
+          json.state === 'disconnected'
+        ) {
           // 'expired': the account no longer carries this ref — a newer
           // pairing (another tab) or a disconnect replaced it.
           stopPolling();
@@ -263,7 +267,9 @@ export function MboWazapConfig() {
             reason:
               json.state === 'expired'
                 ? 'This pairing was cancelled or replaced by a newer one.'
-                : 'WhatsApp unlinked the device right after pairing.',
+                : json.state === 'disconnected'
+                  ? 'WhatsApp disconnected before pairing completed. Please try again.'
+                  : 'WhatsApp unlinked the device right after pairing.',
           });
           setActivePairing(null);
           setIsLinking(false);
@@ -556,12 +562,19 @@ export function MboWazapConfig() {
           <AlertCircle className="size-5 text-amber-600 dark:text-amber-400" />
           <AlertTitle className="font-semibold">MboWazap Bridge is not configured</AlertTitle>
           <AlertDescription className="mt-2 space-y-2 text-sm leading-relaxed">
+            {statusData?.configIssues && statusData.configIssues.length > 0 && (
+              <ul className="list-disc pl-5 space-y-1 text-xs">
+                {statusData.configIssues.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+            )}
             <p>
               To link WACRM to TchuekBot, set the following environment variables in your{' '}
               <code className="rounded bg-background/80 px-1.5 py-0.5 font-mono text-xs text-foreground">
                 .env.local
               </code>{' '}
-              file:
+              (or Railway service variables):
             </p>
             <div className="rounded-lg bg-background/90 p-3 font-mono text-xs text-foreground border border-border">
               <div>MBOWAZAP_BOT_URL=http://localhost:8080</div>
@@ -595,11 +608,13 @@ export function MboWazapConfig() {
                   </CardTitle>
                   <CardDescription className="flex items-center gap-2 mt-0.5">
                     {statusData?.displayName && (
-                      <span className="font-medium text-foreground">
-                        {statusData.displayName}
-                      </span>
+                      <>
+                        <span className="font-medium text-foreground">
+                          {statusData.displayName}
+                        </span>
+                        <span>•</span>
+                      </>
                     )}
-                    <span>•</span>
                     <span className="flex items-center gap-1.5">
                       <span
                         className={`size-2 rounded-full inline-block animate-pulse ${

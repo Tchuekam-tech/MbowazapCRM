@@ -51,6 +51,9 @@ function InboxPageInner() {
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
+  const [whatsappProviderType, setWhatsappProviderType] = useState<
+    "meta" | "mbowazap" | null
+  >(null);
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
    * to refetch from the DB — used as a safety net against missed
@@ -202,11 +205,14 @@ function InboxPageInner() {
 
       const { data } = await supabase
         .from("whatsapp_config")
-        .select("status")
+        .select("status, provider")
         .eq("account_id", accountId)
         .maybeSingle();
 
       setWhatsappConnected(data?.status === "connected");
+      setWhatsappProviderType(
+        data?.provider === "mbowazap" ? "mbowazap" : data ? "meta" : null
+      );
     };
 
     checkConnection();
@@ -613,6 +619,7 @@ function InboxPageInner() {
             conversation={activeConversation}
             contact={activeContact}
             messages={messages}
+            provider={whatsappProviderType}
             onMessagesLoaded={handleMessagesLoaded}
             onNewMessage={handleNewMessage}
             onUpdateMessage={handleUpdateMessage}
