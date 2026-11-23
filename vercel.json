@@ -1,0 +1,37 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "antisnowflake-bot-main": {
+      "root": "antisnowflake-bot-main",
+      "runtime": "container",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "wacrm",
+          "format": "url",
+          "env": "WACRM_URL"
+        }
+      ]
+    },
+    "wacrm": {
+      "root": "wacrm",
+      "framework": "nextjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "antisnowflake-bot-main",
+          "format": "url",
+          "env": "MBOWAZAP_BOT_URL"
+        }
+      ]
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "wacrm"
+      }
+    }
+  ]
+}
