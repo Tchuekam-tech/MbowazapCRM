@@ -752,5 +752,3 @@ test('sendMessage pre-marks messageId so synchronous upsert echo does not trigge
     assert.equal(client.emitted[0].payload.origin, 'davila');
     assert.equal(state.isContactPaused(CUSTOMER_PHONE), false);
 });
-
-// [spec] verify messageId pre-marking prevents CRM echo races
