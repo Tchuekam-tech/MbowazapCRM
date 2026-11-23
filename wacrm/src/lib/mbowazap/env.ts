@@ -54,7 +54,10 @@ export function readMbowazapEnv(
 ): MbowazapEnvResult {
   const problems: string[] = [];
 
-  const rawUrl = source.MBOWAZAP_BOT_URL;
+  const rawUrl =
+    source.MBOWAZAP_BOT_URL ||
+    source.ANTISNOWFLAKE_BOT_MAIN_URL ||
+    source.BOT_URL;
   const botUrl = normalizeOrigin(rawUrl);
   if (!rawUrl?.trim()) {
     problems.push('MBOWAZAP_BOT_URL is not set');
