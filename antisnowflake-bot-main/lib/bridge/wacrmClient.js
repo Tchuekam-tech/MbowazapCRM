@@ -303,7 +303,7 @@ let defaultClient = null;
 /** Process-wide client configured from WACRM_URL / WACRM_BASE_URL + MBOWAZAP_SECRET / MBOWAZAP_SHARED_SECRET. */
 function getWacrmClient() {
     if (!defaultClient) {
-        const rawUrl = process.env.WACRM_URL || process.env.WACRM_BASE_URL;
+        const rawUrl = process.env.WACRM_URL || process.env.WACRM_BASE_URL || process.env.WACRM_SERVICE_URL;
         const baseUrl = normalizeBaseUrl(rawUrl);
         if (rawUrl && !baseUrl) {
             console.error('[bridge] WACRM_URL / WACRM_BASE_URL must be an http(s) origin with no path, e.g. https://crm.example.com');
