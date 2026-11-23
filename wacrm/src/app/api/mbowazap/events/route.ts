@@ -1,8 +1,10 @@
 import { NextResponse, after } from 'next/server';
-import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { hasServiceRoleKey, supabaseAdmin } from '@/lib/flows/admin-client';
 import { bridgeError, readBotRequest } from '@/lib/mbowazap/bot-request';
 import { ingestBatch, type IngestResult } from '@/lib/mbowazap/ingest';
 import { parseEventBatch, type RejectedEvent } from '@/lib/mbowazap/protocol';
+
+export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/mbowazap/events
@@ -27,6 +29,11 @@ const MAX_BODY_BYTES = 1024 * 1024;
 export async function POST(request: Request) {
   const read = await readBotRequest(request, MAX_BODY_BYTES);
   if (!read.ok) return read.response;
+
+  if (typeof hasServiceRoleKey === 'function' && !hasServiceRoleKey()) {
+    console.error('[mbowazap/events] SUPABASE_SERVICE_ROLE_KEY is missing; returning 503 so bot retries');
+    return bridgeError(503, 'service_unavailable', 'SUPABASE_SERVICE_ROLE_KEY is not configured');
+  }
 
   let json: unknown;
   try {
