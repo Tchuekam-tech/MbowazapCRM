@@ -1,10 +1,38 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
+type FilterOp = ['eq' | 'is', string, unknown];
+type RowData = Record<string, unknown>;
+type QueryResult = { data: RowData | null; error: { code: string; message: string } | null };
+type ErrorResult = { error: { code: string; message: string } | null };
+type ChainFilter<T> = {
+  eq: (col: string, val: unknown) => T;
+  is: (col: string, val: unknown) => T;
+};
+interface MockSelectQuery extends ChainFilter<MockSelectQuery> {
+  maybeSingle: () => Promise<QueryResult>;
+}
+interface MockUpdateQuery extends ChainFilter<MockUpdateQuery> {
+  select: () => { maybeSingle: () => Promise<QueryResult> };
+  then: <T = unknown>(
+    resolve?: (value: QueryResult) => T | PromiseLike<T>,
+    reject?: (reason: unknown) => T | PromiseLike<T>
+  ) => Promise<T>;
+}
+interface MockDeleteQuery extends ChainFilter<MockDeleteQuery> {
+  then: <T = unknown>(
+    resolve?: (value: ErrorResult) => T | PromiseLike<T>,
+    reject?: (reason: unknown) => T | PromiseLike<T>
+  ) => Promise<T>;
+}
+type MockSupabaseClient = {
+  from: (table: string) => unknown;
+};
+
 const h = vi.hoisted(() => {
   return {
     accountContext: {
-      supabase: null as any,
+      supabase: null as unknown as { from: (table: string) => unknown },
       userId: 'user-admin',
       accountId: 'acct-1',
       role: 'admin',
@@ -25,15 +53,16 @@ vi.mock('@/lib/auth/account', () => ({
   getCurrentAccount: vi.fn(async () => h.accountContext),
   requireRole: vi.fn(async (min: string) => {
     if (min === 'admin' && h.accountContext.role !== 'admin' && h.accountContext.role !== 'owner') {
-      const err = new Error("Forbidden");
-      (err as any).status = 403;
+      const err = new Error("Forbidden") as Error & { status?: number };
+      err.status = 403;
       throw err;
     }
     return h.accountContext;
   }),
-  toErrorResponse: (err: any) => {
-    const status = err.status || 500;
-    return new Response(JSON.stringify({ error: err.message }), {
+  toErrorResponse: (err: unknown) => {
+    const e = err as { status?: number; message?: string };
+    const status = e?.status || 500;
+    return new Response(JSON.stringify({ error: e?.message || 'Internal error' }), {
       status,
       headers: { 'content-type': 'application/json' },
     });
@@ -62,7 +91,7 @@ const MOCK_QR_PNG_1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAY
 const MOCK_QR_PNG_2 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
 describe('MboWazap Gateway Control Routes', () => {
-  let storedConfig: Record<string, any> | null = null;
+  let storedConfig: RowData | null = null;
   let nextUpsertError: { code: string; message: string } | null = null;
   const SECRET = '0123456789abcdef0123456789abcdef';
   const BOT_URL = 'https://bot.example.com';
@@ -88,8 +117,8 @@ describe('MboWazap Gateway Control Routes', () => {
     };
 
     const matchesFilters = (
-      row: Record<string, any> | null,
-      filters: Array<['eq' | 'is', string, any]>
+      row: RowData | null,
+      filters: FilterOp[]
     ) => {
       if (!row) return false;
       return filters.every(([op, col, val]) => {
@@ -98,18 +127,18 @@ describe('MboWazap Gateway Control Routes', () => {
       });
     };
 
-    h.accountContext.supabase = {
+    const mockSupabase: MockSupabaseClient = {
       from: (table: string) => {
         if (table !== 'whatsapp_config') throw new Error(`Unexpected table ${table}`);
         return {
           select: () => {
-            const filters: Array<['eq' | 'is', string, any]> = [];
-            const selectQuery: any = {
-              eq: (col: string, val: any) => {
+            const filters: FilterOp[] = [];
+            const selectQuery: MockSelectQuery = {
+              eq: (col: string, val: unknown) => {
                 filters.push(['eq', col, val]);
                 return selectQuery;
               },
-              is: (col: string, val: any) => {
+              is: (col: string, val: unknown) => {
                 filters.push(['is', col, val]);
                 return selectQuery;
               },
@@ -120,7 +149,7 @@ describe('MboWazap Gateway Control Routes', () => {
             };
             return selectQuery;
           },
-          upsert: async (patch: any) => {
+          upsert: async (patch: RowData) => {
             if (nextUpsertError) {
               const error = nextUpsertError;
               nextUpsertError = null;
@@ -129,8 +158,8 @@ describe('MboWazap Gateway Control Routes', () => {
             storedConfig = { ...(storedConfig || {}), ...patch };
             return { error: null };
           },
-          insert: (patch: any) => {
-            const execute = () => {
+          insert: (patch: RowData) => {
+            const execute = (): QueryResult => {
               if (nextUpsertError) {
                 const error = nextUpsertError;
                 nextUpsertError = null;
@@ -143,13 +172,15 @@ describe('MboWazap Gateway Control Routes', () => {
               select: () => ({
                 maybeSingle: async () => execute(),
               }),
-              then: (resolve: any, reject: any) =>
-                Promise.resolve().then(execute).then(resolve, reject),
+              then: <T = unknown>(
+                resolve?: (value: QueryResult) => T | PromiseLike<T>,
+                reject?: (reason: unknown) => T | PromiseLike<T>
+              ) => Promise.resolve().then(execute).then(resolve, reject),
             };
           },
-          update: (patch: any) => {
-            const filters: Array<['eq' | 'is', string, any]> = [];
-            const execute = () => {
+          update: (patch: RowData) => {
+            const filters: FilterOp[] = [];
+            const execute = (): QueryResult => {
               if (nextUpsertError) {
                 const error = nextUpsertError;
                 nextUpsertError = null;
@@ -161,48 +192,53 @@ describe('MboWazap Gateway Control Routes', () => {
               }
               return { data: null, error: null };
             };
-            const updateQuery: any = {
-              eq: (column: string, value: any) => {
+            const updateQuery: MockUpdateQuery = {
+              eq: (column: string, value: unknown) => {
                 filters.push(['eq', column, value]);
                 return updateQuery;
               },
-              is: (column: string, value: any) => {
+              is: (column: string, value: unknown) => {
                 filters.push(['is', column, value]);
                 return updateQuery;
               },
               select: () => ({
                 maybeSingle: async () => execute(),
               }),
-              then: (resolve: any, reject: any) =>
-                Promise.resolve().then(execute).then(resolve, reject),
+              then: <T = unknown>(
+                resolve?: (value: QueryResult) => T | PromiseLike<T>,
+                reject?: (reason: unknown) => T | PromiseLike<T>
+              ) => Promise.resolve().then(execute).then(resolve, reject),
             };
             return updateQuery;
           },
           delete: () => {
-            const filters: Array<['eq' | 'is', string, any]> = [];
-            const execute = () => {
+            const filters: FilterOp[] = [];
+            const execute = (): ErrorResult => {
               if (matchesFilters(storedConfig, filters)) {
                 storedConfig = null;
               }
               return { error: null };
             };
-            const deleteQuery: any = {
-              eq: (column: string, value: any) => {
+            const deleteQuery: MockDeleteQuery = {
+              eq: (column: string, value: unknown) => {
                 filters.push(['eq', column, value]);
                 return deleteQuery;
               },
-              is: (column: string, value: any) => {
+              is: (column: string, value: unknown) => {
                 filters.push(['is', column, value]);
                 return deleteQuery;
               },
-              then: (resolve: any, reject: any) =>
-                Promise.resolve().then(execute).then(resolve, reject),
+              then: <T = unknown>(
+                resolve?: (value: ErrorResult) => T | PromiseLike<T>,
+                reject?: (reason: unknown) => T | PromiseLike<T>
+              ) => Promise.resolve().then(execute).then(resolve, reject),
             };
             return deleteQuery;
           },
         };
       },
     };
+    h.accountContext.supabase = mockSupabase;
 
     vi.clearAllMocks();
     h.clientMock.cancelPairing.mockResolvedValue({ cancelled: true });
@@ -525,6 +561,41 @@ describe('MboWazap Gateway Control Routes', () => {
       expect(json.ok).toBe(true);
       expect(json.method).toBe('qr');
       expect(json.qr).toBe(MOCK_QR_PNG_1);
+    });
+
+    it('calls client.logout when re-pairing over a session already disconnected on the bot', async () => {
+      storedConfig!.mbowazap_state = 'disconnected';
+      storedConfig!.mbowazap_session = '237653683174';
+
+      h.clientMock.getSession.mockResolvedValueOnce({
+        session: '237653683174',
+        status: 'disconnected',
+        me: null,
+        davila: true,
+      });
+      h.clientMock.logout.mockResolvedValueOnce({ loggedOut: true });
+      h.clientMock.pair.mockResolvedValueOnce({
+        method: 'code',
+        code: 'WXYZ-5678',
+        session: '237653683174',
+      });
+
+      const res = await postPair(pairRequest({ method: 'code', phone: '237653683174' }));
+      expect(res.status).toBe(200);
+      expect(h.clientMock.logout).toHaveBeenCalledWith('237653683174');
+    });
+
+    it('returns 409 pairing_busy without calling logout when an unexpired pairing is active', async () => {
+      storedConfig!.mbowazap_state = 'pairing';
+      storedConfig!.mbowazap_session = '237653683174';
+      storedConfig!.updated_at = new Date().toISOString();
+
+      const res = await postPair(pairRequest({ method: 'code', phone: '237653683174' }));
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.code).toBe('pairing_busy');
+      expect(h.clientMock.logout).not.toHaveBeenCalled();
+      expect(h.clientMock.getSession).not.toHaveBeenCalled();
     });
   });
 
