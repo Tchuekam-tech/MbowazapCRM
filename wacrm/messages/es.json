@@ -49,6 +49,8 @@
     "pipelines": "Pipelines",
     "broadcasts": "Difusiones",
     "automations": "Automatizaciones",
+    "flows": "Flujos",
+    "agents": "Agentes de IA",
     "settings": "Configuración",
     "openMenu": "Abrir menú",
     "openAccountMenu": "Abrir menú de la cuenta",
