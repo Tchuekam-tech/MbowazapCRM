@@ -1,0 +1,8 @@
+node_modules
+.git
+wacrm/node_modules
+wacrm/.next
+wacrm/.env*
+!wacrm/.env.local.example
+wacrm/coverage
+antisnowflake-bot-main
