@@ -12,6 +12,7 @@ function loadAntilinkSettings() {
 }
 
 function saveAntilinkSettings(settings) {
+    fs.mkdirSync(path.dirname(antilinkFilePath), { recursive: true });
     fs.writeFileSync(antilinkFilePath, JSON.stringify(settings, null, 2));
 }
 
