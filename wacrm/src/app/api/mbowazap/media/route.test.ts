@@ -2,9 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { signBridgeRequest } from '@/lib/mbowazap/signature';
 import { wacrmFakeDb, type FakeDb } from '@/lib/mbowazap/testing/fake-supabase';
 
-const h = vi.hoisted(() => ({ db: null as FakeDb | null }));
+const h = vi.hoisted(() => ({ db: null as FakeDb | null, hasServiceRoleKey: true }));
 
-vi.mock('@/lib/flows/admin-client', () => ({ supabaseAdmin: () => h.db!.client() }));
+vi.mock('@/lib/flows/admin-client', () => ({
+  hasServiceRoleKey: () => h.hasServiceRoleKey,
+  supabaseAdmin: () => h.db!.client(),
+}));
 
 import { POST } from './route';
 
@@ -39,6 +42,7 @@ const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 
 beforeEach(() => {
   vi.stubEnv('MBOWAZAP_SECRET', SECRET);
+  h.hasServiceRoleKey = true;
   h.db = wacrmFakeDb();
   h.db.seed('whatsapp_config', [
     { id: 'cfg-1', account_id: 'acc-1', user_id: 'owner-1', provider: 'mbowazap', mbowazap_session: SESSION },
@@ -114,5 +118,12 @@ describe('POST /api/mbowazap/media', () => {
     const { status, json } = await call(request(`session=${SESSION}`, bytes));
     expect(status).toBe(503);
     expect(json.error.code).toBe('bridge_not_configured');
+  });
+
+  it('answers 503 service_unavailable when SUPABASE_SERVICE_ROLE_KEY is missing', async () => {
+    h.hasServiceRoleKey = false;
+    const { status, json } = await call(request(`session=${SESSION}`, bytes));
+    expect(status).toBe(503);
+    expect(json.error.code).toBe('service_unavailable');
   });
 });
