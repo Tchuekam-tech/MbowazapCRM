@@ -50,3 +50,9 @@ In `antisnowflake-bot-main/.env`:
 WACRM_URL=http://localhost:3000
 MBOWAZAP_SECRET=your_32_plus_character_secure_secret_here
 ```
+
+---
+
+## Production Deployment
+
+For the two-service Railway production architecture (`MbowazapCRM` + `mbowazap-bot` with persistent `/app/data` storage) and go-live checklist, see [docs/railway-deployment.md](docs/railway-deployment.md).
