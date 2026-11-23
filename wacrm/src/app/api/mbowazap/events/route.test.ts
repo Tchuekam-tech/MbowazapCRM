@@ -6,6 +6,7 @@ const h = vi.hoisted(() => {
   type Spy = (...args: unknown[]) => Promise<void>;
   return {
     db: null as FakeDb | null,
+    hasServiceRoleKey: true,
     after: [] as (() => Promise<void>)[],
     lifecycle: vi.fn<Spy>(async () => {}),
   };
@@ -15,7 +16,10 @@ vi.mock('next/server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/server')>();
   return { ...actual, after: (cb: () => Promise<void>) => h.after.push(cb) };
 });
-vi.mock('@/lib/flows/admin-client', () => ({ supabaseAdmin: () => h.db!.client() }));
+vi.mock('@/lib/flows/admin-client', () => ({
+  hasServiceRoleKey: () => h.hasServiceRoleKey,
+  supabaseAdmin: () => h.db!.client(),
+}));
 vi.mock('@/lib/whatsapp/inbound/lifecycle', () => ({ dispatchInboundLifecycle: h.lifecycle }));
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: vi.fn(async () => {}) }));
 vi.mock('@/lib/automations/engine', () => ({ runAutomationsForTrigger: vi.fn(async () => {}) }));
@@ -68,6 +72,7 @@ async function call(req: Request) {
 
 beforeEach(() => {
   vi.stubEnv('MBOWAZAP_SECRET', SECRET);
+  h.hasServiceRoleKey = true;
   h.after = [];
   h.db = wacrmFakeDb();
   h.db.seed('whatsapp_config', [
@@ -153,5 +158,12 @@ describe('POST /api/mbowazap/events', () => {
     const big = 'x'.repeat(1024 * 1024 + 1);
     const { status } = await call(request(big));
     expect(status).toBe(413);
+  });
+
+  it('answers 503 service_unavailable when SUPABASE_SERVICE_ROLE_KEY is missing so bot retries without losing events', async () => {
+    h.hasServiceRoleKey = false;
+    const { status, json } = await call(request(batch([message])));
+    expect(status).toBe(503);
+    expect(json.error.code).toBe('service_unavailable');
   });
 });
