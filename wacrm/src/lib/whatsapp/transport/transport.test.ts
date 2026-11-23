@@ -368,5 +368,3 @@ describe('whatsappProvider', () => {
     expect(whatsappProvider(null)).toBe('meta');
   });
 });
-
-// [verification] full regression coverage verified
