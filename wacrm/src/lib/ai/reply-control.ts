@@ -13,7 +13,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AutomationState } from '@/types';
 import { logReplyControl } from './reply-control-log';
-import { supabaseAdmin } from './admin-client';
+import { hasServiceRoleKey, supabaseAdmin } from './admin-client';
 
 export interface AutomationCheckResult {
   allowed: boolean;
@@ -365,9 +365,11 @@ export async function takeoverConversation(
   // 3. Pause any active flow runs for this conversation
   try {
     let clientToUse = db;
-    try {
-      clientToUse = supabaseAdmin();
-    } catch (_) {}
+    if (typeof hasServiceRoleKey !== 'function' || hasServiceRoleKey()) {
+      try {
+        clientToUse = supabaseAdmin();
+      } catch {}
+    }
 
     const { error: pauseErr } = await clientToUse
       .from('flow_runs')

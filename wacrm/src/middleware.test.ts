@@ -119,4 +119,40 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
       expect(res.headers.get("location")).toContain("/login");
     }
   });
+
+  it("bypasses middleware session check for /api/health, /api/mbowazap/events, and /api/mbowazap/media", async () => {
+    mockUser = null;
+    for (const path of [
+      "/api/health",
+      "/api/mbowazap/events",
+      "/api/mbowazap/media",
+      "/api/mbowazap/media/123",
+    ]) {
+      const res = await middleware(new NextRequest(`https://app.test${path}`));
+      expect(res.status).toBe(200);
+      expect(res.headers.get("location")).toBeNull();
+    }
+  });
+
+  it("returns 401 for unauthenticated user-facing /api/mbowazap/* control routes", async () => {
+    mockUser = null;
+    for (const path of [
+      "/api/mbowazap/status",
+      "/api/mbowazap/pair",
+      "/api/mbowazap/disconnect",
+    ]) {
+      const res = await middleware(new NextRequest(`https://app.test${path}`));
+      expect(res.status).toBe(401);
+    }
+  });
+
+  it("sets private, no-store Cache-Control on redirects and protected routes", async () => {
+    mockUser = null;
+    const redir = await middleware(new NextRequest("https://app.test/dashboard"));
+    expect(redir.headers.get("cache-control")).toBe("private, no-store");
+
+    mockUser = { id: "user-1" };
+    const authed = await middleware(new NextRequest("https://app.test/dashboard"));
+    expect(authed.headers.get("cache-control")).toBe("private, no-store");
+  });
 });

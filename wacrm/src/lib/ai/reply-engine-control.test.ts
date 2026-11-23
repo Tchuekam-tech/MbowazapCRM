@@ -17,12 +17,15 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { WhatsAppTransport } from '@/lib/whatsapp/transport';
 import { engineSendText } from '@/lib/flows/meta-send';
 
+type MockRow = Record<string, unknown>;
+
 // Mock meta-send dependencies so we can test the real engineSendText
 const hoisted = vi.hoisted(() => ({
-  getClient: () => null as any,
+  getClient: () => null as unknown as SupabaseClient,
 }));
 
 vi.mock('./admin-client', () => ({
+  hasServiceRoleKey: () => true,
   supabaseAdmin: () => hoisted.getClient(),
 }));
 
@@ -36,14 +39,14 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
 
 describe('Reply Engine Control & Concurrency System', () => {
   let mockDbState: {
-    conversations: Map<string, any>;
-    flowRuns: Map<string, any>;
-    messages: any[];
-    contacts: Map<string, any>;
-    whatsappConfig: Map<string, any>;
+    conversations: Map<string, MockRow>;
+    flowRuns: Map<string, MockRow>;
+    messages: MockRow[];
+    contacts: Map<string, MockRow>;
+    whatsappConfig: Map<string, MockRow>;
   };
 
-  let mockClient: any;
+  let mockClient: SupabaseClient;
 
   beforeEach(() => {
     mockDbState = {
@@ -74,35 +77,39 @@ describe('Reply Engine Control & Concurrency System', () => {
     mockClient = {
       from: (table: string) => {
         return {
-          select: (fields?: string) => ({
-            eq: (col: string, val: any) => ({
-              eq: (col2: string, val2: any) => ({
+          select: () => ({
+            eq: (_col: string, val: unknown) => {
+              const key = String(val);
+              return {
+                eq: () => ({
+                  maybeSingle: async () => {
+                    if (table === 'conversations') return { data: mockDbState.conversations.get(key), error: null };
+                    if (table === 'contacts') return { data: mockDbState.contacts.get(key), error: null };
+                    return { data: null, error: null };
+                  },
+                  single: async () => {
+                    if (table === 'contacts') return { data: mockDbState.contacts.get(key), error: null };
+                    return { data: null, error: null };
+                  },
+                }),
                 maybeSingle: async () => {
-                  if (table === 'conversations') return { data: mockDbState.conversations.get(val), error: null };
-                  if (table === 'contacts') return { data: mockDbState.contacts.get(val), error: null };
+                  if (table === 'conversations') return { data: mockDbState.conversations.get(key), error: null };
+                  if (table === 'contacts') return { data: mockDbState.contacts.get(key), error: null };
                   return { data: null, error: null };
                 },
                 single: async () => {
-                  if (table === 'contacts') return { data: mockDbState.contacts.get(val), error: null };
+                  if (table === 'conversations') return { data: mockDbState.conversations.get(key), error: null };
                   return { data: null, error: null };
                 },
-              }),
-              maybeSingle: async () => {
-                if (table === 'conversations') return { data: mockDbState.conversations.get(val), error: null };
-                if (table === 'contacts') return { data: mockDbState.contacts.get(val), error: null };
-                return { data: null, error: null };
-              },
-              single: async () => {
-                if (table === 'conversations') return { data: mockDbState.conversations.get(val), error: null };
-                return { data: null, error: null };
-              },
-            }),
+              };
+            },
           }),
-          update: (payload: any) => ({
-            eq: (col: string, val: any) => {
+          update: (payload: MockRow) => ({
+            eq: (col: string, val: unknown) => {
+              const key = String(val);
               if (table === 'conversations') {
-                const existing = mockDbState.conversations.get(val) || {};
-                mockDbState.conversations.set(val, { ...existing, ...payload });
+                const existing = mockDbState.conversations.get(key) || {};
+                mockDbState.conversations.set(key, { ...existing, ...payload });
               }
               if (table === 'flow_runs') {
                 for (const [id, r] of mockDbState.flowRuns.entries()) {
@@ -112,25 +119,25 @@ describe('Reply Engine Control & Concurrency System', () => {
                 }
               }
               return {
-                eq: (col2: string, val2: any) => {
+                eq: () => {
                   return Promise.resolve({ error: null });
                 },
-                then: (resolve: any) => resolve({ error: null }),
+                then: (resolve: (value: { error: null }) => unknown) => resolve({ error: null }),
               };
             },
           }),
-          insert: (row: any) => {
+          insert: (row: MockRow) => {
             mockDbState.messages.push(row);
             return Promise.resolve({ error: null });
           },
         };
       },
-      rpc: (name: string, args: any) => {
+      rpc: (name: string, args: MockRow) => {
         if (name === 'takeover_conversation_automation') {
-          const conv = mockDbState.conversations.get(args.p_conversation_id);
+          const conv = mockDbState.conversations.get(String(args.p_conversation_id));
           if (conv) {
             conv.automation_state = 'human_handling';
-            conv.automation_version = (conv.automation_version || 1) + 1;
+            conv.automation_version = (Number(conv.automation_version) || 1) + 1;
             conv.human_handled_at = new Date().toISOString();
             conv.human_handling_reason = args.p_reason;
             conv.ai_autoreply_disabled = true;
@@ -143,10 +150,10 @@ describe('Reply Engine Control & Concurrency System', () => {
         }
         if (name === 'resume_conversation_automation') {
           // Mirrors migration 046.
-          const conv = mockDbState.conversations.get(args.p_conversation_id);
+          const conv = mockDbState.conversations.get(String(args.p_conversation_id));
           if (conv) {
             conv.automation_state = 'active';
-            conv.automation_version = (conv.automation_version || 1) + 1;
+            conv.automation_version = (Number(conv.automation_version) || 1) + 1;
             conv.ai_autoreply_disabled = false;
             conv.ai_paused_until = null;
             conv.ai_reply_count = 0;
@@ -171,7 +178,7 @@ describe('Reply Engine Control & Concurrency System', () => {
         }
         return Promise.resolve({ data: null, error: null });
       },
-    };
+    } as unknown as SupabaseClient;
     hoisted.getClient = () => mockClient;
   });
 
@@ -314,14 +321,14 @@ describe('Reply Engine Control & Concurrency System', () => {
       const presenceCalls: { typing: boolean; to: string }[] = [];
       const fakeTransport = {
         provider: 'mbowazap',
-        setTyping: vi.fn(async ({ typing, to }: any) => {
+        setTyping: vi.fn(async ({ typing, to }: { typing: boolean; to: string }) => {
           presenceCalls.push({ typing, to });
         }),
-        sendText: vi.fn() as any,
-        sendMedia: vi.fn() as any,
-        sendInteractive: vi.fn() as any,
-        sendTemplate: vi.fn() as any,
-        resolveTarget: vi.fn() as any,
+        sendText: vi.fn(),
+        sendMedia: vi.fn(),
+        sendInteractive: vi.fn(),
+        sendTemplate: vi.fn(),
+        resolveTarget: vi.fn(),
       } as unknown as WhatsAppTransport;
 
       const res = await withTypingIndicator({
@@ -346,14 +353,14 @@ describe('Reply Engine Control & Concurrency System', () => {
       const presenceCalls: { typing: boolean }[] = [];
       const fakeTransport = {
         provider: 'mbowazap',
-        setTyping: vi.fn(async ({ typing }: any) => {
+        setTyping: vi.fn(async ({ typing }: { typing: boolean }) => {
           presenceCalls.push({ typing });
         }),
-        sendText: vi.fn() as any,
-        sendMedia: vi.fn() as any,
-        sendInteractive: vi.fn() as any,
-        sendTemplate: vi.fn() as any,
-        resolveTarget: vi.fn() as any,
+        sendText: vi.fn(),
+        sendMedia: vi.fn(),
+        sendInteractive: vi.fn(),
+        sendTemplate: vi.fn(),
+        resolveTarget: vi.fn(),
       } as unknown as WhatsAppTransport;
 
       const abortController = new AbortController();
@@ -479,7 +486,7 @@ describe('Reply Engine Control & Concurrency System', () => {
         reason: 'manual_takeover',
         handlerId: 'agent-1',
       });
-      mockDbState.conversations.get('conv-1').assigned_agent_id = 'agent-1';
+      mockDbState.conversations.get('conv-1')!.assigned_agent_id = 'agent-1';
 
       const resumed = await resumeConversation(mockClient, 'conv-1', {
         releaseAssignee: 'agent-1',
@@ -487,15 +494,15 @@ describe('Reply Engine Control & Concurrency System', () => {
 
       expect(resumed).toMatchObject({ state: 'active', assignedAgentId: null, persisted: true });
       const conv = mockDbState.conversations.get('conv-1');
-      expect(conv.ai_reply_count).toBe(0);
-      expect(conv.ai_handoff_summary).toBeNull();
+      expect(conv?.ai_reply_count).toBe(0);
+      expect(conv?.ai_handoff_summary).toBeNull();
       // Nothing left holding the engine back.
       const check = await checkAutomationAllowed(mockClient, 'conv-1');
       expect(check.allowed).toBe(true);
     });
 
     it("resume leaves another agent's assignment alone and reports it", async () => {
-      mockDbState.conversations.get('conv-1').assigned_agent_id = 'agent-2';
+      mockDbState.conversations.get('conv-1')!.assigned_agent_id = 'agent-2';
       const resumed = await resumeConversation(mockClient, 'conv-1', {
         releaseAssignee: 'agent-1',
       });
@@ -515,8 +522,8 @@ describe('Reply Engine Control & Concurrency System', () => {
         assigned_agent_id: 'agent-1',
       });
       const rpc = mockClient.rpc;
-      mockClient.rpc = () =>
-        Promise.resolve({ data: null, error: { message: 'Could not find the function' } });
+      mockClient.rpc = (() =>
+        Promise.resolve({ data: null, error: { message: 'Could not find the function' } })) as unknown as typeof mockClient.rpc;
 
       const resumed = await resumeConversation(mockClient, 'conv-1', {
         releaseAssignee: 'agent-1',

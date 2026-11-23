@@ -145,8 +145,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Cache-Control",
-            value:
-              "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+            value: "private, no-store, max-age=0",
           },
         ],
       },

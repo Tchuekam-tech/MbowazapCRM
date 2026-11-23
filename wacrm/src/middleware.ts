@@ -2,10 +2,15 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  // Explicitly bypass session middleware for MboWazap bridge endpoints.
-  // TchuekBot authenticates with HMAC-SHA256 signatures, and media uploads
-  // must not be buffered or truncated by session middleware.
-  if (request.nextUrl.pathname.startsWith('/api/mbowazap/')) {
+  const { pathname } = request.nextUrl
+  // Explicitly bypass session middleware for health checks and MboWazap
+  // bot-to-CRM HMAC endpoints (/events and /media) so unauthenticated bots
+  // can push signed events and upload large media without buffering.
+  if (
+    pathname === '/api/health' ||
+    pathname === '/api/mbowazap/events' ||
+    pathname.startsWith('/api/mbowazap/media')
+  ) {
     return NextResponse.next()
   }
 
@@ -20,7 +25,7 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
@@ -46,6 +51,7 @@ export async function middleware(request: NextRequest) {
     supabaseResponse.cookies.getAll().forEach((cookie) => {
       response.cookies.set(cookie)
     })
+    response.headers.set('Cache-Control', 'private, no-store')
     return response
   }
 
@@ -95,12 +101,21 @@ export async function middleware(request: NextRequest) {
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 
-  // API routes that need auth (not webhooks)
-  if (!user && request.nextUrl.pathname.startsWith('/api/whatsapp/') &&
-      !request.nextUrl.pathname.includes('/webhook')) {
+  // API routes that need auth (not webhooks, health check, or HMAC bot ingestion)
+  if (
+    !user &&
+    ((pathname.startsWith('/api/whatsapp/') && !pathname.includes('/webhook')) ||
+      (pathname.startsWith('/api/mbowazap/') &&
+        pathname !== '/api/mbowazap/events' &&
+        !pathname.startsWith('/api/mbowazap/media')))
+  ) {
     return withRefreshedCookies(
       NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     )
+  }
+
+  if (protectedPaths.some((path) => pathname.startsWith(path))) {
+    supabaseResponse.headers.set('Cache-Control', 'private, no-store')
   }
 
   return supabaseResponse
@@ -108,9 +123,9 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // api/mbowazap/ is excluded: TchuekBot authenticates with an HMAC
-    // signature, not a session, and running the proxy would buffer (and
-    // cap at 10 MB, truncating) the media uploads it posts there.
-    '/((?!_next/static|_next/image|favicon.ico|api/mbowazap/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // api/health, api/mbowazap/events, and api/mbowazap/media are excluded:
+    // TchuekBot authenticates those with an HMAC signature rather than a
+    // user session, and running the proxy would buffer large media uploads.
+    '/((?!_next/static|_next/image|favicon.ico|api/health|api/mbowazap/events|api/mbowazap/media|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
