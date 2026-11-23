@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     openssl \
     ffmpeg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -18,13 +19,22 @@ RUN npm install --omit=dev --legacy-peer-deps
 COPY . .
 
 # Pre-create writable runtime directories
-RUN mkdir -p /app/data/sessions /app/data/flow_sessions /app/data/memory /app/data/config /app/catalog /app/tmp/pair_sessions /app/temp /app/scratch
+RUN mkdir -p /app/data/sessions \
+             /app/data/flow_sessions \
+             /app/data/memory \
+             /app/data/config \
+             /app/data/bridge \
+             /app/catalog \
+             /app/tmp/pair_sessions \
+             /app/temp \
+             /app/scratch && \
+    [ -f /app/data/owner.json ] || echo '["237653683174"]' > /app/data/owner.json
 
-# Expose port for Hugging Face Spaces (7860) and Railway/Render (8080)
-EXPOSE 7860 8080
+# Expose ports for Railway (8080) and HF Spaces (7860)
+EXPOSE 8080 7860
 
-# HF Spaces uses port 7860 by default
-ENV PORT=7860
+ENV PORT=8080
+ENV HOST="::"
 ENV NODE_ENV=production
 
 CMD ["node", "--no-warnings", "--expose-gc", "--max-old-space-size=400", "preload.js"]
