@@ -10,6 +10,15 @@ export type PairingConfig = Record<string, unknown> & {
   mbowazap_session: string | null;
 };
 
+export function isActiveUnexpiredPairing(
+  config: Pick<PairingConfig, 'mbowazap_state' | 'updated_at'> | null | undefined,
+  now: number = Date.now()
+): boolean {
+  if (config?.mbowazap_state !== 'pairing') return false;
+  const updatedMs = config.updated_at ? Date.parse(config.updated_at) : Number.NaN;
+  return Number.isFinite(updatedMs) && now < updatedMs + PAIRING_TTL_MS;
+}
+
 /** Reserve the account and unique phone BEFORE touching any WhatsApp socket. */
 export async function reservePairing(
   db: SupabaseClient,
@@ -21,14 +30,7 @@ export async function reservePairing(
   now: number = Date.now(),
   options: { previousWasDisconnectedOnBot?: boolean } = {}
 ) {
-  const previousUpdatedMs = previous?.updated_at
-    ? Date.parse(previous.updated_at)
-    : Number.NaN;
-  if (
-    previous?.mbowazap_state === 'pairing' &&
-    Number.isFinite(previousUpdatedMs) &&
-    now < previousUpdatedMs + PAIRING_TTL_MS
-  ) {
+  if (isActiveUnexpiredPairing(previous, now)) {
     throw new MbowazapBridgeError(
       'pairing_busy',
       'A pairing is already in progress for this account. Wait for it to finish or expire.'

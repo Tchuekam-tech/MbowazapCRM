@@ -295,3 +295,17 @@ from the authenticated CRM settings screen.
 Pairing requests accept 8–15 digits including the country code. Attempt
 expiry is enforced by QR refresh, polling, gateway ownership, and connection
 event ingestion. `pairing_busy` and `pairing_expired` are HTTP 409 errors.
+
+## IPv4 Socket Resilience for Baileys
+
+Node.js on modern systems resolves dual-stack DNS records (both A and AAAA)
+for WhatsApp edge servers (`web.whatsapp.com`). On host environments with
+unroutable or filtered IPv6 connectivity, standard socket connections hang on
+`connect ENETUNREACH` before timing out (`AggregateError [ETIMEDOUT]`), causing
+WhatsApp code `428 Connection Terminated` / `408 Request Timeout` disconnects.
+
+To prevent connection drops during pairing:
+1. `makeWASocket` explicitly passes `agent: new https.Agent({ family: 4, keepAlive: true })`.
+2. `fetchLatestWaWebVersion` passes `httpsAgent: ipv4Agent` to ensure the live WhatsApp Web client revision is always resolved authoritatively.
+3. Node process initialization enforces `dns.setDefaultResultOrder('ipv4first')`.
+
