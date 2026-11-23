@@ -15,6 +15,7 @@ import {
 import { whatsappProvider } from '@/lib/whatsapp/provider';
 
 import {
+  isActiveUnexpiredPairing,
   reservePairing,
   type PairingConfig,
 } from '@/lib/mbowazap/pairing-reservation';
@@ -34,7 +35,7 @@ async function requestPairing(
   request: PairRequest
 ): Promise<PairResult> {
   const deadline = Date.now() + PAIRING_PENDING_BUDGET_MS;
-  for (;;) {
+  for (; ;) {
     try {
       return await client.pair(request);
     } catch (err) {
@@ -147,12 +148,22 @@ export async function POST(req: NextRequest) {
 
     const client = createMbowazapClient(envResult.env);
 
+    if (isActiveUnexpiredPairing(existingConfig as PairingConfig | null)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'A pairing is already in progress for this account. Wait for it to finish or expire.',
+          code: 'pairing_busy',
+        },
+        { status: 409 }
+      );
+    }
+
     let previousWasDisconnectedOnBot = false;
-    if (
-      existingConfig?.mbowazap_state === 'connected' &&
-      existingConfig.mbowazap_session
-    ) {
-      if (await isStillLinkedOnBot(client, existingConfig.mbowazap_session)) {
+    if (existingConfig?.mbowazap_session) {
+      const stillLinked = await isStillLinkedOnBot(client, existingConfig.mbowazap_session);
+      if (existingConfig.mbowazap_state === 'connected' && stillLinked) {
         return NextResponse.json(
           {
             ok: false,
@@ -162,7 +173,12 @@ export async function POST(req: NextRequest) {
           { status: 409 }
         );
       }
-      previousWasDisconnectedOnBot = true;
+      if (!stillLinked) {
+        previousWasDisconnectedOnBot = true;
+        try {
+          await client.logout(existingConfig.mbowazap_session);
+        } catch {}
+      }
     }
 
     const pairingRef = crypto.randomUUID();
