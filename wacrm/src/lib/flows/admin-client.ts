@@ -4,11 +4,23 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 // Mirrors src/lib/automations/admin-client.ts — same shape so anyone
 // reading either file picks up the convention immediately.
 let _adminClient: SupabaseClient | null = null
+let _warnedAnonFallback = false
+
+export function hasServiceRoleKey(): boolean {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  return Boolean(serviceKey && !serviceKey.startsWith('REPLACE_WITH_'))
+}
 
 function getAdminKey(): string {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (serviceKey && !serviceKey.startsWith('REPLACE_WITH_')) {
     return serviceKey
+  }
+  if (!_warnedAnonFallback) {
+    _warnedAnonFallback = true
+    console.warn(
+      '[flows/admin-client] SUPABASE_SERVICE_ROLE_KEY is missing or unset; falling back to NEXT_PUBLIC_SUPABASE_ANON_KEY'
+    )
   }
   return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 }
