@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { hasServiceRoleKey, supabaseAdmin } from '@/lib/flows/admin-client';
 import { findAccountBySession } from '@/lib/mbowazap/accounts';
+
+export const dynamic = 'force-dynamic';
 import { bridgeError, readBotRequest } from '@/lib/mbowazap/bot-request';
 import { SESSION_PATTERN } from '@/lib/mbowazap/protocol';
 import { buildMediaPath, MEDIA_MAX_BYTES } from '@/lib/storage/upload-media';
@@ -29,6 +31,11 @@ export async function POST(request: Request) {
   if (!read.ok) return read.response;
   if (read.body.length === 0) {
     return bridgeError(400, 'invalid_request', 'Media body is empty');
+  }
+
+  if (typeof hasServiceRoleKey === 'function' && !hasServiceRoleKey()) {
+    console.error('[mbowazap/media] SUPABASE_SERVICE_ROLE_KEY is missing; returning 503 so bot retries');
+    return bridgeError(503, 'service_unavailable', 'SUPABASE_SERVICE_ROLE_KEY is not configured');
   }
 
   const session = read.url.searchParams.get('session') ?? '';
