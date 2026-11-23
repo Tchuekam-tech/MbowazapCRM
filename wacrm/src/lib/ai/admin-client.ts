@@ -5,11 +5,23 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 // — the inbound webhook has no `auth.uid()`, so the bot reads config +
 // conversation state and sends through the service role.
 let _adminClient: SupabaseClient | null = null
+let _warnedAnonFallback = false
+
+export function hasServiceRoleKey(): boolean {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  return Boolean(serviceKey && !serviceKey.startsWith('REPLACE_WITH_'))
+}
 
 function getAdminKey(): string {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (serviceKey && !serviceKey.startsWith('REPLACE_WITH_')) {
     return serviceKey
+  }
+  if (!_warnedAnonFallback) {
+    _warnedAnonFallback = true
+    console.warn(
+      '[ai/admin-client] SUPABASE_SERVICE_ROLE_KEY is missing or unset; falling back to NEXT_PUBLIC_SUPABASE_ANON_KEY'
+    )
   }
   return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 }
