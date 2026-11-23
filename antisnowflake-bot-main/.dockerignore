@@ -1,0 +1,11 @@
+node_modules
+data/sessions/*
+!data/sessions/.gitkeep
+data/bridge/*
+!data/bridge/.gitkeep
+tmp/*
+temp/*
+scratch/*
+.env
+.env.local
+*.log
