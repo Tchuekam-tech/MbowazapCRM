@@ -3,6 +3,8 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { readMbowazapEnv } from '@/lib/mbowazap/env';
 import { createMbowazapClient } from '@/lib/mbowazap/client';
 
+export const dynamic = 'force-dynamic';
+
 export async function PUT(req: NextRequest) {
   try {
     const ctx = await requireRole('admin');
