@@ -2,9 +2,8 @@ const fs = require('fs');
 const path = require('path');
 
 // Function to load user and group data from JSON file
-function loadUserGroupData() {
+function loadUserGroupData(dataPath = path.join(__dirname, '../data/userGroupData.json')) {
     try {
-        const dataPath = path.join(__dirname, '../data/userGroupData.json');
         if (!fs.existsSync(dataPath)) {
             // Create the file with default structure if it doesn't exist
             const defaultData = {
@@ -16,6 +15,7 @@ function loadUserGroupData() {
                 warnings: {},
                 sudo: []
             };
+            fs.mkdirSync(path.dirname(dataPath), { recursive: true });
             fs.writeFileSync(dataPath, JSON.stringify(defaultData, null, 2));
             return defaultData;
         }
@@ -431,6 +431,8 @@ async function removeChatbot(groupId) {
 }
 
 module.exports = {
+    loadUserGroupData,
+    saveUserGroupData,
     // ... existing exports
     setAntilink,
     getAntilink,

@@ -18,7 +18,14 @@ const {
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 const sessionManager = require('./sessionManager');
+
+const ipv4Agent = new https.Agent({
+    family: 4,
+    keepAlive: true,
+    maxSockets: 50,
+});
 
 const BUSINESS_SESSION_DIR = path.join(__dirname, '..', 'data', 'sessions');
 const MAX_CONCURRENT_SESSIONS = 2;
@@ -27,9 +34,9 @@ const activePairingSessions = new Map();
 
 async function resolveWaVersion() {
     try {
-        const web = await fetchLatestWaWebVersion({ timeout: WA_VERSION_TIMEOUT_MS });
+        const web = await fetchLatestWaWebVersion({ timeout: WA_VERSION_TIMEOUT_MS, httpsAgent: ipv4Agent });
         if (web?.isLatest && web.version) return web.version;
-        const baileys = await fetchLatestBaileysVersion({ timeout: WA_VERSION_TIMEOUT_MS });
+        const baileys = await fetchLatestBaileysVersion({ timeout: WA_VERSION_TIMEOUT_MS, httpsAgent: ipv4Agent });
         return baileys?.version || web?.version;
     } catch (_) {
         return undefined;
@@ -76,6 +83,7 @@ function makeSocketOptions(state, version) {
         connectTimeoutMs: 60_000,
         keepAliveIntervalMs: 20_000,
         defaultQueryTimeoutMs: undefined,
+        agent: ipv4Agent,
     };
 }
 

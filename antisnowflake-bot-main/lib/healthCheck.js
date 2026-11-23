@@ -90,7 +90,7 @@ function readJsonBody(req, maxBytes = 1024 * 1024) {
     });
 }
 
-function startHealthCheckServer(port = process.env.PORT || 8080) {
+function startHealthCheckServer(port = process.env.PORT || 8080, host = process.env.HOST || '::') {
     const handleBridgeRequest = createBridgeHandler();
 
     const server = http.createServer(async (req, res) => {
@@ -524,9 +524,29 @@ function startHealthCheckServer(port = process.env.PORT || 8080) {
         }
     });
 
-    server.listen(port, '0.0.0.0', () => {
-        console.log(`[HealthCheck] 🚀 Multi-Tenant Server running on port ${port}`);
-    });
+    const bindHost = (targetHost, allowFallback) => {
+        const onError = (err) => {
+            if (
+                allowFallback &&
+                targetHost === '::' &&
+                (err?.code === 'EAFNOSUPPORT' || err?.code === 'EADDRNOTAVAIL' || err?.code === 'EINVAL')
+            ) {
+                console.warn(`[HealthCheck] IPv6 bind on :: unavailable (${err.code}); falling back to 0.0.0.0`);
+                bindHost('0.0.0.0', false);
+                return;
+            }
+            throw err;
+        };
+        server.once('error', onError);
+        server.listen(port, targetHost, () => {
+            server.removeListener('error', onError);
+            const addr = server.address();
+            const actualPort = typeof addr === 'object' && addr ? addr.port : port;
+            console.log(`[HealthCheck] 🚀 Multi-Tenant Server running on ${targetHost}:${actualPort}`);
+        });
+    };
+
+    bindHost(host, true);
 
     return server;
 }

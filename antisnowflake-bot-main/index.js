@@ -13,6 +13,18 @@ process.emit = function(name, data, ...args) {
 };
 
 require('dotenv').config();
+const dns = require('dns');
+const https = require('https');
+try {
+    dns.setDefaultResultOrder('ipv4first');
+} catch (_) {}
+
+const ipv4Agent = new https.Agent({
+    family: 4,
+    keepAlive: true,
+    maxSockets: 50,
+});
+
 require('./settings');
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
@@ -20,7 +32,7 @@ const chalk = require('chalk');
 const FileType = require('file-type');
 const path = require('path');
 const axios = require('axios');
-const { handleMessages, handleGroupParticipantUpdate, handleStatus, resetAntiBanState } = require('./main');
+const { handleMessages, handleGroupParticipantUpdate, handleStatus, resetAntiBanState, trackBotSentId } = require('./main');
 const { sanitizeOutgoingContent } = require('./lib/policyGuard');
 const { acquireGlobalSendSlot } = require('./lib/securityManager');
 const PhoneNumber = require('awesome-phonenumber');
@@ -62,8 +74,7 @@ const store = require('./lib/lightweight_store');
 
 // Initialize store
 store.readFromFile();
-const settings = require('dotenv').config();
-require('./settings');
+const settings = require('./settings');
 setInterval(() => store.writeToFile(), settings.storeWriteInterval || 10000);
 
 if (settings.policyGuard?.enabled) {
@@ -107,7 +118,19 @@ function cancelReconnectForNumber(phoneNumber) {
 
 const ownerNum = (require('./settings').ownerNumber || '237653683174').replace(/[^0-9]/g, '');
 global.phoneNumber = ownerNum;
-let owner = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'owner.json')));
+const ownerJsonPath = path.join(__dirname, 'data', 'owner.json');
+let owner = [];
+try {
+    if (fs.existsSync(ownerJsonPath)) {
+        owner = JSON.parse(fs.readFileSync(ownerJsonPath, 'utf8'));
+    } else {
+        fs.mkdirSync(path.dirname(ownerJsonPath), { recursive: true });
+        owner = [ownerNum];
+        fs.writeFileSync(ownerJsonPath, JSON.stringify(owner, null, 2), 'utf8');
+    }
+} catch (e) {
+    owner = [ownerNum];
+}
 
 global.botname = "Tchuek Bot";
 global.themeemoji = "•";
@@ -171,7 +194,7 @@ async function getWaVersion() {
         // version file can lag WhatsApp by months while still reporting that
         // it is the latest Baileys version, which can make WhatsApp reject a
         // new pairing socket before it emits a QR.
-        const web = await fetchLatestWaWebVersion({ timeout: WA_VERSION_TIMEOUT_MS });
+        const web = await fetchLatestWaWebVersion({ timeout: WA_VERSION_TIMEOUT_MS, httpsAgent: ipv4Agent });
         if (web.isLatest) {
             latestWaVersion = web.version;
             latestWaVersionFetchedAt = Date.now();
@@ -181,7 +204,7 @@ async function getWaVersion() {
 
         // Fall back to Baileys' published revision when web.whatsapp.com is
         // unavailable. Retry the live source sooner after using a fallback.
-        const baileys = await fetchLatestBaileysVersion({ timeout: WA_VERSION_TIMEOUT_MS });
+        const baileys = await fetchLatestBaileysVersion({ timeout: WA_VERSION_TIMEOUT_MS, httpsAgent: ipv4Agent });
         latestWaVersion = baileys.version || web.version;
         latestWaVersionFetchedAt = Date.now() - WA_VERSION_CACHE_TTL_MS + WA_VERSION_FALLBACK_RETRY_MS;
         console.log(chalk.yellow(`[wa-version] Fallback Baileys version: ${latestWaVersion.join('.')}`));
@@ -233,7 +256,7 @@ async function adoptQrLinkedCredentials(sock) {
             throw new Error('Could not determine a valid WhatsApp phone number from the scanned QR session.');
         }
         require('./lib/qrSession').assertQrTargetAvailable(loggedIn, {
-            state: bridgeState, sessionsRoot: SESSIONS_ROOT,
+            state: bridgeState, sessionsRoot: SESSIONS_ROOT, allowRePair: true,
         });
     } catch (err) {
         if (loggedIn) isReconnectingMap.delete(loggedIn);
@@ -469,6 +492,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
         },
+        agent: ipv4Agent,
         markOnlineOnConnect: !(settings.policyGuard?.enabled && settings.policyGuard?.disablePresenceAutomation),
         generateHighQualityLinkPreview: true,
         syncFullHistory: true,
@@ -511,6 +535,9 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             }
 
             const result = await originalSendMessage(jid, content, options);
+            if (result?.key?.id) {
+                trackBotSentId(result.key.id);
+            }
             lastSentMap.set(jid, Date.now());
             return result;
         };
@@ -1000,7 +1027,7 @@ async function requestPairingCodeForNumber(phoneNumber) {
     }
 
     const sock = sessionManager.getSocket(cleanNumber);
-    if (sessionManager.isLinked(sock) || sessionManager.isLinkedOnDisk(cleanNumber, SESSIONS_ROOT)) {
+    if (sessionManager.isSocketOpen(sock) && sessionManager.isLinked(sock)) {
         return { code: null, error: 'Bot is already linked/connected!', isConnected: true };
     }
 
@@ -1091,6 +1118,25 @@ module.exports = { startXeonBotInc, requestPairingCodeForNumber, cancelReconnect
 // Boot runner
 ;(async () => {
     try {
+        // Ensure writable directories exist even on a fresh Railway volume
+        for (const dir of [
+            'data',
+            'data/sessions',
+            'data/flow_sessions',
+            'data/memory',
+            'data/config',
+            'data/bridge',
+            'tmp/pair_sessions',
+            'temp',
+        ]) {
+            fs.mkdirSync(path.join(__dirname, dir), { recursive: true });
+        }
+        const ownerFile = path.join(__dirname, 'data', 'owner.json');
+        if (!fs.existsSync(ownerFile)) {
+            const ownerDigits = (settings.ownerNumber || '237653683174').replace(/[^0-9]/g, '') || '237653683174';
+            fs.writeFileSync(ownerFile, JSON.stringify([ownerDigits], null, 2), 'utf8');
+        }
+
         // Hard clean unlinked directories
         const sessionsRoot = SESSIONS_ROOT;
         if (fs.existsSync(sessionsRoot)) {
@@ -1115,7 +1161,7 @@ module.exports = { startXeonBotInc, requestPairingCodeForNumber, cancelReconnect
                                 if (scanned && /^\d{6,15}$/.test(scanned)) {
                                     console.log(chalk.yellow(`[boot] Adopting QR-linked session for ${scanned}`));
                                     require('./lib/qrSession').assertQrTargetAvailable(scanned, {
-                                        state: require('./lib/bridge/state'), sessionsRoot,
+                                        state: require('./lib/bridge/state'), sessionsRoot, allowRePair: true,
                                     });
                                     copyFolderSync(folderPath, path.join(sessionsRoot, scanned));
                                     require('./lib/bridge/state').movePairingRef(TEMP_QR, scanned);
@@ -1187,9 +1233,28 @@ process.on('unhandledRejection', (err) => {
     console.error('Unhandled Rejection:', err);
 });
 
+let shuttingDown = false;
 async function gracefulShutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
     console.log(chalk.yellow(`\n[Process] Received ${signal}. Initiating graceful shutdown...`));
     try {
+        try {
+            const { getWacrmClient } = require('./lib/bridge/wacrmClient');
+            const bridgeClient = getWacrmClient();
+            if (bridgeClient && typeof bridgeClient.flush === 'function') {
+                await Promise.race([
+                    bridgeClient.flush(),
+                    new Promise((resolve) => setTimeout(resolve, 3000)),
+                ]);
+            }
+            if (bridgeClient && typeof bridgeClient.stop === 'function') {
+                bridgeClient.stop();
+            }
+        } catch (bridgeErr) {
+            console.error('[Shutdown] Bridge outbox flush warning:', bridgeErr.message);
+        }
+
         if (store && typeof store.writeToFile === 'function') {
             store.writeToFile();
             console.log(chalk.green('[Store] Persisted message store to disk.'));

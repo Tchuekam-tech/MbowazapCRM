@@ -30,9 +30,9 @@ function closeSocketQuietly(sock) {
     clearInterval(sock.watchdogInterval);
     clearInterval(sock.heartbeatInterval);
     clearTimeout(sock._presenceTimeout);
-    try { sock.ev?.removeAllListeners(); } catch (_) {}
-    try { sock.end(); } catch (_) {}
-    try { sock.ws?.close(); } catch (_) {}
+    try { sock.ev?.removeAllListeners(); } catch (_) { }
+    try { sock.end(); } catch (_) { }
+    try { sock.ws?.close(); } catch (_) { }
 }
 
 function isTransientQrClose(sock) {
@@ -180,17 +180,24 @@ async function getTempQrDataUrl({ waitMs = QR_WAIT_MS, sessionDir = TEMP_QR_SESS
 }
 
 /** Never overwrite another linked device or another active code attempt on QR adoption. */
-function assertQrTargetAvailable(phone, { state, sessionsRoot, now = Date.now() }) {
+function assertQrTargetAvailable(phone, { state, sessionsRoot, now = Date.now(), allowRePair = false }) {
     if (typeof phone !== 'string' || !PHONE_PATTERN.test(phone)) {
         throw new Error('Could not determine a valid phone number for the scanned device.');
     }
     const target = sessionManager.getSocket(phone);
     const existing = state.getPairingLease(phone);
     const qrRef = state.getPairingRef(TEMP_QR_SESSION);
-    const linkedOnDisk = sessionManager.isLinkedOnDisk(phone, sessionsRoot);
-    if (sessionManager.isLinked(target) || linkedOnDisk ||
-        (existing && existing.ref !== qrRef && now < existing.at + 120_000)) {
+    if (existing && existing.ref !== qrRef && now < existing.at + 120_000) {
+        throw new Error('This phone already has another active pairing attempt in progress.');
+    }
+    if (sessionManager.isSocketOpen(target) && sessionManager.isLinked(target)) {
         throw new Error('This phone already has a connection or another pairing attempt.');
+    }
+    if (!allowRePair) {
+        const linkedOnDisk = sessionManager.isLinkedOnDisk(phone, sessionsRoot);
+        if (sessionManager.isLinked(target) || linkedOnDisk) {
+            throw new Error('This phone already has a connection or another pairing attempt.');
+        }
     }
 }
 
