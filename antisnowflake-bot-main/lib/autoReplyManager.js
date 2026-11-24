@@ -25,7 +25,7 @@ async function safePresence(sock, presence, chatId) {
         const policy = getPolicyConfig();
         if (policy.enabled && policy.disablePresenceAutomation) return;
         await sock.sendPresenceUpdate(presence, chatId);
-    } catch (_) {}
+    } catch (_) { }
 }
 
 /**
@@ -136,45 +136,65 @@ async function readImageContent(imageBuffer, mimeType = 'image/jpeg') {
         }
     }
 
-    // Fallback: Try Gemini Vision
-    const geminiKey = settings.geminiApiKey || process.env.GEMINI_API_KEY || settings.tchuekamApiKey;
-    if (geminiKey) {
-        try {
-            console.log(chalk.cyan('[Vision] Requesting description from Gemini Vision...'));
-            const requestBody = {
-                contents: [{
-                    parts: [
-                        { text: promptText },
-                        {
-                            inlineData: {
-                                mimeType,
-                                data: base64Data
-                            }
+    // Fallback: Try Gemini Vision (with key rotation)
+    const geminiKeys = [...new Set([
+        settings.geminiApiKey,
+        process.env.GEMINI_API_KEY,
+        process.env.GEMINI_API_KEY_2,
+        settings.tchuekamApiKey,
+        process.env.TCHUEKAM_API_KEY,
+        process.env.TCHUEKAM_API_KEY_2
+    ].filter(k => k && typeof k === 'string' && k.trim() !== ''))];
+
+    if (geminiKeys.length > 0) {
+        const model = settings.tchuekamModel || 'gemini-2.5-flash';
+        const requestBody = {
+            contents: [{
+                parts: [
+                    { text: promptText },
+                    {
+                        inlineData: {
+                            mimeType,
+                            data: base64Data
                         }
-                    ]
-                }],
-                generationConfig: {
-                    maxOutputTokens: 500
-                }
-            };
-            const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody),
-                    signal: AbortSignal.timeout(30000)
-                }
-            );
-            const data = await response.json();
-            if (response.status === 200 && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                const desc = data.candidates[0].content.parts[0].text.trim();
-                console.log(chalk.green('[Vision] Gemini Vision transcription success!'));
-                return desc;
+                    }
+                ]
+            }],
+            generationConfig: {
+                maxOutputTokens: 500,
+                ...(model.startsWith('gemini-2.5-flash') ? { thinkingConfig: { thinkingBudget: 0 } } : {})
             }
-            throw new Error(`Gemini Vision returned HTTP ${response.status}`);
-        } catch (geminiErr) {
-            console.error('[Vision] Gemini Vision failed as well:', geminiErr.message);
+        };
+        for (const geminiKey of geminiKeys) {
+            try {
+                console.log(chalk.cyan('[Vision] Requesting description from Gemini Vision...'));
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'x-goog-api-key': geminiKey,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(requestBody),
+                        signal: AbortSignal.timeout(30000)
+                    }
+                );
+                const data = await response.json();
+                const parts = data?.candidates?.[0]?.content?.parts || [];
+                const desc = parts
+                    .filter(p => typeof p.text === 'string' && !p.thought)
+                    .map(p => p.text)
+                    .join('')
+                    .trim();
+                if (response.status === 200 && desc) {
+                    console.log(chalk.green('[Vision] Gemini Vision transcription success!'));
+                    return desc;
+                }
+                throw new Error(`Gemini Vision returned HTTP ${response.status}`);
+            } catch (geminiErr) {
+                console.error('[Vision] Gemini Vision attempt failed:', geminiErr.message);
+            }
         }
     }
 
@@ -203,7 +223,7 @@ async function verifyTallySubmission(phoneNumber) {
             },
             signal: AbortSignal.timeout(15000)
         });
-        
+
         if (response.status !== 200) {
             console.error('[Tally] Failed to fetch submissions, status:', response.status);
             return false;
@@ -211,7 +231,7 @@ async function verifyTallySubmission(phoneNumber) {
 
         const data = await response.json();
         const submissions = data.submissions || [];
-        
+
         for (const sub of submissions) {
             const answers = sub.answers || [];
             for (const ans of answers) {
@@ -246,7 +266,7 @@ function getDoualaHour() {
         }).format(new Date());
         const hour = Number.parseInt(formatted, 10);
         if (Number.isFinite(hour)) return hour % 24;
-    } catch (_) {}
+    } catch (_) { }
     return new Date().getUTCHours() + 1 >= 24 ? (new Date().getUTCHours() + 1) % 24 : new Date().getUTCHours() + 1;
 }
 
@@ -273,7 +293,7 @@ async function loadContactMemory(senderId) {
         fs.mkdirSync(MEMORY_DIR, { recursive: true });
     }
     const contactMemoryPath = path.join(MEMORY_DIR, `${contactNumber}.json`);
-    
+
     try {
         if (fs.existsSync(contactMemoryPath)) {
             const fileData = JSON.parse(fs.readFileSync(contactMemoryPath, 'utf8'));
@@ -336,7 +356,7 @@ async function extractContactFacts(history, lastUserMsg, lastAiResponse, current
         const fullChat = [...history.slice(-4), { role: 'user', content: lastUserMsg }, { role: 'assistant', content: lastAiResponse }]
             .map(m => `${m.role}: ${m.content}`)
             .join('\n');
-            
+
         const extractionPrompt = `Analyze the following conversation context. Extract and update the contact facts:
 - Name (a person's name)
 - Business Type (what kind of business they run, e.g. shop, salon, agency)
@@ -366,7 +386,7 @@ Respond ONLY with a JSON object in this exact format (no markdown formatting, no
         const response = await getAIResponse(extractionPrompt, "You are a precise sales assistant that extracts customer profile facts from conversation history and returns clean JSON.");
         const cleanJson = response?.replace(/```json/g, '').replace(/```/g, '').trim();
         const extracted = JSON.parse(cleanJson);
-        
+
         let updated = false;
         if (extracted.name && extracted.name !== 'unknown' && extracted.name !== currentMemory.name) {
             currentMemory.name = extracted.name;
@@ -389,7 +409,7 @@ Respond ONLY with a JSON object in this exact format (no markdown formatting, no
             currentMemory.longTermProfile = extracted.longTermProfile;
             updated = true;
         }
-        
+
         return { updated, memory: currentMemory };
     } catch (e) {
         console.error('[FactExtractor] Extraction failed:', e.message);
@@ -483,7 +503,7 @@ async function handleAutoReply(sock, chatId, senderId, message, settingsParam) {
                     const chatRef = extractChatRef(chatId, senderId);
                     getReporter().reportTallySubmitted(session, chatRef);
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
     }
 
@@ -519,7 +539,7 @@ async function handleAutoReply(sock, chatId, senderId, message, settingsParam) {
                 }, { quoted: message });
                 return;
             }
-        } 
+        }
         // Process Image Messages
         else if (hasImage) {
             try {
@@ -620,7 +640,7 @@ Never send catalog images if catalogImagesSent is true.`;
         if (aiResponse && !aiResponse.includes('unavailable')) {
             memory.history.push({ role: 'user', content: userMessage });
             memory.history.push({ role: 'assistant', content: aiResponse });
-            
+
             // strictly enforce last 20 messages limit
             if (memory.history.length > 20) {
                 memory.history = memory.history.slice(-20);
@@ -634,13 +654,13 @@ Never send catalog images if catalogImagesSent is true.`;
                     console.log(chalk.bold(chalk.green(`[DealClassifier] 🚨 HOT LEAD DETECTED for ${senderId}! Handing over to owner...`)));
                     try {
                         await sock.chatModify({ pin: true }, chatId);
-                        
+
                         // Alert the Owner
                         const ownerNum = (activeSettings.ownerNumber || '237653683174').replace(/[^0-9]/g, '') + '@s.whatsapp.net';
                         const alertMsg = `🚨 *HOT LEAD ALERT*\n\nA deal is closing or a prospect is ready to pay: ${senderId.split('@')[0]}\n\n*Name:* ${memory.name || 'Unknown'}\n*Business:* ${memory.businessType || 'Unknown'}\n*Pack:* ${memory.interestedPack || 'Unknown'}\n*Profile:* ${memory.longTermProfile || 'Unknown'}\n\n_⏸️ The AI has been paused for 10 minutes in this chat so you can intervene manually._`;
-                        
+
                         await sock.sendMessage(ownerNum, { text: alertMsg });
-                        
+
                         // Pause AI for 10 minutes
                         memory.aiPausedUntil = Date.now() + 10 * 60 * 1000;
                         await saveContactMemory(senderId, memory);
@@ -652,7 +672,7 @@ Never send catalog images if catalogImagesSent is true.`;
                                 const chatRef = extractChatRef(chatId, senderId);
                                 getReporter().reportDealClosed(session, chatRef, { pack: memory.interestedPack });
                             }
-                        } catch (_) {}
+                        } catch (_) { }
                     } catch (pinErr) {
                         console.error('[DealClassifier] Failed to pin or alert owner:', pinErr.message);
                     }
@@ -677,7 +697,7 @@ Never send catalog images if catalogImagesSent is true.`;
                                 interestedPack: result.memory.interestedPack,
                             });
                         }
-                    } catch (_) {}
+                    } catch (_) { }
                 }
             }).catch(err => {
                 console.error('[FactExtractor] Fact extraction failure:', err.message);
@@ -685,7 +705,7 @@ Never send catalog images if catalogImagesSent is true.`;
         }
 
         const replyText = aiResponse || activeSettings.autoReplyMessage || "Got your message. I'll get back to you shortly.";
-        
+
         // Human-realistic Typing Burst (2.0s - 5.5s right before message dispatch)
         const typingDurationMs = Math.min(5500, Math.max(2000, Math.floor((replyText?.length || 50) * 24)));
         await safePresence(sock, 'composing', chatId);
@@ -710,7 +730,7 @@ Never send catalog images if catalogImagesSent is true.`;
         }
 
         await sock.sendMessage(chatId, { text: replyText }, { quoted: message, _origin: 'davila' });
-        
+
         // Track bot response for security checks
         await securityManager.recordBotResponse(sock, senderId, senderName, activeSettings);
 
@@ -800,7 +820,7 @@ Never send catalog images if catalogImagesSent is true.`;
             await sock.sendMessage(chatId, {
                 text: activeSettings.autoReplyMessage || "hey, got your message — let me check on that and get back to you 👍"
             }, { quoted: message, _origin: 'davila' });
-            
+
             await securityManager.recordBotResponse(sock, senderId, senderName, activeSettings);
         } catch (fallbackErr) {
             console.error('[AutoReply] Fallback also failed:', fallbackErr.message);

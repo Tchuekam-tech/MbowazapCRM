@@ -192,3 +192,134 @@ describe('generateReply — Anthropic', () => {
     expect(body.messages).toHaveLength(1)
   })
 })
+
+describe('generateReply — Gemini', () => {
+  it('calls generateContent with x-goog-api-key, maps roles, strips thought parts, and normalizes usage', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        candidates: [
+          {
+            content: {
+              parts: [
+                { text: 'internal reasoning', thought: true },
+                { text: 'Bonjour! Comment puis-je vous aider?' },
+              ],
+            },
+          },
+        ],
+        usageMetadata: {
+          promptTokenCount: 25,
+          candidatesTokenCount: 12,
+          totalTokenCount: 37,
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        apiKey: 'AQ.key-1',
+      }),
+      systemPrompt: 'sys',
+      messages: [
+        { role: 'assistant', content: 'Welcome!' },
+        { role: 'user', content: 'Bonjour' },
+        { role: 'assistant', content: 'Salut' },
+        { role: 'user', content: 'Prix ?' },
+      ],
+    })
+
+    expect(res).toEqual({
+      text: 'Bonjour! Comment puis-je vous aider?',
+      handoff: false,
+      usage: { promptTokens: 25, completionTokens: 12, totalTokens: 37 },
+    })
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toContain(
+      'generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+    )
+    expect(opts.headers['x-goog-api-key']).toBe('AQ.key-1')
+    const body = JSON.parse(opts.body)
+    expect(body.systemInstruction).toEqual({ parts: [{ text: 'sys' }] })
+    expect(body.contents).toEqual([
+      { role: 'user', parts: [{ text: 'Bonjour' }] },
+      { role: 'model', parts: [{ text: 'Salut' }] },
+      { role: 'user', parts: [{ text: 'Prix ?' }] },
+    ])
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 })
+  })
+
+  it('detects handoff sentinel in Gemini output', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        okResponse({
+          candidates: [{ content: { parts: [{ text: '[[HANDOFF]]' }] } }],
+        }),
+      ),
+    )
+    const res = await generateReply({
+      config: config({
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        apiKey: 'AQ.key-1',
+      }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Speak to a human' }],
+    })
+    expect(res.handoff).toBe(true)
+    expect(res.text).toBe('')
+  })
+
+  it('maps a 401/403 to an invalid_key AiError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        errResponse(403, { error: { message: 'API key not valid' } }),
+      ),
+    )
+
+    await expect(
+      generateReply({
+        config: config({
+          provider: 'gemini',
+          model: 'gemini-2.5-flash',
+          apiKey: 'AQ.bad',
+        }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_key', status: 401 })
+  })
+
+  it('rotates to the second key when comma-separated keys are configured and key 1 returns 429', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        errResponse(429, { error: { message: 'Quota exceeded' } }),
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          candidates: [{ content: { parts: [{ text: 'Reply from key 2' }] } }],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        apiKey: 'AQ.key-1,AQ.key-2',
+      }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    expect(res.text).toBe('Reply from key 2')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][1].headers['x-goog-api-key']).toBe('AQ.key-1')
+    expect(fetchMock.mock.calls[1][1].headers['x-goog-api-key']).toBe('AQ.key-2')
+  })
+})

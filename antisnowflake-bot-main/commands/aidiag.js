@@ -104,9 +104,11 @@ async function handleAiDiagCommand(sock, chatId, message) {
         }
     }
 
-    // 3. Check Tchuekam Keys
-    diagnosticReport += `🛡️ *PROVIDER 3: TCHUEKAM*\n`;
+    // 3. Check Tchuekam / Gemini Keys
+    diagnosticReport += `🛡️ *PROVIDER 3: TCHUEKAM / GEMINI*\n`;
     let tchuekamKeys = [
+        { name: 'Primary (GEMINI_API_KEY)', key: process.env.GEMINI_API_KEY || settings.geminiApiKey },
+        { name: 'Secondary (GEMINI_API_KEY_2)', key: process.env.GEMINI_API_KEY_2 },
         { name: 'Primary (TCHUEKAM_API_KEY)', key: process.env.TCHUEKAM_API_KEY || settings.tchuekamApiKey },
         { name: 'Secondary (TCHUEKAM_API_KEY_2)', key: process.env.TCHUEKAM_API_KEY_2 },
         { name: 'Secondary (TCHUEKAM_API_2)', key: process.env.TCHUEKAM_API_2 },
@@ -123,20 +125,26 @@ async function handleAiDiagCommand(sock, chatId, message) {
 
     if (tchuekamKeys.length === 0) {
         diagnosticReport += `❌ Status: NOT CONFIGURED\n`;
-        diagnosticReport += `💡 Rationale: No Tchuekam API keys are available.\n\n`;
+        diagnosticReport += `💡 Rationale: No Tchuekam / Gemini API keys are available.\n\n`;
     } else {
         for (const { name, key } of tchuekamKeys) {
             diagnosticReport += `🔑 ${name}: DETECTED (${maskKey(key)})\n`;
             diagnosticReport += `📡 Testing Connection... `;
             try {
                 const start = Date.now();
-                const model = settings.tchuekamModel || 'gemini-2.0-flash';
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+                const model = settings.tchuekamModel || 'gemini-2.5-flash';
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'x-goog-api-key': key,
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: 'Ping' }] }],
-                        generationConfig: { maxOutputTokens: 5 }
+                        generationConfig: {
+                            maxOutputTokens: 5,
+                            ...(model.startsWith('gemini-2.5-flash') ? { thinkingConfig: { thinkingBudget: 0 } } : {})
+                        }
                     }),
                     signal: AbortSignal.timeout(6000)
                 });

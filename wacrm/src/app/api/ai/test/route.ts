@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { loadEnvGeminiConfig } from '@/lib/ai/config'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 
@@ -27,9 +28,13 @@ export async function POST(request: Request) {
     }
 
     const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
+    if (
+      provider !== 'openai' &&
+      provider !== 'anthropic' &&
+      provider !== 'gemini'
+    ) {
       return NextResponse.json(
-        { error: 'provider must be "openai" or "anthropic"' },
+        { error: 'provider must be "openai", "anthropic", or "gemini"' },
         { status: 400 },
       )
     }
@@ -47,18 +52,25 @@ export async function POST(request: Request) {
         .eq('account_id', accountId)
         .maybeSingle()
       if (!existing?.api_key) {
-        return NextResponse.json(
-          { error: 'Enter an API key to test.' },
-          { status: 400 },
-        )
-      }
-      try {
-        apiKeyPlain = decrypt(existing.api_key)
-      } catch {
-        return NextResponse.json(
-          { error: 'Stored API key could not be decrypted — re-enter your key.' },
-          { status: 400 },
-        )
+        const envConfig =
+          provider === 'gemini' ? loadEnvGeminiConfig() : null
+        if (envConfig?.apiKey) {
+          apiKeyPlain = envConfig.apiKey
+        } else {
+          return NextResponse.json(
+            { error: 'Enter an API key to test.' },
+            { status: 400 },
+          )
+        }
+      } else {
+        try {
+          apiKeyPlain = decrypt(existing.api_key)
+        } catch {
+          return NextResponse.json(
+            { error: 'Stored API key could not be decrypted — re-enter your key.' },
+            { status: 400 },
+          )
+        }
       }
     }
 

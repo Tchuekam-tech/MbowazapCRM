@@ -116,7 +116,12 @@ async function callTchuekam(apiKey, prompt, systemPrompt) {
     if (!apiKey) {
         throw new Error('Tchuekam API key is not configured');
     }
-    const model = settings.tchuekamModel || 'gemini-2.0-flash';
+    const model = settings.tchuekamModel || 'gemini-2.5-flash';
+    const generationConfig = {
+        maxOutputTokens: 500,
+        temperature: 0.9,
+        ...(model.startsWith('gemini-2.5-flash') ? { thinkingConfig: { thinkingBudget: 0 } } : {})
+    };
     const requestBody = {
         contents: [{
             role: 'user',
@@ -125,19 +130,17 @@ async function callTchuekam(apiKey, prompt, systemPrompt) {
         systemInstruction: systemPrompt ? {
             parts: [{ text: systemPrompt }]
         } : undefined,
-        generationConfig: {
-            maxOutputTokens: 300,
-            temperature: 0.9
-        }
+        generationConfig
     };
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: 'POST',
         headers: {
+            'x-goog-api-key': apiKey,
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody),
-        signal: AbortSignal.timeout(10000) // 10s timeout for fallback
+        signal: AbortSignal.timeout(15000)
     });
 
     const data = await response.json().catch(() => null);
@@ -145,7 +148,12 @@ async function callTchuekam(apiKey, prompt, systemPrompt) {
         throw { status: response.status, data, message: data?.error?.message || `Tchuekam HTTP ${response.status}` };
     }
 
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    return parts
+        .filter(p => typeof p.text === 'string' && !p.thought)
+        .map(p => p.text)
+        .join('')
+        .trim();
 }
 
 /**
@@ -242,13 +250,13 @@ async function tryProvider(providerName, prompt, systemPrompt) {
                 log(`${providerName} key [${keyIndex + 1}/${uniqueKeys.length}] attempt ${attempt + 1} failed | Status: ${status} | Error: ${errorMsg}`, 'warning');
 
                 // Immediate key failover trigger: if auth error, rate limit/quota error, insufficient balance, or model decommissioned, do not retry this key
-                const isImmediateFailover = status === 429 || status === 401 || status === 403 || status === 402 ||
+                const isImmediateFailover = status === 429 || status === 401 || status === 403 || status === 402 || status === 404 ||
                                             errorLower.includes('quota') || errorLower.includes('limit') || 
                                             errorLower.includes('key') || errorLower.includes('unauthorized') || 
                                             errorLower.includes('rate_limit') || errorLower.includes('exhausted') || 
                                             errorLower.includes('exceeded') || errorLower.includes('timeout') ||
                                             errorLower.includes('invalid') || errorLower.includes('balance') ||
-                                            errorLower.includes('insufficient');
+                                            errorLower.includes('insufficient') || errorLower.includes('no longer available');
 
                 if (isImmediateFailover) {
                     log(`${providerName} key [${keyIndex + 1}] hit immediate failover trigger (Status: ${status}). Rotating to next key...`, 'error');

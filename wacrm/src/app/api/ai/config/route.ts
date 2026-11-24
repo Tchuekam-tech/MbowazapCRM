@@ -6,6 +6,7 @@ import {
 } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { loadEnvGeminiConfig } from '@/lib/ai/config'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { AiError, type AiProvider } from '@/lib/ai/types'
@@ -43,7 +44,22 @@ export async function GET() {
       )
     }
 
-    if (!data) return NextResponse.json({ configured: false })
+    if (!data) {
+      const envConfig = loadEnvGeminiConfig()
+      if (!envConfig) return NextResponse.json({ configured: false })
+      return NextResponse.json({
+        configured: true,
+        has_key: true,
+        has_embeddings_key: false,
+        provider: envConfig.provider,
+        model: envConfig.model,
+        system_prompt: envConfig.systemPrompt,
+        is_active: envConfig.isActive,
+        auto_reply_enabled: envConfig.autoReplyEnabled,
+        auto_reply_max_per_conversation: envConfig.autoReplyMaxPerConversation,
+        handoff_agent_id: envConfig.handoffAgentId,
+      })
+    }
     // The keys are selected only to derive the has_* flags; neither is
     // returned to the client.
     const { api_key, embeddings_api_key, ...safe } = data
@@ -78,8 +94,12 @@ export async function POST(request: Request) {
     if (!body || typeof body !== 'object') return bad('Invalid request body')
 
     const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
-      return bad('provider must be "openai" or "anthropic"')
+    if (
+      provider !== 'openai' &&
+      provider !== 'anthropic' &&
+      provider !== 'gemini'
+    ) {
+      return bad('provider must be "openai", "anthropic", or "gemini"')
     }
     const model = typeof body.model === 'string' ? body.model.trim() : ''
     if (!model) return bad('model is required')

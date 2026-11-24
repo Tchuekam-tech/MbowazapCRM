@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import type { AiConfig } from './types'
+import { AI_PROVIDER_DEFAULT_MODEL } from './defaults'
+import type { AiConfig, AiProvider } from './types'
 
 interface AiConfigRow {
-  provider: 'openai' | 'anthropic'
+  provider: AiProvider
   model: string
   api_key: string
   system_prompt: string | null
@@ -16,6 +17,31 @@ interface AiConfigRow {
 
 const CONFIG_COLUMNS =
   'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key'
+
+/**
+ * Build a fallback Gemini `AiConfig` from environment variables
+ * (`GEMINI_API_KEY` / `GEMINI_API_KEY_2`) when an account has no row in
+ * `ai_configs` yet. Returns `null` when no Gemini env key is set.
+ */
+export function loadEnvGeminiConfig(): AiConfig | null {
+  const keys = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2]
+    .map((v) => v?.trim() ?? '')
+    .filter(Boolean)
+  const uniqueKeys = [...new Set(keys)]
+  if (uniqueKeys.length === 0) return null
+
+  return {
+    provider: 'gemini',
+    model: process.env.GEMINI_MODEL?.trim() || AI_PROVIDER_DEFAULT_MODEL.gemini,
+    apiKey: uniqueKeys.join(','),
+    systemPrompt: process.env.AI_SYSTEM_PROMPT?.trim() || null,
+    isActive: true,
+    autoReplyEnabled: process.env.AI_AUTO_REPLY_ENABLED !== 'false',
+    autoReplyMaxPerConversation: 10,
+    handoffAgentId: null,
+    embeddingsApiKey: null,
+  }
+}
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -41,7 +67,7 @@ export async function loadAiConfig(
     .maybeSingle()
 
   if (error) throw error
-  if (!data) return null
+  if (!data) return loadEnvGeminiConfig()
 
   const row = data as AiConfigRow
   // The Playground passes requireActive:false so an admin can test the
