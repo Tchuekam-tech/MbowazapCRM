@@ -92,3 +92,46 @@ export function computeLeadScore(input: LeadScoreInput): ComputedLeadScore {
       signals.push({ label: 'Dormant for 60+ days', points: -12, category: 'risk' });
     }
   }
+
+  // 2. Engagement depth (up to +20)
+  if (input.inboundMessageCount >= 5) {
+    score += 20;
+    signals.push({
+      label: `Deep engagement (${input.inboundMessageCount} customer messages)`,
+      points: 20,
+      category: 'engagement',
+    });
+  } else if (input.inboundMessageCount >= 2) {
+    score += 12;
+    signals.push({
+      label: `Two-way conversation (${input.inboundMessageCount} messages)`,
+      points: 12,
+      category: 'engagement',
+    });
+  } else if (input.inboundMessageCount === 1) {
+    score += 6;
+    signals.push({ label: 'Initiated conversation', points: 6, category: 'engagement' });
+  }
+
+  // 3. Multilingual buying intent (up to +32)
+  const corpus = input.recentCustomerTexts.join('\n');
+  let intentPts = 0;
+  let primaryIntent = 'General Inquiry';
+  for (const rule of HIGH_BUY_INTENT_PATTERNS) {
+    if (rule.re.test(corpus)) {
+      const add = Math.min(rule.pts, Math.max(0, 32 - intentPts));
+      if (add > 0) {
+        intentPts += add;
+        score += add;
+        signals.push({ label: rule.label, points: add, category: 'intent' });
+      }
+      if (primaryIntent === 'General Inquiry') {
+        primaryIntent =
+          rule.pts >= 20
+            ? 'Ready to Buy'
+            : rule.pts >= 15
+              ? 'Pricing Inquiry'
+              : 'Promo / Demo Interest';
+      }
+    }
+  }
