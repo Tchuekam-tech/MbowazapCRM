@@ -1,0 +1,105 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account';
+import {
+  aiDeepAnalyzeContact,
+  recomputeAccountLeadScores,
+} from '@/lib/marketing/lead-scoring';
+
+export const dynamic = 'force-dynamic';
+
+/**
+ * GET /api/marketing/leads
+ * - Optional `?contactId=<uuid>` returns a single contact's score (computing on demand if absent)
+ * - Optional `?tier=hot|warm|cold` filters the account leaderboard
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const ctx = await getCurrentAccount();
+    const contactId = request.nextUrl.searchParams.get('contactId');
+    const tier = request.nextUrl.searchParams.get('tier');
+
+    if (contactId) {
+      const { data: existing } = await ctx.supabase
+        .from('contact_lead_scores')
+        .select('*')
+        .eq('account_id', ctx.accountId)
+        .eq('contact_id', contactId)
+        .maybeSingle();
+
+      if (!existing) {
+        await recomputeAccountLeadScores(ctx.supabase, ctx.accountId, {
+          contactId,
+          limit: 1,
+        }).catch(() => {});
+        const { data: fresh } = await ctx.supabase
+          .from('contact_lead_scores')
+          .select('*')
+          .eq('account_id', ctx.accountId)
+          .eq('contact_id', contactId)
+          .maybeSingle();
+        return NextResponse.json({ lead: fresh ?? null });
+      }
+      return NextResponse.json({ lead: existing });
+    }
+
+    let query = ctx.supabase
+      .from('contact_lead_scores')
+      .select(
+        '*, contact:contacts(id, name, phone, company, email, utm_source, utm_campaign)'
+      )
+      .eq('account_id', ctx.accountId)
+      .order('score', { ascending: false })
+      .limit(100);
+
+    if (tier && ['hot', 'warm', 'cold'].includes(tier)) {
+      query = query.eq('tier', tier);
+    }
+
+    const { data, error } = await query;
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    const leads = (data ?? []).map((row: Record<string, unknown>) => ({
+      ...row,
+      contact: Array.isArray(row.contact) ? row.contact[0] : row.contact,
+    }));
+
+    return NextResponse.json({ leads });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
+/**
+ * POST /api/marketing/leads
+ * - `{ action: 'recompute' }` recomputes scores across contacts
+ * - `{ action: 'analyze', contact_id }` runs AI deep intent analysis on one lead
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const ctx = await requireRole('agent');
+    const body = await request.json().catch(() => ({}));
+    const action = typeof body.action === 'string' ? body.action : 'recompute';
+
+    if (action === 'analyze' && typeof body.contact_id === 'string') {
+      const insight = await aiDeepAnalyzeContact(
+        ctx.supabase,
+        ctx.accountId,
+        body.contact_id
+      );
+      const { data: lead } = await ctx.supabase
+        .from('contact_lead_scores')
+        .select('*')
+        .eq('account_id', ctx.accountId)
+        .eq('contact_id', body.contact_id)
+        .maybeSingle();
+      return NextResponse.json({ ok: true, insight, lead });
+    }
+
+    const updated = await recomputeAccountLeadScores(ctx.supabase, ctx.accountId, {
+      limit: 300,
+    });
+    return NextResponse.json({ ok: true, updated });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
