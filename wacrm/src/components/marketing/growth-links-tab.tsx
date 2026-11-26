@@ -173,3 +173,16 @@ export function GrowthLinksTab({
             </p>
           </div>
         </div>
+
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="gl-name" className="text-xs">Campaign Name</Label>
+            <Input
+              id="gl-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Instagram Bio Flash Offer"
+              className="mt-1"
+              required
+            />
+          </div>
