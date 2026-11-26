@@ -408,3 +408,33 @@ export async function recomputeAccountLeadScores(
     arr.push(tagObj.name);
     tagsByContact.set(row.contact_id, arr);
   }
+
+  const nowIso = new Date().toISOString();
+  const upserts = contacts.map((c) => {
+    const cid = c.id as string;
+    const m = msgsByContact.get(cid) ?? { inbound: 0, outbound: 0, texts: [] };
+    const d = dealsByContact.get(cid) ?? { open: 0, openVal: 0, won: 0 };
+    const computed = computeLeadScore({
+      inboundMessageCount: m.inbound,
+      outboundMessageCount: m.outbound,
+      recentCustomerTexts: m.texts,
+      lastMessageAt: lastMsgByContact.get(cid) ?? null,
+      openDealsCount: d.open,
+      openDealsValue: d.openVal,
+      wonDealsCount: d.won,
+      tagNames: tagsByContact.get(cid) ?? [],
+      hasGrowthAttribution: Boolean(c.utm_source || c.growth_link_id),
+    });
+    return {
+      contact_id: cid,
+      account_id: accountId,
+      score: computed.score,
+      tier: computed.tier,
+      intent_label: computed.intentLabel,
+      signals: computed.signals,
+      next_best_action: computed.nextBestAction,
+      last_message_at: lastMsgByContact.get(cid) ?? null,
+      computed_at: nowIso,
+      updated_at: nowIso,
+    };
+  });
