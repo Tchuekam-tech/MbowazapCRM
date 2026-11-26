@@ -77,3 +77,23 @@ CREATE TABLE IF NOT EXISTS buffer_channels (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (account_id, buffer_channel_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_buffer_channels_account_service
+  ON buffer_channels (account_id, service);
+
+ALTER TABLE buffer_channels ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS set_updated_at ON buffer_channels;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON buffer_channels
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP POLICY IF EXISTS "buffer_channels_select" ON buffer_channels;
+CREATE POLICY "buffer_channels_select" ON buffer_channels
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "buffer_channels_write" ON buffer_channels;
+CREATE POLICY "buffer_channels_write" ON buffer_channels
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
+
+-- 3. Synced social posts & normalized engagement metrics from Buffer
