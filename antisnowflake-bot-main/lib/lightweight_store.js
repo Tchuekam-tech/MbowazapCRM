@@ -159,6 +159,8 @@ const store = {
             chats.forEach(chat => {
                 this.chats[chat.id] = { id: chat.id, subject: chat.subject || '' }
             })
+            pruneMapCap(this.chats, MAX_CHATS)
+            this._dirty = true
         })
     },
 
@@ -166,18 +168,17 @@ const store = {
         return this.messages[jid]?.find(m => m.key.id === id) || null
     },
 
-    // Get store statistics
     getStats() {
         let totalMessages = 0
-        let totalContacts = Object.keys(this.contacts).length
-        let totalChats = Object.keys(this.chats).length
-        
+        const totalContacts = Object.keys(this.contacts).length
+        const totalChats = Object.keys(this.chats).length
+
         Object.values(this.messages).forEach(chatMessages => {
             if (Array.isArray(chatMessages)) {
                 totalMessages += chatMessages.length
             }
         })
-        
+
         return {
             messages: totalMessages,
             contacts: totalContacts,
