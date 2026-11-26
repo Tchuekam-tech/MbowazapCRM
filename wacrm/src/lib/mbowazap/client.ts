@@ -321,3 +321,112 @@ export function createMbowazapClient({
     ping: () => call('GET', BOT_PATHS.ping, undefined, DEFAULT_TIMEOUT_MS),
 
     metrics: () => call('GET', BOT_PATHS.metrics, undefined, 5_000),
+
+    pair: async (request) => {
+      const result = await call<PairResult>(
+        'POST',
+        BOT_PATHS.pair,
+        request,
+        PAIRING_TIMEOUT_MS
+      );
+      if (result && typeof result === 'object' && 'qr' in result && result.qr !== undefined) {
+        const safeQr = normalizeQrDataUrl(result.qr);
+        if (!safeQr) {
+          throw new MbowazapBridgeError(
+            'bad_response',
+            'TchuekBot returned an invalid QR image payload'
+          );
+        }
+        return { ...result, qr: safeQr };
+      }
+      return result;
+    },
+
+    getPairing: async (pairingRef) => {
+      if (!PAIRING_REF_PATTERN.test(pairingRef)) {
+        throw new MbowazapBridgeError(
+          'invalid_request',
+          'pairingRef must be a valid UUID'
+        );
+      }
+      return call(
+        'GET',
+        BOT_PATHS.pairing(pairingRef),
+        undefined,
+        DEFAULT_TIMEOUT_MS
+      );
+    },
+
+    cancelPairing: (request) => call('POST', BOT_PATHS.cancelPairing, request, DEFAULT_TIMEOUT_MS),
+
+    getSession: async (session) => {
+      assertSession(session, { allowTempQr: true });
+      return call(
+        'GET',
+        BOT_PATHS.session(session),
+        undefined,
+        DEFAULT_TIMEOUT_MS
+      );
+    },
+
+    logout: async (session) => {
+      assertSession(session);
+      return call(
+        'POST',
+        BOT_PATHS.logout(session),
+        undefined,
+        DEFAULT_TIMEOUT_MS
+      );
+    },
+
+    setBrain: async (session, davila) => {
+      assertSession(session);
+      return call(
+        'PUT',
+        BOT_PATHS.brain(session),
+        { davila },
+        DEFAULT_TIMEOUT_MS
+      );
+    },
+
+    send: (request) => call('POST', BOT_PATHS.send, request, SLOW_TIMEOUT_MS),
+
+    react: (request) => call('POST', BOT_PATHS.react, request, SLOW_TIMEOUT_MS),
+
+    setContactAi: async (contact, request) => {
+      if (!CONTACT_PATTERN.test(contact)) {
+        throw new MbowazapBridgeError(
+          'invalid_request',
+          'contact must be 5-20 digits'
+        );
+      }
+      return call(
+        'PUT',
+        BOT_PATHS.contactAi(contact),
+        request,
+        DEFAULT_TIMEOUT_MS
+      );
+    },
+
+    presence: async (request) => {
+      assertSession(request.session);
+      return call(
+        'POST',
+        BOT_PATHS.presence,
+        request,
+        PRESENCE_TIMEOUT_MS
+      );
+    },
+  };
+}
+
+/** A client configured from MBOWAZAP_BOT_URL + MBOWAZAP_SECRET. */
+export function getMbowazapClient(
+  source: Record<string, string | undefined> = process.env
+): MbowazapClient {
+  const result = readMbowazapEnv(source);
+  if (!result.ok) {
+    throw new MbowazapBridgeError('not_configured', result.problems.join('; '));
+  }
+  return createMbowazapClient(result.env);
+}
