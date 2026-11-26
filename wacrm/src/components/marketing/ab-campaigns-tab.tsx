@@ -438,3 +438,23 @@ export function AbCampaignsTab({
                 )}
               </div>
               <Textarea
+                value={bodyB}
+                onChange={(e) => setBodyB(e.target.value)}
+                rows={4}
+                placeholder="Variant B WhatsApp message..."
+                className="text-xs"
+                required
+              />
+              {lintB && lintB.warnings.length > 0 && (
+                <p className="text-[10px] text-amber-400">{lintB.warnings[0]}</p>
+              )}
+            </div>
+          </div>
+
+          <Button type="submit" disabled={!canEdit || creating} className="w-full">
+            {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FlaskConical className="mr-2 h-4 w-4" />}
+            Create A/B Split-Test Campaign
+          </Button>
+        </form>
+      </div>
+
