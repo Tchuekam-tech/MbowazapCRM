@@ -141,3 +141,22 @@ export function extractNormalizedPostMetrics(metrics: BufferPostMetricItem[]): {
       clicks += Math.round(val);
     }
   }
+
+  const totalEngagements = reactions + comments + shares + clicks;
+  return {
+    impressions,
+    reach: reach || impressions,
+    reactions,
+    comments,
+    shares,
+    clicks,
+    totalEngagements,
+  };
+}
+
+export function createBufferClient(opts: BufferClientOptions) {
+  const endpoint = opts.endpoint ?? BUFFER_GRAPHQL_ENDPOINT;
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const token = opts.apiKey.trim();
+
