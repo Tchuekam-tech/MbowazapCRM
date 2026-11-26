@@ -404,3 +404,17 @@ export function LeadSegmentsTab({
                   value={minScore}
                   onChange={(e) => setMinScore(e.target.value)}
                   placeholder="60"
+                  className="mt-1 text-xs"
+                />
+              </div>
+              <div>
+                <Label htmlFor="seg-utm" className="text-xs">UTM Source</Label>
+                <Input
+                  id="seg-utm"
+                  value={utmSource}
+                  onChange={(e) => setUtmSource(e.target.value)}
+                  placeholder="instagram"
+                  className="mt-1 text-xs"
+                />
+              </div>
+            </div>
