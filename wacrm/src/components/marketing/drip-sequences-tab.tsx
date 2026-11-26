@@ -211,3 +211,33 @@ export function DripSequencesTab({
             </p>
           </div>
         </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="drip-name" className="text-xs">Sequence Name</Label>
+            <Input
+              id="drip-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. 5-Day VIP Lead Nurture"
+              className="mt-1"
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="drip-seg" className="text-xs">Target Smart Segment</Label>
+            <select
+              id="drip-seg"
+              value={segmentId}
+              onChange={(e) => setSegmentId(e.target.value)}
+              className="mt-1 h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground"
+            >
+              <option value="">Choose segment later</option>
+              {segments.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.cached_count})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
