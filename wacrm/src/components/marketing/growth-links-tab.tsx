@@ -403,3 +403,18 @@ export function GrowthLinksTab({
           })
         )}
       </div>
+
+      {/* QR Code Preview & Download Dialog */}
+      <Dialog open={Boolean(qrLink)} onOpenChange={(o) => !o && setQrLink(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{qrLink?.name}</DialogTitle>
+            <DialogDescription>
+              Scan to open WhatsApp with your tracked pre-filled message.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-3 py-2">
+            <div
+              className="rounded-xl border border-border bg-white p-3 shadow-sm"
+              dangerouslySetInnerHTML={{ __html: qrSvg }}
+            />
