@@ -255,3 +255,42 @@ export async function POST(request: NextRequest) {
         const j = Math.floor(Math.random() * (i + 1));
         [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
       }
+
+      const holdoutPct = Number(campaign.holdout_percent ?? 0);
+      const splitRatio = Number(campaign.split_ratio ?? 50);
+      const testCount = Math.max(
+        Math.min(2, shuffled.length),
+        Math.round((shuffled.length * (100 - holdoutPct)) / 100)
+      );
+      const countA = Math.max(1, Math.round((testCount * splitRatio) / 100));
+
+      const planRows = shuffled.map((cid, idx) => {
+        if (idx < countA) {
+          return {
+            campaign_id: campaignId,
+            variant_id: variantA.id,
+            account_id: ctx.accountId,
+            contact_id: cid,
+            variant_key: 'A' as const,
+            status: 'pending' as const,
+          };
+        }
+        if (idx < testCount) {
+          return {
+            campaign_id: campaignId,
+            variant_id: variantB.id,
+            account_id: ctx.accountId,
+            contact_id: cid,
+            variant_key: 'B' as const,
+            status: 'pending' as const,
+          };
+        }
+        return {
+          campaign_id: campaignId,
+          variant_id: null,
+          account_id: ctx.accountId,
+          contact_id: cid,
+          variant_key: 'holdout' as const,
+          status: 'pending' as const,
+        };
+      });
