@@ -563,3 +563,29 @@ export function OmnichannelPresenceTab({
               {report.audit.usedAi ? 'AI Strategist' : 'Omnichannel Diagnostic'} ·{' '}
               {new Date(report.audit.generatedAt).toLocaleString()}
             </span>
+          </div>
+          <p className="text-xs leading-relaxed text-foreground/90">
+            {report.audit.executiveSummary}
+          </p>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-1.5 rounded-lg bg-card/80 p-3">
+              <p className="text-xs font-semibold text-emerald-400">Strengths</p>
+              <ul className="space-y-1 text-xs text-muted-foreground">
+                {report.audit.strengths.map((s, i) => (
+                  <li key={i}>• {s}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="space-y-1.5 rounded-lg bg-card/80 p-3">
+              <p className="text-xs font-semibold text-amber-400">Blind Spots & Leaks</p>
+              <ul className="space-y-1 text-xs text-muted-foreground">
+                {report.audit.blindSpots.map((b, i) => (
+                  <li key={i}>• {b}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          {report.audit.actionPlan.length > 0 && (
+            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+              {report.audit.actionPlan.map((act, i) => (
+                <div key={i} className="rounded-lg border border-border bg-card p-3">
