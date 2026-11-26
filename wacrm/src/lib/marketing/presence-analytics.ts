@@ -260,3 +260,39 @@ export function computeDigitalPresenceReport(
       actionType: 'launch_ab_test',
     });
   }
+
+  return {
+    connected: Boolean(integration && integration.status !== 'disconnected'),
+    integration,
+    presenceScore,
+    scoreBreakdown: {
+      channelCoverage,
+      publishingConsistency,
+      audienceEngagement,
+      whatsappConversionBridge,
+    },
+    totals: {
+      connectedChannels: channelMetrics.length,
+      activeServices,
+      sentPosts30d,
+      scheduledQueueTotal,
+      impressions: totalImpressions,
+      reach: totalReach,
+      engagements: totalEngagements,
+      avgEngagementRate,
+      socialDrivenWaClicks,
+      socialDrivenWaLeads,
+      socialDrivenRevenue,
+      postsWithGrowthLinks,
+    },
+    channels: channelMetrics,
+    topPosts,
+    upcomingQueue,
+    recommendations: recommendations.slice(0, 6),
+    audit: integration?.ai_audit_summary ?? null,
+  };
+}
+
+/**
+ * Loads the complete cached Digital Presence report in one parallel DB pass.
+ */
