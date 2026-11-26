@@ -111,22 +111,25 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     expect(res.cookies.get(ROTATED.name)?.value).toBe(ROTATED.value);
   });
 
-  it("redirects unauthenticated visitors on /flows, /agents, and /notifications to /login", async () => {
+  it("redirects unauthenticated visitors on /flows, /agents, /marketing, and /notifications to /login", async () => {
     mockUser = null;
-    for (const path of ["/flows", "/agents", "/notifications"]) {
+    for (const path of ["/flows", "/agents", "/marketing", "/notifications"]) {
       const res = await middleware(new NextRequest(`https://app.test${path}`));
       expect(res.status).toBe(307);
       expect(res.headers.get("location")).toContain("/login");
     }
   });
 
-  it("bypasses middleware session check for /api/health, /api/mbowazap/events, and /api/mbowazap/media", async () => {
+  it("bypasses middleware session check for /api/health, /go/*, cron, and /api/mbowazap/*", async () => {
     mockUser = null;
     for (const path of [
       "/api/health",
       "/api/mbowazap/events",
       "/api/mbowazap/media",
       "/api/mbowazap/media/123",
+      "/go/flash-offer",
+      "/api/cron/tick",
+      "/api/marketing/sequences/cron",
     ]) {
       const res = await middleware(new NextRequest(`https://app.test${path}`));
       expect(res.status).toBe(200);

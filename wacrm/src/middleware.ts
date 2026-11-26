@@ -3,13 +3,16 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
-  // Explicitly bypass session middleware for health checks and MboWazap
-  // bot-to-CRM HMAC endpoints (/events and /media) so unauthenticated bots
-  // can push signed events and upload large media without buffering.
+  // Explicitly bypass session middleware for health checks, public
+  // Click-to-WhatsApp growth links (/go/*), cron endpoints (protected
+  // by x-cron-secret), and MboWazap bot-to-CRM HMAC endpoints.
   if (
     pathname === '/api/health' ||
     pathname === '/api/mbowazap/events' ||
-    pathname.startsWith('/api/mbowazap/media')
+    pathname.startsWith('/api/mbowazap/media') ||
+    pathname.startsWith('/go/') ||
+    pathname === '/api/cron/tick' ||
+    pathname === '/api/marketing/sequences/cron'
   ) {
     return NextResponse.next()
   }
@@ -86,13 +89,14 @@ export async function middleware(request: NextRequest) {
   const protectedPaths = [
     '/dashboard',
     '/inbox',
+    '/notifications',
     '/contacts',
     '/pipelines',
     '/broadcasts',
+    '/marketing',
     '/automations',
     '/flows',
     '/agents',
-    '/notifications',
     '/settings',
   ]
   if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
@@ -123,9 +127,8 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // api/health, api/mbowazap/events, and api/mbowazap/media are excluded:
-    // TchuekBot authenticates those with an HMAC signature rather than a
-    // user session, and running the proxy would buffer large media uploads.
-    '/((?!_next/static|_next/image|favicon.ico|api/health|api/mbowazap/events|api/mbowazap/media|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // api/health, api/mbowazap/events, api/mbowazap/media, /go/* growth
+    // redirects, and cron endpoints are excluded for zero-overhead latency.
+    '/((?!_next/static|_next/image|favicon.ico|api/health|api/mbowazap/events|api/mbowazap/media|api/cron/tick|api/marketing/sequences/cron|go/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

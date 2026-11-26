@@ -152,10 +152,38 @@ export interface MbowazapClientOptions {
   fetchImpl?: typeof fetch;
   /** ms since epoch; injectable for tests. */
   now?: () => number;
+  /** Enable per-client circuit breaker (defaults true). */
+  circuitBreaker?: {
+    failureThreshold?: number;
+    cooldownMs?: number;
+  };
+}
+
+export interface BotRuntimeMetrics {
+  uptimeSeconds: number;
+  memoryMb: {
+    rss: number;
+    heapUsed: number;
+    heapTotal: number;
+  };
+  eventLoopLagMs: {
+    mean: number;
+    p95: number;
+    max: number;
+  };
+  activeSockets: number;
+  connectedSockets: number;
+  outboxPendingBatches: number;
+  storeStats: {
+    messages: number;
+    contacts: number;
+    chats: number;
+  };
 }
 
 export interface MbowazapClient {
   ping(): Promise<{ protocol: string; time: number }>;
+  metrics(): Promise<BotRuntimeMetrics>;
   pair(request: PairRequest): Promise<PairResult>;
   getPairing(pairingRef: string): Promise<PairingInfo>;
   cancelPairing(request: PairRequest): Promise<{ cancelled: boolean }>;
@@ -197,20 +225,35 @@ export function createMbowazapClient({
   secret,
   fetchImpl = fetch,
   now = Date.now,
+  circuitBreaker,
 }: MbowazapClientOptions): MbowazapClient {
+  const failureThreshold = circuitBreaker?.failureThreshold ?? 4;
+  const cooldownMs = circuitBreaker?.cooldownMs ?? 15_000;
+  let consecutiveFailures = 0;
+  let circuitOpenUntil = 0;
+
   async function call<T>(
     method: 'GET' | 'POST' | 'PUT',
     path: string,
     body: unknown,
     timeoutMs: number
   ): Promise<T> {
+    const nowMs = now();
+    if (circuitOpenUntil > nowMs && path !== BOT_PATHS.ping) {
+      const waitSec = Math.max(1, Math.ceil((circuitOpenUntil - nowMs) / 1000));
+      throw new MbowazapBridgeError(
+        'network_error',
+        `TchuekBot circuit breaker open after repeated transport failures; retrying in ${waitSec}s`
+      );
+    }
+
     const raw = body === undefined ? '' : JSON.stringify(body);
     const headers = signBridgeRequest({
       method,
       pathAndQuery: path,
       body: raw,
       secret,
-      nowSeconds: Math.floor(now() / 1000),
+      nowSeconds: Math.floor(nowMs / 1000),
     });
 
     let res: Response;
@@ -223,6 +266,10 @@ export function createMbowazapClient({
         cache: 'no-store',
       });
     } catch (err) {
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= failureThreshold) {
+        circuitOpenUntil = now() + cooldownMs;
+      }
       const name = err instanceof Error ? err.name : '';
       if (name === 'TimeoutError' || name === 'AbortError') {
         throw new MbowazapBridgeError(
@@ -235,6 +282,10 @@ export function createMbowazapClient({
         `Could not reach TchuekBot: ${err instanceof Error ? err.message : String(err)}`
       );
     }
+
+    // Reachable server — reset transport failure counter.
+    consecutiveFailures = 0;
+    circuitOpenUntil = 0;
 
     let payload: unknown;
     try {
@@ -268,6 +319,8 @@ export function createMbowazapClient({
 
   return {
     ping: () => call('GET', BOT_PATHS.ping, undefined, DEFAULT_TIMEOUT_MS),
+
+    metrics: () => call('GET', BOT_PATHS.metrics, undefined, 5_000),
 
     pair: async (request) => {
       const result = await call<PairResult>(

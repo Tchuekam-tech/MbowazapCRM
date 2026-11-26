@@ -29,6 +29,7 @@ import {
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
+import { mapWithConcurrency } from '@/lib/server/concurrency';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -264,11 +265,13 @@ export async function createBroadcast(
  * here — only the terminal `status` — otherwise a manual value would
  * race and clobber the trigger-maintained counts.
  */
+const BROADCAST_CONCURRENCY = 5;
+
 export async function deliverBroadcast(
   db: SupabaseClient,
   plan: BroadcastPlan
 ): Promise<void> {
-  for (const recipient of plan.planned) {
+  await mapWithConcurrency(plan.planned, BROADCAST_CONCURRENCY, async (recipient) => {
     const variants = phoneVariants(recipient.phone);
     let sentMessageId: string | null = null;
     let lastError: string | null = null;
@@ -314,7 +317,7 @@ export async function deliverBroadcast(
         })
         .eq('id', recipient.recipientRowId);
     }
-  }
+  });
 
   await finalizeBroadcastStatus(db, plan.broadcastId);
 }

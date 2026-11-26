@@ -33,6 +33,39 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
   const todayStart = startOfLocalDay().toISOString()
   const yesterdayStart = daysAgoStart(1).toISOString()
 
+  // Fast path: single-roundtrip SQL RPC (migration 050). Falls back
+  // transparently to parallel PostgREST queries on older schemas.
+  try {
+    const { data: rpcData, error: rpcErr } = await db.rpc(
+      'get_dashboard_metrics_fast',
+      {
+        p_today_start: todayStart,
+        p_yesterday_start: yesterdayStart,
+      },
+    )
+    if (!rpcErr && rpcData && typeof rpcData === 'object') {
+      const m = rpcData as Record<string, number>
+      return {
+        activeConversations: {
+          current: Number(m.open_conv_cur ?? 0),
+          previous: Number(m.new_conv_today ?? 0) - Number(m.new_conv_yesterday ?? 0),
+        },
+        newContactsToday: {
+          current: Number(m.new_contacts_today ?? 0),
+          previous: Number(m.new_contacts_yesterday ?? 0),
+        },
+        openDealsValue: Number(m.open_deals_value ?? 0),
+        openDealsCount: Number(m.open_deals_count ?? 0),
+        messagesSentToday: {
+          current: Number(m.messages_today ?? 0),
+          previous: Number(m.messages_yesterday ?? 0),
+        },
+      }
+    }
+  } catch {
+    // Fall back to standard client-side aggregation below.
+  }
+
   const [
     openConvCur,
     newConvToday,
@@ -106,16 +139,37 @@ export async function loadConversationsSeries(
   rangeDays: number,
 ): Promise<ConversationsSeriesPoint[]> {
   const start = daysAgoStart(rangeDays - 1).toISOString()
+  const keys = lastNDayKeys(rangeDays)
+  const buckets = new Map<string, { incoming: number; outgoing: number }>()
+  for (const k of keys) buckets.set(k, { incoming: 0, outgoing: 0 })
+
+  // Fast path: aggregate inside Postgres (migration 050) instead of
+  // shipping thousands of raw message rows over the network.
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    const { data: rpcRows, error: rpcErr } = await db.rpc(
+      'get_conversations_series_fast',
+      { p_start: start, p_tz: tz },
+    )
+    if (!rpcErr && Array.isArray(rpcRows)) {
+      for (const row of rpcRows as { day: string; incoming: number; outgoing: number }[]) {
+        const bucket = buckets.get(row.day)
+        if (!bucket) continue
+        bucket.incoming = Number(row.incoming ?? 0)
+        bucket.outgoing = Number(row.outgoing ?? 0)
+      }
+      return keys.map((day) => ({ day, ...(buckets.get(day) ?? { incoming: 0, outgoing: 0 }) }))
+    }
+  } catch {
+    // Fall back to client-side scan below.
+  }
+
   const { data, error } = await db
     .from('messages')
     .select('created_at, sender_type')
     .gte('created_at', start)
     .order('created_at', { ascending: true })
   if (error) throw error
-
-  const keys = lastNDayKeys(rangeDays)
-  const buckets = new Map<string, { incoming: number; outgoing: number }>()
-  for (const k of keys) buckets.set(k, { incoming: 0, outgoing: 0 })
 
   for (const row of (data ?? []) as { created_at: string; sender_type: string }[]) {
     const key = localDayKey(row.created_at)
