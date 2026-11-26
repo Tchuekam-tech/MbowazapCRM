@@ -57,3 +57,20 @@ const DEFAULT_STEPS: DripSequenceStep[] = [
       'Final reminder {{first_name}}: use promo code *{{coupon}}* before it expires to lock in your special discount!',
   },
 ];
+
+export function DripSequencesTab({
+  sequences,
+  segments,
+  coupons,
+  canEdit,
+  onRefresh,
+}: DripSequencesTabProps) {
+  const [name, setName] = useState('');
+  const [segmentId, setSegmentId] = useState('');
+  const [stopOnReply, setStopOnReply] = useState(true);
+  const [quietStart, setQuietStart] = useState('21:00');
+  const [quietEnd, setQuietEnd] = useState('08:00');
+  const [steps, setSteps] = useState<DripSequenceStep[]>(DEFAULT_STEPS);
+  const [saving, setSaving] = useState(false);
+  const [enrollingId, setEnrollingId] = useState<string | null>(null);
+
