@@ -8,3 +8,12 @@ import { useCan } from '@/hooks/use-can';
 import { useTranslations } from 'next-intl';
 import {
   Rocket,
+  Link2,
+  Flame,
+  GitBranchPlus,
+  FlaskConical,
+  TrendingUp,
+  Globe,
+  Loader2,
+  Activity,
+} from 'lucide-react';
