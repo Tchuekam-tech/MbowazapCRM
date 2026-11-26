@@ -207,3 +207,15 @@ function MarketingStudioInner() {
           </p>
           <p className="text-[11px] text-muted-foreground">
             {analytics?.summary.runningExperiments ?? 0} live tests
+          </p>
+        </div>
+        <div className="col-span-2 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:col-span-1">
+          <p className="text-xs text-muted-foreground">{t('kpiRevenue')}</p>
+          <p className="mt-1 text-xl font-bold tabular-nums text-primary">
+            {formatCurrency(analytics?.funnel.wonRevenue ?? 0, defaultCurrency)}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {analytics?.funnel.redemptions ?? 0} coupon sales
+          </p>
+        </div>
+      </div>
