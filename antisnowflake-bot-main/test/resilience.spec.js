@@ -48,3 +48,21 @@ test('lightweight_store writeToFileAsync skips clean writes and writes atomicall
         store.contacts = {};
         store.chats = {};
         store._dirty = false;
+
+        // Clean store should skip disk write
+        const skipped = await store.writeToFileAsync(file);
+        assert.equal(skipped, false);
+        assert.equal(fs.existsSync(file), false);
+
+        // Dirty store writes atomically
+        store.contacts['237600000001@s.whatsapp.net'] = { id: '237600000001@s.whatsapp.net', name: 'Alice' };
+        store._dirty = true;
+        const wrote = await store.writeToFileAsync(file);
+        assert.equal(wrote, true);
+        assert.equal(store._dirty, false);
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        assert.equal(parsed.contacts['237600000001@s.whatsapp.net'].name, 'Alice');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
