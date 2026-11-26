@@ -383,3 +383,32 @@ export function DripSequencesTab({
                       {seq.stop_on_reply ? 'Auto-stops on reply' : 'Runs all steps'}
                     </p>
                   </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canEdit || enrollingId === seq.id}
+                      onClick={() => handleEnrollSegment(seq)}
+                    >
+                      {enrollingId === seq.id ? (
+                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Users className="mr-1 h-3.5 w-3.5" />
+                      )}
+                      Enroll Audience
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={!canEdit}
+                      onClick={() => handleToggleStatus(seq)}
+                    >
+                      {seq.status === 'active' ? (
+                        <Pause className="h-3.5 w-3.5" />
+                      ) : (
+                        <Play className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                    {canEdit && (
+                      <Button
