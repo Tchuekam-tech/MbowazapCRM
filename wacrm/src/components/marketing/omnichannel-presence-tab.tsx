@@ -709,3 +709,38 @@ export function OmnichannelPresenceTab({
               </p>
             </div>
           </div>
+
+          <div>
+            <Label className="text-xs">Select Target Buffer Channels</Label>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {report.channels.map((ch) => {
+                const active = selectedChannels.includes(ch.channelId);
+                return (
+                  <button
+                    key={ch.channelId}
+                    type="button"
+                    onClick={() => toggleChannel(ch.channelId)}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      active
+                        ? 'border-primary bg-primary/15 text-primary'
+                        : 'border-border bg-muted/40 text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {ch.name} ({ch.service})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs">Post Caption</Label>
+            <Textarea
+              value={postText}
+              onChange={(e) => setPostText(e.target.value)}
+              rows={4}
+              placeholder="Write your cross-channel announcement and drop in a WhatsApp Growth Link below..."
+              className="mt-1 text-xs"
+              required
+            />
+          </div>
