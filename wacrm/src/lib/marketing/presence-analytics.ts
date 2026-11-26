@@ -341,3 +341,30 @@ export async function loadDigitalPresenceReport(
             .eq('account_id', accountId)
             .eq('status', 'won'),
         ]);
+
+      const rawInt = intRes.data as Record<string, unknown> | null;
+      const integration: BufferIntegrationPublic | null = rawInt
+        ? {
+            id: String(rawInt.id),
+            account_id: String(rawInt.account_id),
+            buffer_account_id: (rawInt.buffer_account_id as string | null) ?? null,
+            buffer_account_email: (rawInt.buffer_account_email as string | null) ?? null,
+            buffer_account_name: (rawInt.buffer_account_name as string | null) ?? null,
+            organization_id: String(rawInt.organization_id),
+            organization_name: (rawInt.organization_name as string | null) ?? null,
+            organizations: Array.isArray(rawInt.organizations_json)
+              ? (rawInt.organizations_json as BufferOrganizationSummary[])
+              : [],
+            status: rawInt.status as BufferIntegrationPublic['status'],
+            insights_available: Boolean(rawInt.insights_available),
+            last_synced_at: (rawInt.last_synced_at as string | null) ?? null,
+            last_error: (rawInt.last_error as string | null) ?? null,
+            ai_audit_summary: (rawInt.ai_audit_summary as DigitalPresenceAudit | null) ?? null,
+            ai_audit_at: (rawInt.ai_audit_at as string | null) ?? null,
+          }
+        : null;
+
+      const wonRevenue = ((dealsRes.data ?? []) as Array<{ value: number | null }>).reduce(
+        (sum, d) => sum + Number(d.value ?? 0),
+        0
+      );
