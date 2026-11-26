@@ -150,3 +150,13 @@ function MarketingStudioInner() {
             </button>
           )}
           {systemHealth && (
+            <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs">
+              <Activity
+                className={`h-3.5 w-3.5 ${
+                  systemHealth.status === 'optimal'
+                    ? 'text-emerald-400'
+                    : 'text-amber-400'
+                }`}
+              />
+              <span className="font-medium text-foreground">
+                DB {systemHealth.database.latencyMs}ms
