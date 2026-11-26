@@ -271,3 +271,22 @@ export function RoiCouponsTab({
             )}
           </div>
         </div>
+
+        <div className="rounded-xl border border-border bg-card p-5 lg:col-span-7">
+          <h3 className="text-sm font-semibold text-foreground">
+            Optimal Send-Time Heatmap (30-Day Customer Replies, UTC)
+          </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Brighter cells indicate peak customer responsiveness — schedule broadcasts & drips here for maximum reply rate.
+          </p>
+          <div className="mt-4 overflow-x-auto">
+            <div className="min-w-[420px] space-y-1.5">
+              <div className="grid grid-cols-7 gap-1.5 text-center text-[10px] text-muted-foreground">
+                <div />
+                {BLOCK_SHORT.map((b) => (
+                  <div key={b}>{b}</div>
+                ))}
+              </div>
+              {DAY_LABELS.map((dayName, dayIdx) => (
+                <div key={dayName} className="grid grid-cols-7 items-center gap-1.5">
+                  <span className="text-[11px] font-medium text-muted-foreground">
