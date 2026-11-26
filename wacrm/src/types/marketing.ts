@@ -321,3 +321,12 @@ export interface ChannelBridgeMetric {
   hasGrowthLinkBridge: boolean;
   healthStatus: 'thriving' | 'needs_bridge' | 'low_queue' | 'paused';
 }
+
+export interface DigitalPresenceRecommendation {
+  priority: 'high' | 'medium' | 'low';
+  title: string;
+  detail: string;
+  channel: string;
+  actionType: 'create_growth_link' | 'publish_post' | 'resume_queue' | 'launch_ab_test';
+}
+
