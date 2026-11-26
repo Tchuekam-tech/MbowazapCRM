@@ -151,16 +151,25 @@ export async function loadConversationsSeries(
       'get_conversations_series_fast',
       { p_start: start, p_tz: tz },
     )
+    if (!rpcErr && Array.isArray(rpcRows)) {
+      for (const row of rpcRows as { day: string; incoming: number; outgoing: number }[]) {
+        const bucket = buckets.get(row.day)
+        if (!bucket) continue
+        bucket.incoming = Number(row.incoming ?? 0)
+        bucket.outgoing = Number(row.outgoing ?? 0)
+      }
+      return keys.map((day) => ({ day, ...(buckets.get(day) ?? { incoming: 0, outgoing: 0 }) }))
+    }
+  } catch {
+    // Fall back to client-side scan below.
+  }
+
   const { data, error } = await db
     .from('messages')
     .select('created_at, sender_type')
     .gte('created_at', start)
     .order('created_at', { ascending: true })
   if (error) throw error
-
-  const keys = lastNDayKeys(rangeDays)
-  const buckets = new Map<string, { incoming: number; outgoing: number }>()
-  for (const k of keys) buckets.set(k, { incoming: 0, outgoing: 0 })
 
   for (const row of (data ?? []) as { created_at: string; sender_type: string }[]) {
     const key = localDayKey(row.created_at)
