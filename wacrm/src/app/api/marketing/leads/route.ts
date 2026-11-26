@@ -25,3 +25,28 @@ export async function GET(request: NextRequest) {
         .eq('account_id', ctx.accountId)
         .eq('contact_id', contactId)
         .maybeSingle();
+
+      if (!existing) {
+        await recomputeAccountLeadScores(ctx.supabase, ctx.accountId, {
+          contactId,
+          limit: 1,
+        }).catch(() => {});
+        const { data: fresh } = await ctx.supabase
+          .from('contact_lead_scores')
+          .select('*')
+          .eq('account_id', ctx.accountId)
+          .eq('contact_id', contactId)
+          .maybeSingle();
+        return NextResponse.json({ lead: fresh ?? null });
+      }
+      return NextResponse.json({ lead: existing });
+    }
+
+    let query = ctx.supabase
+      .from('contact_lead_scores')
+      .select(
+        '*, contact:contacts(id, name, phone, company, email, utm_source, utm_campaign)'
+      )
+      .eq('account_id', ctx.accountId)
+      .order('score', { ascending: false })
+      .limit(100);
