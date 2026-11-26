@@ -196,3 +196,18 @@ export function AbCampaignsTab({
     <div className="space-y-6">
       {/* AI Copywriter + A/B Builder */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        {/* AI Copywriter Box */}
+        <div className="space-y-4 rounded-xl border border-primary/30 bg-card p-5 lg:col-span-5">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                AI WhatsApp Copywriter
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Generates high-reply A/B variants with automatic anti-spam compliance checks.
+              </p>
+            </div>
+          </div>
