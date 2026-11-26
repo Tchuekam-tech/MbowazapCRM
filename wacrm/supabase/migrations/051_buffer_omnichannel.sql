@@ -54,3 +54,26 @@ CREATE POLICY "buffer_integrations_write" ON buffer_integrations
   WITH CHECK (is_account_member(account_id, 'admin'));
 
 -- 2. Synced social channels from Buffer
+CREATE TABLE IF NOT EXISTS buffer_channels (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  buffer_channel_id TEXT NOT NULL,
+  organization_id TEXT NOT NULL,
+  service TEXT NOT NULL,
+  name TEXT NOT NULL,
+  display_name TEXT,
+  avatar_url TEXT,
+  is_queue_paused BOOLEAN NOT NULL DEFAULT FALSE,
+  sent_posts_count INTEGER NOT NULL DEFAULT 0,
+  scheduled_posts_count INTEGER NOT NULL DEFAULT 0,
+  total_impressions BIGINT NOT NULL DEFAULT 0,
+  total_reach BIGINT NOT NULL DEFAULT 0,
+  total_engagements BIGINT NOT NULL DEFAULT 0,
+  total_clicks BIGINT NOT NULL DEFAULT 0,
+  engagement_rate NUMERIC(8, 2) NOT NULL DEFAULT 0,
+  last_post_at TIMESTAMPTZ,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (account_id, buffer_channel_id)
+);
