@@ -203,3 +203,22 @@ export function computeDigitalPresenceReport(
         )
       )
     : 0;
+
+  // Top performing sent posts & upcoming scheduled queue
+  const topPosts = [...posts]
+    .filter((p) => p.status !== 'scheduled' && p.status !== 'buffer')
+    .sort(
+      (a, b) =>
+        b.total_engagements - a.total_engagements ||
+        b.impressions - a.impressions ||
+        (b.sent_at || '').localeCompare(a.sent_at || '')
+    )
+    .slice(0, 8);
+
+  const upcomingQueue = [...posts]
+    .filter((p) => p.status === 'scheduled' || p.status === 'buffer')
+    .sort((a, b) => (a.due_at || '').localeCompare(b.due_at || ''))
+    .slice(0, 8);
+
+  // Actionable Cross-Channel Recommendations
+  const recommendations: DigitalPresenceRecommendation[] = [];
