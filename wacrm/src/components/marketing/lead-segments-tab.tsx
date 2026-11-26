@@ -232,3 +232,33 @@ export function LeadSegmentsTab({
             Score All Contacts
           </Button>
         </div>
+
+        <div className="space-y-3">
+          {filteredLeads.length === 0 ? (
+            <div className="flex h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card p-6 text-center">
+              <Flame className="mb-2 h-8 w-8 text-muted-foreground" />
+              <p className="text-sm font-medium text-foreground">No scored leads in this tier yet</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Click &ldquo;Score All Contacts&rdquo; to evaluate buying intent, recency, and deal signals across your CRM.
+              </p>
+            </div>
+          ) : (
+            filteredLeads.slice(0, 30).map((lead) => {
+              const meta = TIER_BADGE[lead.tier];
+              const Icon = meta.icon;
+              return (
+                <div
+                  key={lead.contact_id}
+                  className="rounded-xl border border-border bg-card p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-foreground">
+                          {lead.contact?.name || lead.contact?.phone || 'Contact'}
+                        </p>
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${meta.classes}`}
+                        >
+                          <Icon className="h-3 w-3" />
+                          {meta.label} · {lead.score}/100
