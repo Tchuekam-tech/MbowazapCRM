@@ -81,3 +81,17 @@ describe('mapWithConcurrency & withRetry', () => {
     expect(attempts).toBe(3);
   });
 });
+
+describe('MboWazap bridge circuit breaker & metrics', () => {
+  it('opens circuit after consecutive transport failures and short-circuits subsequent sends', async () => {
+    let nowMs = 1_700_000_000_000;
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      throw new TypeError('connect ECONNREFUSED');
+    });
+    const client = createMbowazapClient({
+      botUrl: 'https://bot.example.com',
+      secret: 'mbowazap-test-secret-0123456789abcdef',
+      fetchImpl,
+      now: () => nowMs,
+      circuitBreaker: { failureThreshold: 2, cooldownMs: 10_000 },
+    });
