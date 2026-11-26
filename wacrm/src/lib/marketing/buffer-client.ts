@@ -396,3 +396,26 @@ export function createBufferClient(opts: BufferClientOptions) {
           }>;
         };
       };
+
+      const mapEdges = (resp: RawPostsResp): BufferPostPayload[] =>
+        (resp.posts?.edges ?? [])
+          .map((e) => e.node)
+          .filter((n): n is NonNullable<typeof n> => Boolean(n?.id && n?.channelId))
+          .map((n) => ({
+            id: String(n.id),
+            text: typeof n.text === 'string' ? n.text : '',
+            status: (n.status || 'sent').toLowerCase(),
+            dueAt: n.dueAt ?? null,
+            sentAt: n.sentAt ?? null,
+            channelId: String(n.channelId),
+            metrics: Array.isArray(n.metrics)
+              ? n.metrics
+                  .filter((m) => m && typeof m.value === 'number')
+                  .map((m) => ({
+                    type: String(m.type || 'metric'),
+                    name: m.name ?? null,
+                    value: Number(m.value ?? 0),
+                    unit: m.unit ?? null,
+                  }))
+              : [],
+          }));
