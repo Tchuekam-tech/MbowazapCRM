@@ -81,3 +81,14 @@ test('bridge GET /bridge/metrics returns signed runtime telemetry', async () => 
             storeStats: { messages: 15, contacts: 8, chats: 3 },
         }),
     });
+
+    const server = http.createServer(handler);
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address();
+    try {
+        const headers = signRequest({
+            method: 'GET',
+            pathAndQuery: '/bridge/metrics',
+            body: '',
+            secret,
+            nowSeconds: Math.floor(Date.now() / 1000),
