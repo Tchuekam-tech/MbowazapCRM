@@ -468,3 +468,45 @@ export function RoiCouponsTab({
           </div>
         </div>
 
+        {/* Always-Up & Ultra-Fast Server Health Monitor */}
+        <div className="space-y-4 rounded-xl border border-border bg-card p-5 lg:col-span-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
+                <Activity className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">
+                  Server Uptime & Speed Monitor
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Live CRM, Supabase DB, and TchuekBot gateway telemetry.
+                </p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={onRefreshHealth}>
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+
+          {!systemHealth ? (
+            <div className="flex h-32 items-center justify-center text-xs text-muted-foreground">
+              Loading server telemetry...
+            </div>
+          ) : (
+            <div className="space-y-3 text-xs">
+              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-3 py-2">
+                <span className="font-medium text-foreground">Cluster Health</span>
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase ${
+                    systemHealth.status === 'optimal'
+                      ? 'bg-emerald-500/15 text-emerald-400'
+                      : systemHealth.status === 'degraded'
+                        ? 'bg-amber-500/15 text-amber-400'
+                        : 'bg-red-500/15 text-red-400'
+                  }`}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  {systemHealth.status}
+                </span>
+              </div>
