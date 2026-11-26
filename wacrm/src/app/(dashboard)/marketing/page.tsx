@@ -137,3 +137,16 @@ function MarketingStudioInner() {
             <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           </div>
         </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {presence?.connected && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('presence')}
+              className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/15"
+            >
+              <Globe className="h-3.5 w-3.5" />
+              Presence {presence.presenceScore}/100 · {presence.totals.connectedChannels} channels
+            </button>
+          )}
+          {systemHealth && (
