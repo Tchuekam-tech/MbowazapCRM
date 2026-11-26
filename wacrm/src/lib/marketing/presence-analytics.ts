@@ -392,3 +392,44 @@ export async function runAiDigitalPresenceAudit(
 ): Promise<DigitalPresenceAudit> {
   serverCache.invalidatePrefix(`marketing:presence:${accountId}`);
   const report = await loadDigitalPresenceReport(db, accountId);
+
+  const nowIso = new Date().toISOString();
+  const buildFallbackAudit = (): DigitalPresenceAudit => {
+    const topCh = report.channels[0];
+    const unbridged = report.channels.filter((c) => !c.hasGrowthLinkBridge);
+    const strengths: string[] = [];
+    if (report.totals.connectedChannels > 0) {
+      strengths.push(
+        `Active presence across ${report.totals.connectedChannels} Buffer channel(s) (${report.totals.activeServices.join(', ')}).`
+      );
+    }
+    if (report.totals.sentPosts30d > 0) {
+      strengths.push(
+        `${report.totals.sentPosts30d} social post(s) published in the last 30 days generating ${report.totals.engagements.toLocaleString()} total engagements.`
+      );
+    }
+    if (report.totals.socialDrivenWaLeads > 0) {
+      strengths.push(
+        `Social channels already converted ${report.totals.socialDrivenWaLeads} tracked WhatsApp lead(s).`
+      );
+    }
+    if (strengths.length === 0) {
+      strengths.push('Buffer workspace is connected and ready for omnichannel tracking.');
+    }
+
+    const blindSpots: string[] = [];
+    if (unbridged.length > 0) {
+      blindSpots.push(
+        `${unbridged.length} channel(s) (${unbridged.map((c) => c.service).join(', ')}) have no tracked MboWazap /go/ link bridging followers into WhatsApp.`
+      );
+    }
+    if (report.totals.scheduledQueueTotal < 3) {
+      blindSpots.push(
+        `Scheduled queue is low (${report.totals.scheduledQueueTotal} queued) — risk of organic reach drop next week.`
+      );
+    }
+    if (report.totals.postsWithGrowthLinks === 0) {
+      blindSpots.push(
+        'None of your recent Buffer posts include a direct Click-to-WhatsApp /go/ CTA link.'
+      );
+    }
