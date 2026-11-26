@@ -119,6 +119,11 @@ export interface Contact {
   email?: string;
   company?: string;
   avatar_url?: string;
+  /** Marketing attribution metadata (migration 049). */
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  growth_link_id?: string | null;
   created_at: string;
   updated_at: string;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
@@ -724,3 +729,5 @@ export interface QuickReply {
   created_at: string;
   updated_at: string;
 }
+
+export * from './marketing';
