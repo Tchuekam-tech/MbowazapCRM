@@ -589,3 +589,23 @@ export function OmnichannelPresenceTab({
             <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
               {report.audit.actionPlan.map((act, i) => (
                 <div key={i} className="rounded-lg border border-border bg-card p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-foreground">{act.title}</span>
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                        act.impact === 'high'
+                          ? 'bg-orange-500/15 text-orange-400'
+                          : 'bg-primary/15 text-primary'
+                      }`}
+                    >
+                      {act.impact}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{act.step}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
