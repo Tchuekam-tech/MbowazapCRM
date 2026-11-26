@@ -313,3 +313,21 @@ export function GrowthLinksTab({
                         </span>
                       )}
                       {link.ref_code && (
+                        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                          Ref:{link.ref_code}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="truncate font-mono">{shortUrl}</span>
+                      <a
+                        href={`/go/${link.slug}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline"
+                        title="Test redirect"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+                  </div>
