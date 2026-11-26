@@ -186,3 +186,27 @@ export function GrowthLinksTab({
               required
             />
           </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="gl-phone" className="text-xs">WhatsApp Number (E.164)</Label>
+              <Input
+                id="gl-phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="237653683174"
+                className="mt-1 font-mono text-xs"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="gl-slug" className="text-xs">Custom Slug (optional)</Label>
+              <Input
+                id="gl-slug"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="ig-vip-offer"
+                className="mt-1 font-mono text-xs"
+              />
+            </div>
+          </div>
