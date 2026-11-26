@@ -112,3 +112,14 @@ function MarketingStudioInner() {
     setSegments(segmentsRes.segments ?? []);
     setSequences(seqRes.sequences ?? []);
     setCampaigns(campRes.campaigns ?? []);
+    setCoupons(couponsRes.coupons ?? []);
+    setAnalytics(analyticsRes);
+    setPresence(presenceRes);
+    setTags((tagsRes.data ?? []) as Tag[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void loadAll();
+    void loadHealth();
+  }, [loadAll, loadHealth]);
