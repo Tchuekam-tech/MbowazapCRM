@@ -26,3 +26,12 @@ import type {
   GrowthLink,
   MarketingAnalyticsSnapshot,
   MarketingSegment,
+  PromoCoupon,
+  Tag,
+} from '@/types';
+import { GrowthLinksTab } from '@/components/marketing/growth-links-tab';
+import { LeadSegmentsTab } from '@/components/marketing/lead-segments-tab';
+import { DripSequencesTab } from '@/components/marketing/drip-sequences-tab';
+import { AbCampaignsTab } from '@/components/marketing/ab-campaigns-tab';
+import {
+  RoiCouponsTab,
