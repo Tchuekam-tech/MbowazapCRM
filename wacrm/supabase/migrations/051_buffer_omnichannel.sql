@@ -97,3 +97,23 @@ CREATE POLICY "buffer_channels_write" ON buffer_channels
   WITH CHECK (is_account_member(account_id, 'agent'));
 
 -- 3. Synced social posts & normalized engagement metrics from Buffer
+CREATE TABLE IF NOT EXISTS buffer_posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  buffer_post_id TEXT NOT NULL,
+  buffer_channel_id TEXT NOT NULL,
+  service TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'sent',
+  text_content TEXT NOT NULL DEFAULT '',
+  due_at TIMESTAMPTZ,
+  sent_at TIMESTAMPTZ,
+  impressions BIGINT NOT NULL DEFAULT 0,
+  reach BIGINT NOT NULL DEFAULT 0,
+  reactions BIGINT NOT NULL DEFAULT 0,
+  comments BIGINT NOT NULL DEFAULT 0,
+  shares BIGINT NOT NULL DEFAULT 0,
+  clicks BIGINT NOT NULL DEFAULT 0,
+  total_engagements BIGINT NOT NULL DEFAULT 0,
+  metrics_raw JSONB NOT NULL DEFAULT '[]'::jsonb,
+  linked_growth_slug TEXT,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
