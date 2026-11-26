@@ -262,3 +262,24 @@ export interface BufferIntegrationPublic {
   ai_audit_at: string | null;
 }
 
+export interface BufferChannelRow {
+  id: string;
+  account_id: string;
+  buffer_channel_id: string;
+  organization_id: string;
+  service: string;
+  name: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  is_queue_paused: boolean;
+  sent_posts_count: number;
+  scheduled_posts_count: number;
+  total_impressions: number;
+  total_reach: number;
+  total_engagements: number;
+  total_clicks: number;
+  engagement_rate: number;
+  last_post_at: string | null;
+  synced_at: string;
+}
+
