@@ -483,3 +483,28 @@ export async function evaluateAccountSegment(
     utm_campaign: string | null;
   }>;
   if (contacts.length === 0) return { contactIds: [], totalContacts: 0 };
+
+  const scoreMap = new Map<
+    string,
+    { score: number; tier: LeadTier; last_message_at: string | null }
+  >();
+  for (const s of (scoresRes.data ?? []) as Array<{
+    contact_id: string;
+    score: number;
+    tier: LeadTier;
+    last_message_at: string | null;
+  }>) {
+    scoreMap.set(s.contact_id, s);
+  }
+
+  const dealMap = new Map<string, { count: number; value: number }>();
+  for (const d of (dealsRes.data ?? []) as Array<{
+    contact_id: string | null;
+    value: number | null;
+  }>) {
+    if (!d.contact_id) continue;
+    const row = dealMap.get(d.contact_id) ?? { count: 0, value: 0 };
+    row.count += 1;
+    row.value += Number(d.value ?? 0);
+    dealMap.set(d.contact_id, row);
+  }
