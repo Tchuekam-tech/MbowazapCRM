@@ -256,3 +256,23 @@ describe('Unified Digital Presence Analytics', () => {
       wonDealsRevenue: 3400,
       nowMs,
     });
+
+    expect(report.connected).toBe(true);
+    expect(report.presenceScore).toBeGreaterThan(50);
+    expect(report.totals.connectedChannels).toBe(3);
+    expect(report.totals.socialDrivenWaClicks).toBe(95);
+    expect(report.totals.socialDrivenRevenue).toBe(3400);
+    expect(report.totals.postsWithGrowthLinks).toBe(1);
+
+    const ig = report.channels.find((c) => c.service === 'instagram')!;
+    const li = report.channels.find((c) => c.service === 'linkedin')!;
+    const fb = report.channels.find((c) => c.service === 'facebook')!;
+
+    expect(ig.healthStatus).toBe('thriving');
+    expect(ig.hasGrowthLinkBridge).toBe(true);
+    expect(li.healthStatus).toBe('needs_bridge');
+    expect(fb.healthStatus).toBe('paused');
+    expect(report.recommendations.some((r) => r.actionType === 'resume_queue')).toBe(true);
+    expect(report.recommendations.some((r) => r.actionType === 'create_growth_link')).toBe(true);
+  });
+});
