@@ -261,3 +261,12 @@ export function OmnichannelPresenceTab({
               </p>
             </div>
           </div>
+
+          <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-3.5 text-xs text-muted-foreground">
+            <p className="font-semibold text-foreground">How to get your Buffer API key (15 seconds):</p>
+            <ol className="list-inside list-decimal space-y-1">
+              <li>Sign in to Buffer and open <strong>Settings → API</strong> (or <span className="font-mono">publish.buffer.com/settings/api</span>).</li>
+              <li>Click <strong>Generate API Key</strong> and copy your Personal API Key.</li>
+              <li>Paste it below — MboWazapCRM encrypts it with AES-256-GCM and syncs every connected channel automatically.</li>
+            </ol>
+          </div>
