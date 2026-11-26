@@ -36,6 +36,22 @@ export async function GET(request: NextRequest) {
     cache: serverCache.stats(),
     timestamp: new Date().toISOString(),
   };
+
+  if (request.nextUrl.searchParams.get('deep') !== '1') {
+    return NextResponse.json(base, {
+      status: 200,
+      headers: { 'Cache-Control': 'no-store' },
+    });
+  }
+
+  if (!hasValidCronSecret(request)) {
+    return NextResponse.json(
+      { ...base, deep: 'unauthorized' },
+      { status: 200, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+
+  const checks: Record<string, unknown> = {};
   return NextResponse.json(
     {
       ok: true,
