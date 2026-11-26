@@ -166,3 +166,21 @@ CREATE TABLE IF NOT EXISTS contact_lead_scores (
   computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_contact_lead_scores_account_tier_score
+  ON contact_lead_scores (account_id, tier, score DESC);
+
+ALTER TABLE contact_lead_scores ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS set_updated_at ON contact_lead_scores;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON contact_lead_scores
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP POLICY IF EXISTS "contact_lead_scores_select" ON contact_lead_scores;
+CREATE POLICY "contact_lead_scores_select" ON contact_lead_scores
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "contact_lead_scores_write" ON contact_lead_scores;
+CREATE POLICY "contact_lead_scores_write" ON contact_lead_scores
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
