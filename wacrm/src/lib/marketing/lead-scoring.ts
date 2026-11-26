@@ -438,3 +438,16 @@ export async function recomputeAccountLeadScores(
       updated_at: nowIso,
     };
   });
+
+  const { error: upsertErr } = await db
+    .from('contact_lead_scores')
+    .upsert(upserts, { onConflict: 'contact_id' });
+
+  if (upsertErr) throw upsertErr;
+  return upserts.length;
+}
+
+/**
+ * Evaluates a Smart Segment against the account's contacts and returns
+ * matching contact IDs + summary count.
+ */
