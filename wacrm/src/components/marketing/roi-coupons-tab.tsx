@@ -235,3 +235,39 @@ export function RoiCouponsTab({
         </div>
       </div>
 
+      {/* Channel Attribution + Optimal Send-Time Heatmap */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="rounded-xl border border-border bg-card p-5 lg:col-span-5">
+          <h3 className="text-sm font-semibold text-foreground">
+            Channel Attribution & UTM ROI
+          </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Performance across Instagram, TikTok, Ads, QR Flyers, and Organic WhatsApp.
+          </p>
+          <div className="mt-4 space-y-2.5">
+            {(analytics?.channelBreakdown ?? []).length === 0 ? (
+              <p className="py-8 text-center text-xs text-muted-foreground">
+                Create Growth Links to track channel-by-channel ROI.
+              </p>
+            ) : (
+              analytics!.channelBreakdown.map((ch) => (
+                <div
+                  key={ch.source}
+                  className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2 text-xs"
+                >
+                  <div>
+                    <p className="font-semibold capitalize text-foreground">
+                      {ch.source.replace(/_/g, ' ')}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {ch.clicks} clicks · {ch.leads} leads · {ch.conversions} conversions
+                    </p>
+                  </div>
+                  <span className="font-semibold tabular-nums text-primary">
+                    {formatCurrency(ch.revenue, currency)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
