@@ -69,14 +69,44 @@ const store = {
         }
     },
 
+    /**
+     * Non-blocking atomic persistence — skips disk I/O completely when
+     * nothing changed and never freezes the event loop on periodic flushes.
+     */
+    async writeToFileAsync(filePath = STORE_FILE) {
+        if (!this._dirty || this._writing) return false
+        this._writing = true
+        this._dirty = false
+        const tmp = `${filePath}.${process.pid}.tmp`
+        try {
+            const data = JSON.stringify({
+                contacts: this.contacts,
+                chats: this.chats,
+                messages: this.messages
+            })
+            await fs.promises.mkdir(path.dirname(path.resolve(filePath)), { recursive: true })
+            await fs.promises.writeFile(tmp, data, 'utf-8')
+            await fs.promises.rename(tmp, filePath)
+            return true
+        } catch (e) {
+            this._dirty = true
+            try { await fs.promises.unlink(tmp) } catch (_) {}
+            console.warn('Failed to async-write store file:', e.message)
+            return false
+        } finally {
+            this._writing = false
+        }
+    },
+
     cleanupData() {
-        // Convert old format messages to new format if needed
+        // Convert old format messages to new format & enforce memory caps
         if (this.messages) {
             Object.keys(this.messages).forEach(jid => {
                 if (typeof this.messages[jid] === 'object' && !Array.isArray(this.messages[jid])) {
-                    // Old format - convert to new format
                     const messages = Object.values(this.messages[jid])
                     this.messages[jid] = messages.slice(-MAX_MESSAGES)
+                } else if (Array.isArray(this.messages[jid]) && this.messages[jid].length > MAX_MESSAGES) {
+                    this.messages[jid] = this.messages[jid].slice(-MAX_MESSAGES)
                 }
             })
         }
