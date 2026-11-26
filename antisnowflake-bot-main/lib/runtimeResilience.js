@@ -82,3 +82,9 @@ function createRuntimeMonitor({
             }
         }
     }
+
+    async function pingWacrmHealth(baseUrl) {
+        try {
+            const res = await fetchImpl(`${baseUrl}/api/health`, {
+                method: 'GET',
+                signal: AbortSignal.timeout(8000),
