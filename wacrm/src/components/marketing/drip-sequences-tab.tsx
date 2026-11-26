@@ -372,3 +372,14 @@ export function DripSequencesTab({
                         className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
                           seq.status === 'active'
                             ? 'bg-emerald-500/15 text-emerald-400'
+                            : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        {seq.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {seq.steps?.length ?? 0} steps · Quiet {seq.quiet_hours_start}–{seq.quiet_hours_end} ·{' '}
+                      {seq.stop_on_reply ? 'Auto-stops on reply' : 'Runs all steps'}
+                    </p>
+                  </div>
