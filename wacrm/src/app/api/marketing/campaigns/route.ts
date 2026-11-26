@@ -178,3 +178,40 @@ export async function POST(request: NextRequest) {
             .maybeSingle();
           couponCode = cp?.code ?? null;
         }
+
+        const holdouts = (holdoutRows ?? []) as unknown as Array<{
+          id: string;
+          contact:
+            | { id: string; phone: string; wa_lid?: string | null; name?: string | null; company?: string | null; email?: string | null }
+            | Array<{ id: string; phone: string; wa_lid?: string | null; name?: string | null; company?: string | null; email?: string | null }>;
+        }>;
+
+        let sentHoldout = 0;
+        const outcomes = await mapWithConcurrency(holdouts, concurrency, async (row) => {
+          const contact = Array.isArray(row.contact) ? row.contact[0] : row.contact;
+          if (!contact) return false;
+          return deliverOne(contact, winnerVariant, row.id, couponCode);
+        });
+        sentHoldout = outcomes.filter(Boolean).length;
+
+        await Promise.all([
+          ctx.supabase
+            .from('ab_campaign_variants')
+            .update({ sent_count: winnerVariant.sent_count + sentHoldout })
+            .eq('id', winnerVariant.id),
+          ctx.supabase
+            .from('ab_campaigns')
+            .update({
+              winner_variant: winnerKey,
+              status: 'completed',
+              completed_at: new Date().toISOString(),
+            })
+            .eq('id', campaignId),
+        ]);
+
+        return NextResponse.json({
+          ok: true,
+          winner: winnerKey,
+          sentHoldout,
+        });
+      }
