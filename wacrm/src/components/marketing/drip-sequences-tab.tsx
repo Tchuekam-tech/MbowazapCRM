@@ -313,3 +313,24 @@ export function DripSequencesTab({
                       type="button"
                       onClick={() => removeStep(idx)}
                       className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <Textarea
+                value={step.content_text}
+                onChange={(e) => updateStep(idx, { content_text: e.target.value })}
+                rows={2}
+                placeholder="Write step copy using {{first_name}}, {{company}}, {{coupon}}..."
+                className="text-xs"
+              />
+            </div>
+          ))}
+
+          <Button type="button" variant="outline" size="sm" onClick={addStep}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Add Follow-Up Step
+          </Button>
+        </div>
