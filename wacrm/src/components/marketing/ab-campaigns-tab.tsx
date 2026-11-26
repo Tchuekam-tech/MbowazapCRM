@@ -57,3 +57,24 @@ export function AbCampaignsTab({
   const [bodyB, setBodyB] = useState('');
   const [creating, setCreating] = useState(false);
   const [busyCampaignId, setBusyCampaignId] = useState<string | null>(null);
+
+  const lintA = useMemo(() => (bodyA.trim() ? lintWhatsAppCopy(bodyA) : null), [bodyA]);
+  const lintB = useMemo(() => (bodyB.trim() ? lintWhatsAppCopy(bodyB) : null), [bodyB]);
+
+  async function handleGenerateCopy() {
+    if (!offer.trim()) {
+      toast.error('Describe your offer or product first.');
+      return;
+    }
+    setGenerating(true);
+    try {
+      const selectedCoupon = coupons.find((c) => c.id === couponId);
+      const res = await fetch('/api/marketing/copywriter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          goal,
+          offer,
+          tone,
+          language,
+          coupon_code: selectedCoupon?.code ?? undefined,
