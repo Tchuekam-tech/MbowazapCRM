@@ -811,3 +811,37 @@ export function OmnichannelPresenceTab({
               <Clock className="h-3.5 w-3.5" /> {report.upcomingQueue.length} upcoming
             </span>
           </div>
+
+          <div className="max-h-80 space-y-2.5 overflow-y-auto pr-1">
+            {report.topPosts.length === 0 && report.upcomingQueue.length === 0 ? (
+              <p className="py-10 text-center text-xs text-muted-foreground">
+                No synced Buffer posts yet. Publish your first post on the left or click Sync Buffer.
+              </p>
+            ) : (
+              [...report.topPosts.slice(0, 5), ...report.upcomingQueue.slice(0, 3)].map(
+                (post) => {
+                  const meta = serviceMeta(post.service);
+                  const isScheduled =
+                    post.status === 'scheduled' || post.status === 'buffer';
+                  return (
+                    <div
+                      key={post.id}
+                      className="rounded-lg border border-border bg-muted/30 p-3 text-xs"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${meta.badge}`}
+                          >
+                            {meta.label}
+                          </span>
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                            {isScheduled ? 'Queued' : 'Published'}
+                          </span>
+                          {post.linked_growth_slug && (
+                            <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] text-primary">
+                              /go/{post.linked_growth_slug}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">
