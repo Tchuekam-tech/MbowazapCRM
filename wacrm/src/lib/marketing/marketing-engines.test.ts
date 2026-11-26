@@ -144,3 +144,43 @@ describe('Feature 4: Copywriter Compliance Linter & A/B Winner Evaluator', () =>
     expect(spam.warnings.length).toBeGreaterThanOrEqual(3);
   });
 
+  it('interpolates contact fields and coupon codes', () => {
+    expect(
+      renderPersonalizedCopy(
+        'Hey {{first_name}} at {{company}}, use {{coupon}}!',
+        { name: 'Marie Claire', company: 'Maison Belle' },
+        'VIP20'
+      )
+    ).toBe('Hey Marie at Maison Belle, use VIP20!');
+  });
+
+  it('picks the winning variant with lift and confidence', () => {
+    const verdict = evaluateAbWinner(
+      { sent_count: 50, read_count: 40, replied_count: 15, conversions_count: 5 },
+      { sent_count: 50, read_count: 35, replied_count: 6, conversions_count: 2 },
+      'reply_rate'
+    );
+    expect(verdict.winner).toBe('A');
+    expect(verdict.rateA).toBe(30);
+    expect(verdict.rateB).toBe(12);
+    expect(verdict.liftPercent).toBe(150);
+    expect(verdict.confidence).toBe('high');
+  });
+});
+
+describe('Feature 5: Optimal Send-Time Heatmap', () => {
+  it('identifies the peak customer reply window across 7x6 blocks', () => {
+    const { heatmap, bestSendWindow } = buildSendTimeHeatmap([
+      '2026-11-26T17:10:00Z', // Thu 16:00-20:00
+      '2026-11-26T18:20:00Z', // Thu 16:00-20:00
+      '2026-11-26T19:05:00Z', // Thu 16:00-20:00
+      '2026-11-25T09:00:00Z', // Wed 08:00-12:00
+    ]);
+    expect(heatmap).toHaveLength(42);
+    expect(bestSendWindow).toEqual({
+      dayName: 'Thu',
+      hourRange: '16:00–20:00',
+      replyCount: 3,
+    });
+  });
+});
