@@ -294,3 +294,23 @@ export async function processDueDripEnrollments(
         });
         waMessageId = sent.messageId;
       }
+
+      // Persist outbound message into thread so inbox stays in sync
+      await db.from('messages').insert({
+        conversation_id: conversationId,
+        sender_type: 'bot',
+        content_type: currentStep.message_type === 'image' ? 'image' : 'text',
+        content_text: rendered,
+        media_url: currentStep.media_url || null,
+        message_id: waMessageId,
+        status: 'sent',
+      });
+
+      await db
+        .from('conversations')
+        .update({
+          last_message_text: rendered.slice(0, 160),
+          last_message_at: now.toISOString(),
+          updated_at: now.toISOString(),
+        })
+        .eq('id', conversationId);
