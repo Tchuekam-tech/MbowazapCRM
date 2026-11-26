@@ -188,3 +188,13 @@ function MarketingStudioInner() {
             {analytics?.summary.hotLeadCount ?? 0}
           </p>
           <p className="text-[11px] text-muted-foreground">
+            Avg score {analytics?.summary.avgLeadScore ?? 0}/100
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground">{t('kpiDrips')}</p>
+          <p className="mt-1 text-xl font-bold tabular-nums text-foreground">
+            {analytics?.summary.activeSequences ?? 0}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {segments.length} smart segments
