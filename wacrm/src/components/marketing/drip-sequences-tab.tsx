@@ -422,3 +422,32 @@ export function DripSequencesTab({
                     )}
                   </div>
                 </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-muted/50 p-2.5 text-center">
+                  <div>
+                    <p className="text-[11px] text-muted-foreground">Enrolled</p>
+                    <p className="text-sm font-semibold tabular-nums text-foreground">
+                      {seq.enrolled_count}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-muted-foreground">Replied</p>
+                    <p className="text-sm font-semibold tabular-nums text-primary">
+                      {seq.replied_count} ({replyRate}%)
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-muted-foreground">Completed</p>
+                    <p className="text-sm font-semibold tabular-nums text-foreground">
+                      {seq.completed_count}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
