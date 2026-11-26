@@ -139,3 +139,36 @@ describe('Unified Digital Presence Analytics', () => {
     expect(canonicalSocialService('x')).toBe('twitter');
     expect(canonicalSocialService('LinkedIn')).toBe('linkedin');
   });
+
+  it('computes holistic 0-100 Presence Score, bridges WA attribution, and flags unbridged/paused channels', () => {
+    const nowMs = Date.parse('2026-11-26T12:00:00Z');
+    const report = computeDigitalPresenceReport({
+      integration: {
+        id: 'int_1',
+        account_id: 'acc_1',
+        buffer_account_id: 'b_1',
+        buffer_account_email: 'growth@brand.com',
+        buffer_account_name: 'Growth Team',
+        organization_id: 'org_1',
+        organization_name: 'Brand HQ',
+        organizations: [{ id: 'org_1', name: 'Brand HQ' }],
+        status: 'connected',
+        insights_available: true,
+        last_synced_at: '2026-11-26T11:30:00Z',
+        last_error: null,
+        ai_audit_summary: null,
+        ai_audit_at: null,
+      },
+      channels: [
+        {
+          id: 'r1',
+          account_id: 'acc_1',
+          buffer_channel_id: 'ch_ig',
+          organization_id: 'org_1',
+          service: 'instagram',
+          name: 'Brand IG',
+          display_name: 'Brand Instagram',
+          avatar_url: null,
+          is_queue_paused: false,
+          sent_posts_count: 10,
+          scheduled_posts_count: 4,
