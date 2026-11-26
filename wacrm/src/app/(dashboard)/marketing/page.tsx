@@ -61,3 +61,15 @@ function MarketingStudioInner() {
   const { defaultCurrency } = useAuth();
   const canEdit = useCan('send-messages');
   const canAdmin = useCan('edit-settings');
+
+  const [loading, setLoading] = useState(true);
+  const [links, setLinks] = useState<GrowthLink[]>([]);
+  const [leads, setLeads] = useState<ContactLeadScore[]>([]);
+  const [segments, setSegments] = useState<MarketingSegment[]>([]);
+  const [sequences, setSequences] = useState<DripSequence[]>([]);
+  const [campaigns, setCampaigns] = useState<AbCampaign[]>([]);
+  const [coupons, setCoupons] = useState<PromoCoupon[]>([]);
+  const [analytics, setAnalytics] = useState<MarketingAnalyticsSnapshot | null>(null);
+  const [presence, setPresence] = useState<DigitalPresenceReport | null>(null);
+  const [systemHealth, setSystemHealth] = useState<SystemHealthSnapshot | null>(null);
+  const [tags, setTags] = useState<Tag[]>([]);
