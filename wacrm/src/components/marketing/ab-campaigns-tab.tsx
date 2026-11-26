@@ -349,3 +349,34 @@ export function AbCampaignsTab({
               </select>
             </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/40 p-3 text-xs">
+            <div>
+              <Label className="text-[11px] text-muted-foreground">
+                A/B Split Ratio ({splitRatio}% A / {100 - splitRatio}% B)
+              </Label>
+              <input
+                type="range"
+                min={20}
+                max={80}
+                step={10}
+                value={splitRatio}
+                onChange={(e) => setSplitRatio(Number(e.target.value))}
+                className="mt-1 w-full accent-primary"
+              />
+            </div>
+            <div>
+              <Label className="text-[11px] text-muted-foreground">
+                Winner Holdout Pool ({holdoutPercent}% reserved)
+              </Label>
+              <input
+                type="range"
+                min={0}
+                max={80}
+                step={10}
+                value={holdoutPercent}
+                onChange={(e) => setHoldoutPercent(Number(e.target.value))}
+                className="mt-1 w-full accent-primary"
+              />
+            </div>
+          </div>
