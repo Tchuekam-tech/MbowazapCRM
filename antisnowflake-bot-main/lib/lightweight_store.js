@@ -1,8 +1,11 @@
 const fs = require('fs')
+const path = require('path')
 const STORE_FILE = './baileys_store.json'
 
-// Config: keep last 20 messages per chat (configurable) - More aggressive for lower RAM
+// Config: keep last 20 messages per chat & bounded maps for flat long-term RAM
 let MAX_MESSAGES = 20
+const MAX_CHATS = 1000
+const MAX_CONTACTS = 5000
 
 // Try to read config from settings
 try {
