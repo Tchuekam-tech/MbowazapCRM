@@ -201,6 +201,48 @@ export default function DashboardPage() {
       {/* Quick actions */}
       <QuickActions />
 
+      {/* Omnichannel Digital Presence Strip (Buffer + WhatsApp unified) */}
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-card px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Globe className="h-5 w-5" />
+          </div>
+          {presence?.connected ? (
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-foreground">
+                  Omnichannel Digital Presence · {presence.presenceScore}/100
+                </p>
+                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+                  {presence.totals.connectedChannels} Buffer channels
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {presence.totals.impressions.toLocaleString()} impressions ·{' '}
+                {presence.totals.engagements.toLocaleString()} engagements ·{' '}
+                {presence.totals.socialDrivenWaLeads.toLocaleString()} social-driven WhatsApp leads
+              </p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Extend Analytics Across Your Entire Online Presence
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Connect your Buffer API key to unify Instagram, LinkedIn, Facebook, X & TikTok metrics with WhatsApp CRM revenue.
+              </p>
+            </div>
+          )}
+        </div>
+        <Link
+          href="/marketing?tab=presence"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/15"
+        >
+          {presence?.connected ? 'Open Omnichannel Analytics' : 'Connect Buffer API'}
+          <ArrowUpRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+
       {/* Charts row */}
       {/* items-stretch (the grid default) stretches the two columns to
           match the tallest sibling; adding h-full on each wrapper and
