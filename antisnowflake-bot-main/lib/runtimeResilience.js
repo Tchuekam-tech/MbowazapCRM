@@ -18,3 +18,13 @@ const DEFAULT_MEMORY_CHECK_MS = 30_000;
 const DEFAULT_KEEPALIVE_MS = 4 * 60 * 1000; // 4 min — under Render/Railway idle windows
 const DEFAULT_CRON_TICK_MS = 60_000; // 1 min cadence for due drips & automations
 
+function round1(n) {
+    return Math.round(n * 10) / 10;
+}
+
+function createRuntimeMonitor({
+    env = process.env,
+    fetchImpl = (...args) => globalThis.fetch(...args),
+    onMemoryPressure = null,
+    log = console,
+} = {}) {
