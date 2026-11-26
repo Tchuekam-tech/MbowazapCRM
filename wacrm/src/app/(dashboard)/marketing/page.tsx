@@ -265,3 +265,12 @@ function MarketingStudioInner() {
               onJumpToLinks={() => setActiveTab('links')}
             />
           </TabsContent>
+
+          <TabsContent value="links">
+            <GrowthLinksTab
+              links={links}
+              tags={tags}
+              canEdit={canEdit}
+              onRefresh={loadAll}
+            />
+          </TabsContent>
