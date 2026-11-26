@@ -63,3 +63,48 @@ export async function connectBufferAccount(
 
   const encryptedKey = encrypt(apiKey);
   const nowIso = new Date().toISOString();
+
+  const { error: upsertErr } = await db.from('buffer_integrations').upsert(
+    {
+      account_id: accountId,
+      user_id: userId,
+      api_key_encrypted: encryptedKey,
+      buffer_account_id: accountInfo.id || null,
+      buffer_account_email: accountInfo.email,
+      buffer_account_name: accountInfo.name,
+      organization_id: chosenOrg.id,
+      organization_name: chosenOrg.name,
+      organizations_json: accountInfo.organizations,
+      status: 'connected',
+      last_error: null,
+      updated_at: nowIso,
+    },
+    { onConflict: 'account_id' }
+  );
+
+  if (upsertErr) throw upsertErr;
+
+  return syncBufferForAccount(db, accountId, {
+    plainApiKey: apiKey,
+    fetchImpl: opts.fetchImpl,
+  });
+}
+
+/**
+ * Syncs all Buffer channels & recent posts/metrics for an account and
+ * computes per-channel aggregates cleanly in Postgres.
+ */
+export async function syncBufferForAccount(
+  db: SupabaseClient,
+  accountId: string,
+  opts: {
+    plainApiKey?: string;
+    organizationId?: string;
+    fetchImpl?: BufferClientOptions['fetchImpl'];
+  } = {}
+): Promise<SyncSummary> {
+  const { data: integration, error: intErr } = await db
+    .from('buffer_integrations')
+    .select('*')
+    .eq('account_id', accountId)
+    .maybeSingle();
