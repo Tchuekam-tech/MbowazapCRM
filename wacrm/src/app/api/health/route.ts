@@ -52,6 +52,29 @@ export async function GET(request: NextRequest) {
   }
 
   const checks: Record<string, unknown> = {};
+
+  // Supabase probe
+  const dbStart = performance.now();
+  try {
+    if (hasServiceRoleKey()) {
+      const { error } = await supabaseAdmin()
+        .from('accounts')
+        .select('id', { count: 'exact', head: true });
+      checks.supabase = {
+        ok: !error,
+        latencyMs: Math.round(performance.now() - dbStart),
+        error: error?.message ?? null,
+      };
+    } else {
+      checks.supabase = { ok: false, error: 'SUPABASE_SERVICE_ROLE_KEY unset' };
+    }
+  } catch (err) {
+    checks.supabase = {
+      ok: false,
+      latencyMs: Math.round(performance.now() - dbStart),
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
   return NextResponse.json(
     {
       ok: true,
