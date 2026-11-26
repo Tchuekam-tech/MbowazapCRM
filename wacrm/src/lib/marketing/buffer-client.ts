@@ -289,3 +289,34 @@ export function createBufferClient(opts: BufferClientOptions) {
           name: o.name?.trim() || 'Default Organization',
           ownerEmail: o.ownerEmail ?? null,
         }));
+
+      return {
+        id: String(acct.id || ''),
+        email: acct.email ?? null,
+        name: acct.name ?? null,
+        organizations,
+      };
+    },
+
+    async getChannels(organizationId: string): Promise<BufferChannelPayload[]> {
+      const data = await graphql<{
+        channels?: Array<{
+          id: string;
+          name?: string | null;
+          displayName?: string | null;
+          service?: string | null;
+          avatar?: string | null;
+          isQueuePaused?: boolean | null;
+        }>;
+      }>(`
+        query GetChannels {
+          channels(input: { organizationId: ${gqlString(organizationId)} }) {
+            id
+            name
+            displayName
+            service
+            avatar
+            isQueuePaused
+          }
+        }
+      `);
