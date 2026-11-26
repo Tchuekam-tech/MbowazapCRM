@@ -25,3 +25,33 @@ export function normalizeSlug(raw: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 48);
 }
+
+export function generateRefCode(prefix = 'MW'): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let suffix = '';
+  for (let i = 0; i < 5; i++) {
+    suffix += chars[Math.floor(Math.random() * chars.length)];
+  }
+  const cleanPrefix = prefix.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 4) || 'MW';
+  return `${cleanPrefix}${suffix}`;
+}
+
+/**
+ * Builds the `https://wa.me/<digits>?text=...` destination URL.
+ * Appends an unobtrusive `[REF:CODE]` tag when `refCode` is set and not
+ * already present in the prefill message so inbound messages auto-attribute.
+ */
+export function buildWhatsAppRedirectUrl(
+  destinationPhone: string,
+  prefillMessage: string,
+  refCode?: string | null
+): string {
+  const digits = destinationPhone.replace(/[^0-9]/g, '');
+  let text = (prefillMessage || '').trim();
+  const cleanRef = (refCode || '').trim().toUpperCase();
+  if (cleanRef && !text.toUpperCase().includes(cleanRef)) {
+    text = text ? `${text} [Ref:${cleanRef}]` : `Hi! [Ref:${cleanRef}]`;
+  }
+  const base = `https://wa.me/${digits}`;
+  return text ? `${base}?text=${encodeURIComponent(text)}` : base;
+}
