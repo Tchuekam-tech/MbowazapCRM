@@ -143,3 +143,33 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const { data: seq, error: seqErr } = await ctx.supabase
+      .from('drip_sequences')
+      .insert({
+        account_id: ctx.accountId,
+        user_id: ctx.userId,
+        name,
+        description: typeof body.description === 'string' ? body.description.trim() || null : null,
+        status: body.status === 'active' ? 'active' : 'draft',
+        segment_id: typeof body.segment_id === 'string' && body.segment_id ? body.segment_id : null,
+        stop_on_reply: body.stop_on_reply !== false,
+        stop_on_tag_id:
+          typeof body.stop_on_tag_id === 'string' && body.stop_on_tag_id
+            ? body.stop_on_tag_id
+            : null,
+        quiet_hours_start:
+          typeof body.quiet_hours_start === 'string' ? body.quiet_hours_start : '21:00',
+        quiet_hours_end:
+          typeof body.quiet_hours_end === 'string' ? body.quiet_hours_end : '08:00',
+        timezone: typeof body.timezone === 'string' ? body.timezone : 'UTC',
+      })
+      .select()
+      .single();
+
+    if (seqErr || !seq) {
+      return NextResponse.json(
+        { error: seqErr?.message || 'Failed to create sequence' },
+        { status: 500 }
+      );
+    }
