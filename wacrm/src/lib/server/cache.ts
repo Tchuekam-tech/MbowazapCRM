@@ -108,3 +108,17 @@ export class FastTtlCache {
             return val;
           })
           .catch(() => existing.value)
+          .finally(() => {
+            this.inflight.delete(key);
+          });
+        this.inflight.set(key, refresh);
+      }
+      return existing.value as T;
+    }
+
+    // Singleflight: piggyback on an already running load for the same key.
+    const pending = this.inflight.get(key);
+    if (pending) {
+      this.coalesced += 1;
+      return pending as Promise<T>;
+    }
