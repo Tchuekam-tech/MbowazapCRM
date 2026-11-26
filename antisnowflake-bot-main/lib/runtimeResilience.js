@@ -146,3 +146,12 @@ function createRuntimeMonitor({
         }
     }
 
+    function stop() {
+        if (memTimer) { clearInterval(memTimer); memTimer = null; }
+        if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+        if (cronTimer) { clearInterval(cronTimer); cronTimer = null; }
+        if (histogram) {
+            try { histogram.disable(); } catch (_) {}
+        }
+    }
+
