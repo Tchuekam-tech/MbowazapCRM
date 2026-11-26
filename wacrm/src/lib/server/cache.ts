@@ -67,3 +67,11 @@ export class FastTtlCache {
       this.store.delete(key);
     } else if (this.store.size >= this.maxEntries) {
       const oldestKey = this.store.keys().next().value;
+      if (oldestKey !== undefined) this.store.delete(oldestKey);
+    }
+    this.store.set(key, {
+      value,
+      freshUntil: now + ttlMs,
+      staleUntil: now + ttlMs + Math.max(0, staleWhileRevalidateMs),
+    });
+  }
