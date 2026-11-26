@@ -107,3 +107,39 @@ export async function POST(request: NextRequest) {
         status: 'active',
         next_send_at: nextSend.toISOString(),
       }));
+
+      const { data: inserted, error: enrErr } = await ctx.supabase
+        .from('drip_enrollments')
+        .upsert(rows, { onConflict: 'sequence_id,contact_id', ignoreDuplicates: true })
+        .select('id');
+
+      if (enrErr) return NextResponse.json({ error: enrErr.message }, { status: 500 });
+
+      const addedCount = inserted?.length ?? 0;
+      await ctx.supabase
+        .from('drip_sequences')
+        .update({
+          status: seq.status === 'draft' ? 'active' : seq.status,
+          enrolled_count: Number(seq.enrolled_count ?? 0) + addedCount,
+        })
+        .eq('id', sequenceId);
+
+      return NextResponse.json({
+        enrolled: addedCount,
+        skippedDuplicates: rows.length - addedCount,
+        firstSendAt: nextSend.toISOString(),
+      });
+    }
+
+    // Create a new multi-step drip sequence
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const rawSteps = Array.isArray(body.steps) ? (body.steps as DripSequenceStep[]) : [];
+    if (!name) {
+      return NextResponse.json({ error: 'Sequence name is required' }, { status: 400 });
+    }
+    if (rawSteps.length === 0) {
+      return NextResponse.json(
+        { error: 'At least one drip step is required' },
+        { status: 400 }
+      );
+    }
