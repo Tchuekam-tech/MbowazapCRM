@@ -18,3 +18,22 @@
 --   4. AI Copywriter & A/B Split-Test Campaigns
 --      (`ab_campaigns`, `ab_campaign_variants`, `ab_campaign_recipients`)
 --      Two-variant split testing with holdout auto-winner promotion.
+--   5. Promo Coupons & Revenue ROI Attribution
+--      (`promo_coupons`, `coupon_redemptions` + contact UTM columns)
+--      Trackable WhatsApp offer codes tied directly to deals & revenue.
+--
+-- Idempotent — safe to re-run.
+-- ============================================================
+
+-- ============================================================
+-- 0. ATTRIBUTION COLUMNS ON CONTACTS
+-- ============================================================
+ALTER TABLE contacts
+  ADD COLUMN IF NOT EXISTS utm_source TEXT,
+  ADD COLUMN IF NOT EXISTS utm_medium TEXT,
+  ADD COLUMN IF NOT EXISTS utm_campaign TEXT,
+  ADD COLUMN IF NOT EXISTS growth_link_id UUID;
+
+-- ============================================================
+-- 1. GROWTH LINKS & QR ATTRIBUTION
+-- ============================================================
