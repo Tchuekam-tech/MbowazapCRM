@@ -58,3 +58,27 @@ export function GrowthLinksTab({
 
   const origin =
     typeof window !== 'undefined' ? window.location.origin : '';
+
+  const qrSvg = useMemo(() => {
+    if (!qrLink) return '';
+    try {
+      return renderQrSvg(`${origin}/go/${qrLink.slug}`, { sizePx: 240 });
+    } catch {
+      return '';
+    }
+  }, [qrLink, origin]);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !phone.trim()) {
+      toast.error('Please enter a campaign name and destination WhatsApp number.');
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await fetch('/api/marketing/links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          slug: slug || undefined,
