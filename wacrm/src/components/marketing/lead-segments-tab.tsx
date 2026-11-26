@@ -303,3 +303,17 @@ export function LeadSegmentsTab({
                       style={{ width: `${lead.score}%` }}
                     />
                   </div>
+
+                  {lead.ai_summary && (
+                    <p className="mt-2.5 rounded-lg bg-primary/5 px-3 py-2 text-xs text-foreground">
+                      <span className="font-semibold text-primary">AI Insight: </span>
+                      {lead.ai_summary}
+                    </p>
+                  )}
+
+                  {lead.next_best_action && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">Next Best Action: </span>
+                      {lead.next_best_action}
+                    </p>
+                  )}
