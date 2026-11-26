@@ -43,3 +43,32 @@ export async function GET() {
           : null;
       return { ...c, variants, verdict };
     });
+
+    return NextResponse.json({ campaigns });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const ctx = await requireRole('agent');
+    const body = await request.json();
+
+    // Launch or Promote-Winner action on an existing campaign
+    if (body.action === 'launch' || body.action === 'promote_winner') {
+      const campaignId = typeof body.campaign_id === 'string' ? body.campaign_id : '';
+      if (!campaignId) {
+        return NextResponse.json({ error: 'campaign_id is required' }, { status: 400 });
+      }
+
+      const { data: campaign } = await ctx.supabase
+        .from('ab_campaigns')
+        .select('*, variants:ab_campaign_variants(*)')
+        .eq('id', campaignId)
+        .eq('account_id', ctx.accountId)
+        .maybeSingle();
+
+      if (!campaign) {
+        return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
+      }
