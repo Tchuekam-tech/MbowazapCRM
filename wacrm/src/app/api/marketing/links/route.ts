@@ -45,3 +45,33 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const slug =
+      typeof body.slug === 'string' && body.slug.trim()
+        ? normalizeSlug(body.slug)
+        : slugifyLinkName(`${name}-${Math.random().toString(36).slice(2, 6)}`);
+
+    const refCode =
+      typeof body.ref_code === 'string' && body.ref_code.trim()
+        ? body.ref_code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 20)
+        : generateRefCode(body.utm_source || 'MW');
+
+    const { data, error } = await ctx.supabase
+      .from('growth_links')
+      .insert({
+        account_id: ctx.accountId,
+        user_id: ctx.userId,
+        name,
+        slug,
+        destination_phone: destinationPhone,
+        prefill_message: typeof body.prefill_message === 'string' ? body.prefill_message.trim() : '',
+        ref_code: refCode,
+        utm_source: typeof body.utm_source === 'string' ? body.utm_source.trim() || null : null,
+        utm_medium: typeof body.utm_medium === 'string' ? body.utm_medium.trim() || null : null,
+        utm_campaign: typeof body.utm_campaign === 'string' ? body.utm_campaign.trim() || null : null,
+        utm_content: typeof body.utm_content === 'string' ? body.utm_content.trim() || null : null,
+        auto_tag_id: typeof body.auto_tag_id === 'string' && body.auto_tag_id ? body.auto_tag_id : null,
+        is_active: true,
+      })
+      .select()
+      .single();
