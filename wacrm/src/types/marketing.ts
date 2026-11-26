@@ -33,3 +33,26 @@ export interface LeadSignal {
   category: 'engagement' | 'intent' | 'recency' | 'deal' | 'attribution' | 'risk';
 }
 
+export interface ContactLeadScore {
+  contact_id: string;
+  account_id: string;
+  score: number;
+  tier: LeadTier;
+  intent_label: string | null;
+  signals: LeadSignal[];
+  ai_summary: string | null;
+  next_best_action: string | null;
+  last_message_at: string | null;
+  computed_at: string;
+  updated_at: string;
+  contact?: {
+    id: string;
+    name: string | null;
+    phone: string;
+    company: string | null;
+    email: string | null;
+    utm_source?: string | null;
+    utm_campaign?: string | null;
+  };
+}
+
