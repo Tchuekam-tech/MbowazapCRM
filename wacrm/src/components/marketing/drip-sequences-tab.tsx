@@ -97,3 +97,22 @@ export function DripSequencesTab({
       prev.filter((_, i) => i !== index).map((s, idx) => ({ ...s, step_order: idx + 1 }))
     );
   }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || steps.some((s) => !s.content_text.trim())) {
+      toast.error('Please enter a sequence name and message for every step.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/marketing/sequences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          status: 'active',
+          segment_id: segmentId || undefined,
+          stop_on_reply: stopOnReply,
+          quiet_hours_start: quietStart,
+          quiet_hours_end: quietEnd,
