@@ -314,3 +314,51 @@ export async function processDueDripEnrollments(
           updated_at: now.toISOString(),
         })
         .eq('id', conversationId);
+
+      // Advance to next step or complete
+      const nextStep = stepList.find((s) => s.step_order > currentStep.step_order);
+      if (nextStep) {
+        const rawNext = new Date(now.getTime() + Math.max(1, nextStep.delay_minutes) * 60_000);
+        const scheduled = nextAllowedSendTime(
+          rawNext,
+          seq.quiet_hours_start || '21:00',
+          seq.quiet_hours_end || '08:00',
+          seq.timezone || 'UTC'
+        );
+        await db
+          .from('drip_enrollments')
+          .update({
+            conversation_id: conversationId,
+            current_step_order: nextStep.step_order,
+            last_sent_at: now.toISOString(),
+            next_send_at: scheduled.toISOString(),
+            last_error: null,
+          })
+          .eq('id', enrollment.id);
+      } else {
+        await db
+          .from('drip_enrollments')
+          .update({
+            conversation_id: conversationId,
+            status: 'completed',
+            last_sent_at: now.toISOString(),
+            completed_at: now.toISOString(),
+            last_error: null,
+          })
+          .eq('id', enrollment.id);
+        await db
+          .from('drip_sequences')
+          .update({ completed_count: Number(seq.completed_count ?? 0) + 1 })
+          .eq('id', seq.id);
+      }
+
+      result.sent += 1;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await db
+        .from('drip_enrollments')
+        .update({ status: 'failed', last_error: msg.slice(0, 500) })
+        .eq('id', enrollment.id);
+      result.failed += 1;
+    }
+  }
