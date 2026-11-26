@@ -125,3 +125,53 @@ export async function syncBufferForAccount(
 
     const channelById = new Map(channels.map((c) => [c.id, c]));
     const nowIso = new Date().toISOString();
+
+    // Per-channel stats accumulator
+    const stats = new Map<
+      string,
+      {
+        sent: number;
+        scheduled: number;
+        impressions: number;
+        reach: number;
+        engagements: number;
+        clicks: number;
+        lastPostAt: string | null;
+      }
+    >();
+    const ensure = (cid: string) => {
+      let s = stats.get(cid);
+      if (!s) {
+        s = {
+          sent: 0,
+          scheduled: 0,
+          impressions: 0,
+          reach: 0,
+          engagements: 0,
+          clicks: 0,
+          lastPostAt: null,
+        };
+        stats.set(cid, s);
+      }
+      return s;
+    };
+
+    const postRows = postsRes.posts.map((p) => {
+      const ch = channelById.get(p.channelId);
+      const service = ch?.service ?? 'social';
+      const norm = extractNormalizedPostMetrics(p.metrics);
+      const acc = ensure(p.channelId);
+
+      if (p.status === 'scheduled' || p.status === 'buffer') {
+        acc.scheduled += 1;
+      } else {
+        acc.sent += 1;
+        acc.impressions += norm.impressions;
+        acc.reach += norm.reach;
+        acc.engagements += norm.totalEngagements;
+        acc.clicks += norm.clicks;
+        const ts = p.sentAt || p.dueAt;
+        if (ts && (!acc.lastPostAt || ts > acc.lastPostAt)) {
+          acc.lastPostAt = ts;
+        }
+      }
