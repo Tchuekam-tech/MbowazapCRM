@@ -186,3 +186,12 @@ export function LeadSegmentsTab({
       toast.error('Failed to delete segment');
     }
   }
+
+  function toggleSegTier(tier: LeadTier) {
+    setSegTiers((prev) =>
+      prev.includes(tier) ? prev.filter((t) => t !== tier) : [...prev, tier]
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
