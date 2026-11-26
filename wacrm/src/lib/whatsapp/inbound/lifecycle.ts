@@ -9,6 +9,7 @@ import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply';
 import { runAutomationsForTrigger } from '@/lib/automations/engine';
 import { dispatchInboundToFlows } from '@/lib/flows/engine';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
+import { handleMarketingInboundEffects } from '@/lib/marketing/drip-engine';
 
 export interface InboundLifecycleParams {
   accountId: string;
@@ -181,4 +182,11 @@ export async function dispatchInboundLifecycle(
     content_type: contentType,
     text: contentText,
   });
+
+  // Marketing attribution, stop-on-reply drips, A/B reply tracking & live lead score.
+  await handleMarketingInboundEffects(db, {
+    accountId,
+    contactId,
+    contentText,
+  }).catch(() => {});
 }
