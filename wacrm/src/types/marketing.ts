@@ -26,3 +26,10 @@ export interface GrowthLink {
   created_at: string;
   updated_at: string;
 }
+
+export interface LeadSignal {
+  label: string;
+  points: number;
+  category: 'engagement' | 'intent' | 'recency' | 'deal' | 'attribution' | 'risk';
+}
+
