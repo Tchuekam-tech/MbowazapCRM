@@ -245,3 +245,20 @@ export interface BufferOrganizationSummary {
   ownerEmail?: string | null;
 }
 
+export interface BufferIntegrationPublic {
+  id: string;
+  account_id: string;
+  buffer_account_id: string | null;
+  buffer_account_email: string | null;
+  buffer_account_name: string | null;
+  organization_id: string;
+  organization_name: string | null;
+  organizations: BufferOrganizationSummary[];
+  status: 'connected' | 'error' | 'disconnected';
+  insights_available: boolean;
+  last_synced_at: string | null;
+  last_error: string | null;
+  ai_audit_summary: DigitalPresenceAudit | null;
+  ai_audit_at: string | null;
+}
+
