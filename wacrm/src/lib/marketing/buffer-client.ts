@@ -419,3 +419,30 @@ export function createBufferClient(opts: BufferClientOptions) {
                   }))
               : [],
           }));
+
+      // Try rich query with post metrics first; fall back cleanly if the key
+      // lacks insightsRead permission or plan-level metrics.
+      try {
+        const rich = await graphql<RawPostsResp>(buildQuery(true));
+        return { posts: mapEdges(rich), insightsAvailable: true };
+      } catch (err) {
+        if (err instanceof BufferApiError && err.code === 'graphql_error') {
+          const basic = await graphql<RawPostsResp>(buildQuery(false));
+          return { posts: mapEdges(basic), insightsAvailable: false };
+        }
+        throw err;
+      }
+    },
+
+    async createPost(input: {
+      channelId: string;
+      text: string;
+      mode?: 'addToQueue' | 'shareNow' | 'customScheduled';
+      dueAt?: string;
+    }): Promise<{ id: string; text: string }> {
+      const mode = input.mode ?? 'addToQueue';
+      const duePart =
+        mode === 'customScheduled' && input.dueAt
+          ? `, dueAt: ${gqlString(input.dueAt)}`
+          : '';
+      const schedulingType = mode === 'customScheduled' ? 'custom' : 'automatic';
