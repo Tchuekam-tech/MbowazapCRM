@@ -33,6 +33,22 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
   const todayStart = startOfLocalDay().toISOString()
   const yesterdayStart = daysAgoStart(1).toISOString()
 
+  // Fast path: single-roundtrip SQL RPC (migration 050). Falls back
+  // transparently to parallel PostgREST queries on older schemas.
+  try {
+    const { data: rpcData, error: rpcErr } = await db.rpc(
+      'get_dashboard_metrics_fast',
+      {
+        p_today_start: todayStart,
+        p_yesterday_start: yesterdayStart,
+      },
+    )
+    if (!rpcErr && rpcData && typeof rpcData === 'object') {
+      const m = rpcData as Record<string, number>
+      return {
+        activeConversations: {
+          current: Number(m.open_conv_cur ?? 0),
+
   const [
     openConvCur,
     newConvToday,
