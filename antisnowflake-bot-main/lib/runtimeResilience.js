@@ -28,3 +28,10 @@ function createRuntimeMonitor({
     onMemoryPressure = null,
     log = console,
 } = {}) {
+    let histogram = null;
+    try {
+        histogram = monitorEventLoopDelay({ resolution: 20 });
+        histogram.enable();
+    } catch (_) {
+        histogram = null;
+    }
