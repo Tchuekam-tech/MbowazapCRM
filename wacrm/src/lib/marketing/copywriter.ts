@@ -231,3 +231,49 @@ export interface AbWinnerVerdict {
   confidence: 'high' | 'moderate' | 'insufficient_data';
 }
 
+export function evaluateAbWinner(
+  variantA: Pick<AbCampaignVariant, 'sent_count' | 'read_count' | 'replied_count' | 'conversions_count'>,
+  variantB: Pick<AbCampaignVariant, 'sent_count' | 'read_count' | 'replied_count' | 'conversions_count'>,
+  metric: AbWinnerMetric = 'reply_rate'
+): AbWinnerVerdict {
+  const rateOf = (v: typeof variantA): number => {
+    if (v.sent_count <= 0) return 0;
+    const num =
+      metric === 'read_rate'
+        ? v.read_count
+        : metric === 'conversion_rate'
+          ? v.conversions_count
+          : v.replied_count;
+    return Math.round((num / v.sent_count) * 1000) / 10;
+  };
+
+  const rateA = rateOf(variantA);
+  const rateB = rateOf(variantB);
+  const minSample = Math.min(variantA.sent_count, variantB.sent_count);
+
+  if (minSample < 2 || rateA === rateB) {
+    return {
+      winner: rateA > rateB ? 'A' : rateB > rateA ? 'B' : null,
+      rateA,
+      rateB,
+      liftPercent: 0,
+      confidence: 'insufficient_data',
+    };
+  }
+
+  const winner = rateA > rateB ? 'A' : 'B';
+  const high = Math.max(rateA, rateB);
+  const low = Math.min(rateA, rateB);
+  const liftPercent =
+    low > 0 ? Math.round(((high - low) / low) * 1000) / 10 : Math.round(high * 10) / 10;
+
+  const diff = Math.abs(rateA - rateB);
+  const confidence =
+    minSample >= 20 && diff >= 5
+      ? 'high'
+      : minSample >= 5 && diff >= 2
+        ? 'moderate'
+        : 'insufficient_data';
+
+  return { winner, rateA, rateB, liftPercent, confidence };
+}
