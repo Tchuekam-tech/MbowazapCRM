@@ -75,3 +75,20 @@ export async function POST(request: NextRequest) {
       })
       .select()
       .single();
+
+    if (error) {
+      const status = error.code === '23505' ? 409 : 500;
+      return NextResponse.json(
+        { error: status === 409 ? 'That custom slug is already taken. Try another.' : error.message },
+        { status }
+      );
+    }
+
+    serverCache.delete(`growth-link:${slug}`);
+    serverCache.invalidatePrefix(`marketing:analytics:${ctx.accountId}`);
+    return NextResponse.json({ link: data }, { status: 201 });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
