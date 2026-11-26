@@ -151,3 +151,12 @@ export class FastTtlCache {
     }
     return removed;
   }
+
+  clear(): void {
+    this.store.clear();
+    this.inflight.clear();
+    this.hits = 0;
+    this.misses = 0;
+    this.coalesced = 0;
+    this.staleHits = 0;
+  }
