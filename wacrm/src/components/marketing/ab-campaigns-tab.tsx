@@ -478,3 +478,33 @@ export function AbCampaignsTab({
                   key={camp.id}
                   className="space-y-3 rounded-xl border border-border bg-card p-4"
                 >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-semibold text-foreground">
+                          {camp.name}
+                        </h4>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                          {camp.status}
+                        </span>
+                        {camp.winner_variant && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
+                            <Trophy className="h-3 w-3" /> Winner: {camp.winner_variant}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Split {camp.split_ratio}/{100 - camp.split_ratio} · Holdout {camp.holdout_percent}%
+                      </p>
+                    </div>
+                    {canEdit && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDelete(camp.id)}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
