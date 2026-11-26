@@ -50,14 +50,20 @@ const store = {
         }
     },
 
+    /** Synchronous atomic write — used on SIGTERM / clean shutdown. */
     writeToFile(filePath = STORE_FILE) {
+        if (!this._dirty && fs.existsSync(filePath)) return
         try {
             const data = JSON.stringify({
                 contacts: this.contacts,
                 chats: this.chats,
                 messages: this.messages
             })
-            fs.writeFileSync(filePath, data)
+            const tmp = `${filePath}.${process.pid}.tmp`
+            fs.mkdirSync(path.dirname(path.resolve(filePath)), { recursive: true })
+            fs.writeFileSync(tmp, data)
+            fs.renameSync(tmp, filePath)
+            this._dirty = false
         } catch (e) {
             console.warn('Failed to write store file:', e.message)
         }
