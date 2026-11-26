@@ -74,3 +74,26 @@ export function DripSequencesTab({
   const [saving, setSaving] = useState(false);
   const [enrollingId, setEnrollingId] = useState<string | null>(null);
 
+  function addStep() {
+    setSteps((prev) => [
+      ...prev,
+      {
+        step_order: prev.length + 1,
+        delay_minutes: 1440,
+        message_type: 'text',
+        content_text: '',
+      },
+    ]);
+  }
+
+  function updateStep(index: number, patch: Partial<DripSequenceStep>) {
+    setSteps((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, ...patch } : s))
+    );
+  }
+
+  function removeStep(index: number) {
+    setSteps((prev) =>
+      prev.filter((_, i) => i !== index).map((s, idx) => ({ ...s, step_order: idx + 1 }))
+    );
+  }
