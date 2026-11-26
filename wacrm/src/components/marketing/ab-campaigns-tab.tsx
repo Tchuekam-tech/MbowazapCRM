@@ -78,3 +78,23 @@ export function AbCampaignsTab({
           tone,
           language,
           coupon_code: selectedCoupon?.code ?? undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setLabelA(data.variantA.label);
+      setBodyA(data.variantA.body);
+      setLabelB(data.variantB.label);
+      setBodyB(data.variantB.body);
+      if (!name.trim()) setName(`${goal}: ${offer.slice(0, 32)}`);
+      toast.success(
+        data.usedAi
+          ? 'AI generated 2 high-converting A/B variants!'
+          : 'Generated 2 proven conversion variants (configure AI key in Settings for custom LLM copy).'
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Copywriter failed');
+    } finally {
+      setGenerating(false);
+    }
+  }
