@@ -70,3 +70,26 @@ $$;
 GRANT EXECUTE ON FUNCTION get_dashboard_metrics_fast(TIMESTAMPTZ, TIMESTAMPTZ) TO authenticated;
 
 -- 3. Fast server-side daily message volume aggregation RPC (avoids pulling 10k+ raw rows to client)
+CREATE OR REPLACE FUNCTION get_conversations_series_fast(
+  p_start TIMESTAMPTZ,
+  p_tz TEXT DEFAULT 'UTC'
+) RETURNS TABLE (
+  day TEXT,
+  incoming BIGINT,
+  outgoing BIGINT
+)
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+AS $$
+  SELECT
+    to_char(created_at AT TIME ZONE COALESCE(NULLIF(p_tz, ''), 'UTC'), 'YYYY-MM-DD') AS day,
+    COUNT(*) FILTER (WHERE sender_type = 'customer') AS incoming,
+    COUNT(*) FILTER (WHERE sender_type <> 'customer') AS outgoing
+  FROM messages
+  WHERE created_at >= p_start
+  GROUP BY 1
+  ORDER BY 1 ASC;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_conversations_series_fast(TIMESTAMPTZ, TEXT) TO authenticated;
