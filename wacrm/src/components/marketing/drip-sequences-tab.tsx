@@ -353,3 +353,22 @@ export function DripSequencesTab({
           </div>
         ) : (
           sequences.map((seq) => {
+            const replyRate =
+              seq.enrolled_count > 0
+                ? Math.round((seq.replied_count / seq.enrolled_count) * 100)
+                : 0;
+            return (
+              <div
+                key={seq.id}
+                className="rounded-xl border border-border bg-card p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-foreground">
+                        {seq.name}
+                      </h3>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                          seq.status === 'active'
+                            ? 'bg-emerald-500/15 text-emerald-400'
