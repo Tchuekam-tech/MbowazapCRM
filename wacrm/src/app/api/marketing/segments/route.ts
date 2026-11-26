@@ -26,3 +26,34 @@ export async function POST(request: NextRequest) {
     const ctx = await requireRole('agent');
     const body = await request.json();
     const rules = (body.rules && typeof body.rules === 'object' ? body.rules : {}) as SegmentRules;
+
+    // Preview-only mode lets the builder show live audience match counts before saving
+    if (body.preview === true) {
+      const evalRes = await evaluateAccountSegment(ctx.supabase, ctx.accountId, rules);
+      return NextResponse.json({
+        count: evalRes.contactIds.length,
+        totalContacts: evalRes.totalContacts,
+      });
+    }
+
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) {
+      return NextResponse.json({ error: 'Segment name is required' }, { status: 400 });
+    }
+
+    const evalRes = await evaluateAccountSegment(ctx.supabase, ctx.accountId, rules);
+    const nowIso = new Date().toISOString();
+
+    const { data, error } = await ctx.supabase
+      .from('marketing_segments')
+      .insert({
+        account_id: ctx.accountId,
+        user_id: ctx.userId,
+        name,
+        description: typeof body.description === 'string' ? body.description.trim() || null : null,
+        rules,
+        cached_count: evalRes.contactIds.length,
+        last_evaluated_at: nowIso,
+      })
+      .select()
+      .single();
