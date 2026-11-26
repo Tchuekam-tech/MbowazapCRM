@@ -369,3 +369,30 @@ export function RoiCouponsTab({
               value={discountValue}
               onChange={(e) => setDiscountValue(e.target.value)}
               placeholder="20"
+              className="text-xs"
+              required
+            />
+            <Input
+              type="number"
+              min={1}
+              value={maxUses}
+              onChange={(e) => setMaxUses(e.target.value)}
+              placeholder="Max uses"
+              className="col-span-1 text-xs sm:col-span-2"
+            />
+            <Input
+              type="date"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              className="col-span-1 text-xs sm:col-span-2"
+            />
+            <Button
+              type="submit"
+              disabled={!canEdit || creating}
+              className="col-span-2"
+              size="sm"
+            >
+              {creating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1.5 h-3.5 w-3.5" />}
+              Create Coupon
+            </Button>
+          </form>
