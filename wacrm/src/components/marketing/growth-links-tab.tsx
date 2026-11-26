@@ -142,3 +142,34 @@ export function GrowthLinksTab({
     setTimeout(() => setCopiedId(null), 2000);
   }
 
+  function handleDownloadQr() {
+    if (!qrLink || !qrSvg) return;
+    const blob = new Blob([qrSvg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mbowazap-qr-${qrLink.slug}.svg`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      {/* Create Growth Link Card */}
+      <form
+        onSubmit={handleCreate}
+        className="space-y-4 rounded-xl border border-border bg-card p-5 lg:col-span-5"
+      >
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Link2 className="h-4 w-4" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">
+              New Click-to-WhatsApp Link & QR
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Track ad clicks, auto-tag leads & generate scannable QR codes.
+            </p>
+          </div>
+        </div>
