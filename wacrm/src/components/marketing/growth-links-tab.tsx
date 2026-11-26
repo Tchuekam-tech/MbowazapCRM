@@ -355,3 +355,18 @@ export function GrowthLinksTab({
                       size="sm"
                       onClick={() => setQrLink(link)}
                     >
+                      <QrCode className="mr-1 h-3.5 w-3.5" />
+                      QR
+                    </Button>
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(link.id)}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
