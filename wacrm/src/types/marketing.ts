@@ -208,3 +208,29 @@ export interface MarketingAnalyticsSnapshot {
   channelBreakdown: Array<{
     source: string;
     clicks: number;
+    leads: number;
+    conversions: number;
+    revenue: number;
+  }>;
+  sendTimeHeatmap: Array<{
+    day: number; // 0 = Mon .. 6 = Sun
+    hourBlock: number; // 0..5 (4-hour blocks: 0-4, 4-8, 8-12, 12-16, 16-20, 20-24)
+    label: string;
+    replies: number;
+    score: number; // 0..100 normalized intensity
+  }>;
+  bestSendWindow: {
+    dayName: string;
+    hourRange: string;
+    replyCount: number;
+  } | null;
+  summary: {
+    activeLinks: number;
+    activeSequences: number;
+    runningExperiments: number;
+    activeCoupons: number;
+    totalCouponRevenue: number;
+    avgLeadScore: number;
+    hotLeadCount: number;
+  };
+}
