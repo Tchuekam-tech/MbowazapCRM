@@ -397,3 +397,46 @@ export async function handleMarketingInboundEffects(
         .eq('account_id', accountId)
         .eq('ref_code', refCode)
         .maybeSingle();
+
+      if (link) {
+        await db
+          .from('contacts')
+          .update({
+            utm_source: link.utm_source || 'growth-link',
+            utm_medium: link.utm_medium || 'whatsapp',
+            utm_campaign: link.utm_campaign || refCode,
+            growth_link_id: link.id,
+          })
+          .eq('id', contactId)
+          .is('growth_link_id', null);
+
+        await db
+          .from('growth_links')
+          .update({
+            conversions_count: Number(link.conversions_count ?? 0) + 1,
+            updated_at: nowIso,
+          })
+          .eq('id', link.id);
+
+        if (link.auto_tag_id) {
+          await db
+            .from('contact_tags')
+            .upsert(
+              { contact_id: contactId, tag_id: link.auto_tag_id },
+              { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
+            );
+        }
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  // 2. Stop-on-reply for active Drip Sequences
+  try {
+    const { data: activeEnrollments } = await db
+      .from('drip_enrollments')
+      .select('id, sequence_id')
+      .eq('account_id', accountId)
+      .eq('contact_id', contactId)
+      .eq('status', 'active');
