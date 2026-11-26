@@ -159,3 +159,28 @@ export function RoiCouponsTab({
       setRedeemingId(null);
     }
   }
+
+  async function handleDeleteCoupon(id: string) {
+    try {
+      const res = await fetch(`/api/marketing/coupons?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Coupon removed');
+      onRefresh();
+    } catch {
+      toast.error('Failed to delete coupon');
+    }
+  }
+
+  const funnel = analytics?.funnel ?? {
+    clicks: 0,
+    leads: 0,
+    replied: 0,
+    hotLeads: 0,
+    redemptions: 0,
+    wonRevenue: 0,
+  };
+
+  return (
+    <div className="space-y-6">
