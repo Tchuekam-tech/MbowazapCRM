@@ -73,3 +73,12 @@ function MarketingStudioInner() {
   const [presence, setPresence] = useState<DigitalPresenceReport | null>(null);
   const [systemHealth, setSystemHealth] = useState<SystemHealthSnapshot | null>(null);
   const [tags, setTags] = useState<Tag[]>([]);
+
+  const loadHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/system/status');
+      if (res.ok) setSystemHealth(await res.json());
+    } catch {
+      // Non-fatal
+    }
+  }, []);
