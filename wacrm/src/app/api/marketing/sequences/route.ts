@@ -173,3 +173,41 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    const stepRows = rawSteps.map((s, idx) => ({
+      sequence_id: seq.id,
+      account_id: ctx.accountId,
+      step_order: idx + 1,
+      delay_minutes: Math.max(0, Math.round(Number(s.delay_minutes ?? 0))),
+      message_type: s.message_type === 'template' || s.message_type === 'image' ? s.message_type : 'text',
+      content_text: String(s.content_text || '').trim(),
+      media_url: s.media_url || null,
+      template_name: s.template_name || null,
+      template_language: s.template_language || null,
+      coupon_id: s.coupon_id || null,
+    }));
+
+    const { data: savedSteps, error: stepsErr } = await ctx.supabase
+      .from('drip_sequence_steps')
+      .insert(stepRows)
+      .select();
+
+    if (stepsErr) {
+      return NextResponse.json({ error: stepsErr.message }, { status: 500 });
+    }
+
+    return NextResponse.json(
+      { sequence: { ...seq, steps: savedSteps ?? [] } },
+      { status: 201 }
+    );
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const ctx = await requireRole('agent');
+    const body = await request.json();
+    const id = typeof body.id === 'string' ? body.id : '';
+    if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
