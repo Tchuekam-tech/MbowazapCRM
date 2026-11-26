@@ -171,3 +171,9 @@ function createRuntimeMonitor({
             },
         };
     }
+
+    return {
+        start,
+        stop,
+        checkMemory,
+        pingWacrmHealth,
