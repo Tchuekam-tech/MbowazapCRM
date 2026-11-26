@@ -37,3 +37,18 @@ describe('FastTtlCache', () => {
     const cache = new FastTtlCache(16);
     let t = 1000;
     cache.set('swr-key', 'v1', 100, 500, t);
+
+    t = 1200; // past freshUntil (1100), inside staleUntil (1600)
+    const val = await cache.getOrLoad('swr-key', 100, async () => 'v2', {
+      staleWhileRevalidateMs: 500,
+      now: () => t,
+    });
+    expect(val).toBe('v1');
+    expect(cache.stats().staleHits).toBe(1);
+
+    // Wait microtask for background refresh to store v2
+    await new Promise((r) => setTimeout(r, 10));
+    expect(cache.get('swr-key', t)).toBe('v2');
+  });
+});
+
