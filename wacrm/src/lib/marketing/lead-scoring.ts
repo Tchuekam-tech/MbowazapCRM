@@ -287,3 +287,23 @@ export function matchesSegmentRules(
   }
   return true;
 }
+
+/**
+ * Computes and upserts lead scores for up to `limit` contacts in an account
+ * in parallel batched queries (no N+1 per contact!).
+ */
+export async function recomputeAccountLeadScores(
+  db: SupabaseClient,
+  accountId: string,
+  opts: { contactId?: string; limit?: number } = {}
+): Promise<number> {
+  let contactQuery = db
+    .from('contacts')
+    .select('id, utm_source, growth_link_id')
+    .eq('account_id', accountId)
+    .order('created_at', { ascending: false })
+    .limit(opts.limit ?? 250);
+
+  if (opts.contactId) {
+    contactQuery = contactQuery.eq('id', opts.contactId);
+  }
