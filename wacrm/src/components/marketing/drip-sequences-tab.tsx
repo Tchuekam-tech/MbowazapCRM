@@ -334,3 +334,22 @@ export function DripSequencesTab({
             Add Follow-Up Step
           </Button>
         </div>
+
+        <Button type="submit" disabled={!canEdit || saving} className="w-full">
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+          Save & Activate Sequence
+        </Button>
+      </form>
+
+      {/* Active Sequences */}
+      <div className="space-y-3 lg:col-span-6">
+        {sequences.length === 0 ? (
+          <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card p-6 text-center">
+            <Clock className="mb-3 h-10 w-10 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">No Drip Sequences yet</p>
+            <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+              Build automated multi-day nurture and win-back funnels that respect quiet hours and exit instantly when a prospect replies.
+            </p>
+          </div>
+        ) : (
+          sequences.map((seq) => {
