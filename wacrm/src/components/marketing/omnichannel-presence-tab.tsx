@@ -512,3 +512,39 @@ export function OmnichannelPresenceTab({
             },
             {
               label: 'Social → WA Clicks',
+              value: totals.socialDrivenWaClicks.toLocaleString(),
+              sub: `${totals.postsWithGrowthLinks} posts carry /go/ links`,
+            },
+            {
+              label: 'Social → WA Leads',
+              value: totals.socialDrivenWaLeads.toLocaleString(),
+              sub: 'Attributed across channels',
+            },
+            {
+              label: 'Social-Driven Revenue',
+              value: formatCurrency(totals.socialDrivenRevenue, currency),
+              sub: 'Via tracked Growth Links',
+              highlight: true,
+            },
+          ].map((card) => (
+            <div
+              key={card.label}
+              className={`rounded-xl border p-4 ${
+                card.highlight
+                  ? 'border-primary/40 bg-primary/5'
+                  : 'border-border bg-card'
+              }`}
+            >
+              <p className="text-xs text-muted-foreground">{card.label}</p>
+              <p
+                className={`mt-1 text-xl font-bold tabular-nums ${
+                  card.highlight ? 'text-primary' : 'text-foreground'
+                }`}
+              >
+                {card.value}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{card.sub}</p>
+            </div>
+          ))}
+        </div>
+      </div>
