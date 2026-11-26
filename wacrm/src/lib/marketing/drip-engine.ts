@@ -182,3 +182,43 @@ export async function processDueDripEnrollments(
       const name = (tObj?.name || '').toLowerCase();
       return name.includes('opt-out') || name.includes('opted out') || name === 'stop';
     });
+
+    if (shouldExit) {
+      await db
+        .from('drip_enrollments')
+        .update({ status: 'exited', completed_at: now.toISOString() })
+        .eq('id', enrollment.id);
+      result.exited += 1;
+      continue;
+    }
+
+    // Load sequence steps
+    const { data: steps } = await db
+      .from('drip_sequence_steps')
+      .select('*')
+      .eq('sequence_id', enrollment.sequence_id)
+      .order('step_order', { ascending: true });
+
+    const stepList = (steps ?? []) as Array<{
+      step_order: number;
+      delay_minutes: number;
+      message_type: 'text' | 'template' | 'image';
+      content_text: string;
+      media_url: string | null;
+      template_name: string | null;
+      template_language: string | null;
+      coupon_id: string | null;
+    }>;
+
+    const currentStep = stepList.find((s) => s.step_order === enrollment.current_step_order);
+    if (!currentStep) {
+      await db
+        .from('drip_enrollments')
+        .update({ status: 'completed', completed_at: now.toISOString() })
+        .eq('id', enrollment.id);
+      await db
+        .from('drip_sequences')
+        .update({ completed_count: Number(seq.completed_count ?? 0) + 1 })
+        .eq('id', seq.id);
+      continue;
+    }
