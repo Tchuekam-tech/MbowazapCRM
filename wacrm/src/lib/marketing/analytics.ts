@@ -176,3 +176,34 @@ export async function loadMarketingAnalytics(
     const ch = ensureChannel(c.utm_source || 'organic');
     ch.leads += 1;
   }
+
+  const channelBreakdown = [...channelMap.entries()]
+    .map(([source, stats]) => ({ source, ...stats }))
+    .sort((a, b) => b.revenue - a.revenue || b.leads - a.leads || b.clicks - a.clicks)
+    .slice(0, 8);
+
+  const { heatmap, bestSendWindow } = buildSendTimeHeatmap(customerTimestamps);
+
+  return {
+    funnel: {
+      clicks: totalClicks,
+      leads: totalLeads,
+      replied: Math.max(seqReplies, customerTimestamps.length > 0 ? Math.min(totalLeads, customerTimestamps.length) : 0),
+      hotLeads: hotLeadCount,
+      redemptions: totalRedemptions,
+      wonRevenue: Math.max(wonRevenue, totalCouponRevenue),
+    },
+    channelBreakdown,
+    sendTimeHeatmap: heatmap,
+    bestSendWindow,
+    summary: {
+      activeLinks: links.filter((l) => l.is_active).length,
+      activeSequences: sequences.filter((s) => s.status === 'active').length,
+      runningExperiments: campaigns.filter((c) => c.status === 'running' || c.status === 'evaluating').length,
+      activeCoupons: coupons.filter((c) => c.is_active).length,
+      totalCouponRevenue,
+      avgLeadScore,
+      hotLeadCount,
+    },
+  };
+}
