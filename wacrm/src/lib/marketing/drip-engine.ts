@@ -256,3 +256,41 @@ export async function processDueDripEnrollments(
         conversationId = opened?.conversation.id ?? null;
       }
       if (!conversationId) throw new Error('Could not open conversation');
+
+      const rendered = renderPersonalizedCopy(
+        currentStep.content_text,
+        contact,
+        couponRes.data?.code ?? null
+      );
+
+      let waMessageId = '';
+      if (currentStep.message_type === 'template' && currentStep.template_name) {
+        const sent = await transport.sendTemplate({
+          to: target.target,
+          templateName: currentStep.template_name,
+          language: currentStep.template_language || 'en_US',
+          contentText: rendered,
+          params: [],
+          origin: 'automation',
+          conversationId,
+        });
+        waMessageId = sent.messageId;
+      } else if (currentStep.message_type === 'image' && currentStep.media_url) {
+        const sent = await transport.sendMedia({
+          to: target.target,
+          kind: 'image',
+          link: currentStep.media_url,
+          caption: rendered || undefined,
+          origin: 'automation',
+          conversationId,
+        });
+        waMessageId = sent.messageId;
+      } else {
+        const sent = await transport.sendText({
+          to: target.target,
+          text: rendered,
+          origin: 'automation',
+          conversationId,
+        });
+        waMessageId = sent.messageId;
+      }
