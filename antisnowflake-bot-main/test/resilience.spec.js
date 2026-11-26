@@ -66,3 +66,4 @@ test('lightweight_store writeToFileAsync skips clean writes and writes atomicall
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 });
+
