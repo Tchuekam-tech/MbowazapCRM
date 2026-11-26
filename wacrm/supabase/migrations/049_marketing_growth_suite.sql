@@ -142,3 +142,27 @@ BEGIN
       unique_clicks_count = unique_clicks_count + CASE WHEN v_seen THEN 0 ELSE 1 END,
       updated_at = NOW()
   WHERE id = p_link_id;
+
+  RETURN NOT v_seen;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION record_growth_link_click(UUID, UUID, TEXT, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION record_growth_link_click(UUID, UUID, TEXT, TEXT, TEXT) TO service_role;
+
+-- ============================================================
+-- 2. LEAD INTELLIGENCE & SMART AUDIENCE SEGMENTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS contact_lead_scores (
+  contact_id UUID PRIMARY KEY REFERENCES contacts(id) ON DELETE CASCADE,
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  score INTEGER NOT NULL DEFAULT 0 CHECK (score >= 0 AND score <= 100),
+  tier TEXT NOT NULL DEFAULT 'cold' CHECK (tier IN ('hot', 'warm', 'cold')),
+  intent_label TEXT,
+  signals JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ai_summary TEXT,
+  next_best_action TEXT,
+  last_message_at TIMESTAMPTZ,
+  computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
