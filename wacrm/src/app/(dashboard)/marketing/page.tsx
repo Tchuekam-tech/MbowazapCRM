@@ -284,3 +284,13 @@ function MarketingStudioInner() {
               onRefresh={loadAll}
             />
           </TabsContent>
+
+          <TabsContent value="drips">
+            <DripSequencesTab
+              sequences={sequences}
+              segments={segments}
+              coupons={coupons}
+              canEdit={canEdit}
+              onRefresh={loadAll}
+            />
+          </TabsContent>
