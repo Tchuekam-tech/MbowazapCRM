@@ -239,3 +239,47 @@ export async function syncBufferForAccount(
         .upsert(postRows, { onConflict: 'account_id,buffer_post_id' });
       if (pErr) throw pErr;
     }
+
+    const orgList = Array.isArray(integration.organizations_json)
+      ? (integration.organizations_json as Array<{ id: string; name: string }>)
+      : [];
+    const orgName =
+      orgList.find((o) => o.id === orgId)?.name ??
+      (integration.organization_name as string | null) ??
+      null;
+
+    await db
+      .from('buffer_integrations')
+      .update({
+        organization_id: orgId,
+        organization_name: orgName,
+        status: 'connected',
+        insights_available: postsRes.insightsAvailable,
+        last_synced_at: nowIso,
+        last_error: null,
+        updated_at: nowIso,
+      })
+      .eq('account_id', accountId);
+
+    serverCache.invalidatePrefix(`marketing:presence:${accountId}`);
+
+    return {
+      channelsSynced: channelRows.length,
+      postsSynced: postRows.length,
+      insightsAvailable: postsRes.insightsAvailable,
+      organizationId: orgId,
+      organizationName: orgName,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await db
+      .from('buffer_integrations')
+      .update({
+        status: 'error',
+        last_error: msg.slice(0, 500),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('account_id', accountId);
+    throw err;
+  }
+}
