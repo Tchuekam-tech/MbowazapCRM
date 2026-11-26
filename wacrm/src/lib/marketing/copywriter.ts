@@ -194,3 +194,40 @@ export async function generateAbCopyVariants(
         'You are a world-class WhatsApp direct-response marketing copywriter. Return ONLY valid JSON (no markdown code fences) with shape: {"variantA":{"label":"...","body":"..."},"variantB":{"label":"...","body":"..."}}. Variant A uses a conversational curiosity hook; Variant B uses direct value + urgency.',
       messages: [{ role: 'user', content: prompt }],
     });
+
+    const cleaned = res.text.replace(/^```json\s*|\s*```$/g, '').trim();
+    const parsed = JSON.parse(cleaned) as {
+      variantA?: { label?: string; body?: string };
+      variantB?: { label?: string; body?: string };
+    };
+
+    if (parsed.variantA?.body && parsed.variantB?.body) {
+      return {
+        variantA: {
+          label: (parsed.variantA.label || 'Variant A (Hook)').slice(0, 60),
+          body: parsed.variantA.body.trim(),
+          compliance: lintWhatsAppCopy(parsed.variantA.body.trim()),
+        },
+        variantB: {
+          label: (parsed.variantB.label || 'Variant B (Value)').slice(0, 60),
+          body: parsed.variantB.body.trim(),
+          compliance: lintWhatsAppCopy(parsed.variantB.body.trim()),
+        },
+        usedAi: true,
+      };
+    }
+  } catch {
+    // Fall back to deterministic conversion templates
+  }
+
+  return buildFallbackAbCopy(req);
+}
+
+export interface AbWinnerVerdict {
+  winner: 'A' | 'B' | null;
+  rateA: number;
+  rateB: number;
+  liftPercent: number;
+  confidence: 'high' | 'moderate' | 'insufficient_data';
+}
+
