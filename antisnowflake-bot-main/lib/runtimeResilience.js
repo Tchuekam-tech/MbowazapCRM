@@ -107,3 +107,13 @@ function createRuntimeMonitor({
                 headers: { 'x-cron-secret': cronSecret },
                 signal: AbortSignal.timeout(25_000),
             });
+            lastCronTickAt = Date.now();
+            lastCronTickOk = res.ok;
+            return res.ok;
+        } catch (err) {
+            lastCronTickAt = Date.now();
+            lastCronTickOk = false;
+            log.warn(`[resilience] WACRM cron tick failed: ${err?.message || err}`);
+            return false;
+        }
+    }
