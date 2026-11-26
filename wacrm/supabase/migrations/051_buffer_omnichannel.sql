@@ -117,3 +117,23 @@ CREATE TABLE IF NOT EXISTS buffer_posts (
   metrics_raw JSONB NOT NULL DEFAULT '[]'::jsonb,
   linked_growth_slug TEXT,
   synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (account_id, buffer_post_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_buffer_posts_account_sent
+  ON buffer_posts (account_id, sent_at DESC NULLS LAST);
+
+CREATE INDEX IF NOT EXISTS idx_buffer_posts_account_channel
+  ON buffer_posts (account_id, buffer_channel_id, status);
+
+ALTER TABLE buffer_posts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "buffer_posts_select" ON buffer_posts;
+CREATE POLICY "buffer_posts_select" ON buffer_posts
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "buffer_posts_write" ON buffer_posts;
+CREATE POLICY "buffer_posts_write" ON buffer_posts
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
