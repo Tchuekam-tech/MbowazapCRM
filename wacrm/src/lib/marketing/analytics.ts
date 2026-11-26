@@ -135,3 +135,44 @@ export async function loadMarketingAnalytics(
   }>;
   const wonDeals = (wonDealsRes.data ?? []) as Array<{ value: number | null }>;
   const contacts = (contactsRes.data ?? []) as Array<{ utm_source: string | null }>;
+
+  const totalClicks = links.reduce((s, l) => s + Number(l.clicks_count ?? 0), 0);
+  const totalLeads = contacts.length;
+  const hotLeadCount = scores.filter((s) => s.tier === 'hot').length;
+  const avgLeadScore =
+    scores.length > 0
+      ? Math.round(scores.reduce((s, r) => s + Number(r.score ?? 0), 0) / scores.length)
+      : 0;
+  const totalRedemptions = coupons.reduce((s, c) => s + Number(c.uses_count ?? 0), 0);
+  const totalCouponRevenue = coupons.reduce((s, c) => s + Number(c.attributed_revenue ?? 0), 0);
+  const wonRevenue = wonDeals.reduce((s, d) => s + Number(d.value ?? 0), 0);
+  const seqReplies = sequences.reduce((s, q) => s + Number(q.replied_count ?? 0), 0);
+  const customerTimestamps = ((customerMsgsRes.data ?? []) as Array<{ created_at: string }>).map(
+    (m) => m.created_at
+  );
+
+  // Channel attribution rollup
+  const channelMap = new Map<
+    string,
+    { clicks: number; leads: number; conversions: number; revenue: number }
+  >();
+  const ensureChannel = (raw: string | null) => {
+    const key = (raw || 'direct').trim().toLowerCase() || 'direct';
+    let row = channelMap.get(key);
+    if (!row) {
+      row = { clicks: 0, leads: 0, conversions: 0, revenue: 0 };
+      channelMap.set(key, row);
+    }
+    return row;
+  };
+
+  for (const l of links) {
+    const ch = ensureChannel(l.utm_source || 'growth-link');
+    ch.clicks += Number(l.clicks_count ?? 0);
+    ch.conversions += Number(l.conversions_count ?? 0);
+    ch.revenue += Number(l.attributed_revenue ?? 0);
+  }
+  for (const c of contacts) {
+    const ch = ensureChannel(c.utm_source || 'organic');
+    ch.leads += 1;
+  }
