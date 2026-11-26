@@ -508,3 +508,13 @@ export function AbCampaignsTab({
                       </Button>
                     )}
                   </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {[vA, vB].map((v) =>
+                      v ? (
+                        <div
+                          key={v.id}
+                          className={`rounded-lg border p-2.5 text-xs ${
+                            camp.verdict?.winner === v.variant_key
+                              ? 'border-primary/50 bg-primary/5'
+                              : 'border-border bg-muted/30'
