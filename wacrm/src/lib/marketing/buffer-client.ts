@@ -245,3 +245,47 @@ export function createBufferClient(opts: BufferClientOptions) {
 
     return payload.data;
   }
+
+  return {
+    async getAccount(): Promise<BufferAccountInfo> {
+      const data = await graphql<{
+        account?: {
+          id?: string;
+          email?: string | null;
+          name?: string | null;
+          organizations?: Array<{
+            id: string;
+            name?: string | null;
+            ownerEmail?: string | null;
+          }>;
+        };
+      }>(`
+        query GetAccountAndOrgs {
+          account {
+            id
+            email
+            name
+            organizations {
+              id
+              name
+              ownerEmail
+            }
+          }
+        }
+      `);
+
+      const acct = data.account;
+      if (!acct) {
+        throw new BufferApiError(
+          'invalid_response',
+          'Could not read account details from Buffer API.'
+        );
+      }
+
+      const organizations: BufferOrganizationSummary[] = (acct.organizations ?? [])
+        .filter((o) => Boolean(o?.id))
+        .map((o) => ({
+          id: String(o.id),
+          name: o.name?.trim() || 'Default Organization',
+          ownerEmail: o.ownerEmail ?? null,
+        }));
