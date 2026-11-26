@@ -19,3 +19,12 @@ test('runtimeResilience exposes memory & event loop lag and pings WACRM keepaliv
         },
         log: { log() {}, warn() {}, error() {} },
     });
+
+    try {
+        const okHealth = await monitor.pingWacrmHealth('https://crm.example.com');
+        const okCron = await monitor.tickWacrmCron('https://crm.example.com', 'super-secret');
+        assert.equal(okHealth, true);
+        assert.equal(okCron, true);
+        assert.equal(seen[0].url, 'https://crm.example.com/api/health');
+        assert.equal(seen[1].url, 'https://crm.example.com/api/cron/tick');
+        assert.equal(seen[1].headers['x-cron-secret'], 'super-secret');
