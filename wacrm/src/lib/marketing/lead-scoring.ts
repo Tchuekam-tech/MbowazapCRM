@@ -71,3 +71,24 @@ export function computeLeadScore(input: LeadScoreInput): ComputedLeadScore {
   const now = input.nowMs ?? Date.now();
   const signals: LeadSignal[] = [];
   let score = 0;
+
+  // 1. Recency (up to +25)
+  if (input.lastMessageAt) {
+    const ageHours = Math.max(0, (now - Date.parse(input.lastMessageAt)) / 3_600_000);
+    if (ageHours <= 24) {
+      score += 25;
+      signals.push({ label: 'Active within 24 hours', points: 25, category: 'recency' });
+    } else if (ageHours <= 72) {
+      score += 18;
+      signals.push({ label: 'Active within 3 days', points: 18, category: 'recency' });
+    } else if (ageHours <= 168) {
+      score += 10;
+      signals.push({ label: 'Active this week', points: 10, category: 'recency' });
+    } else if (ageHours <= 720) {
+      score += 4;
+      signals.push({ label: 'Active within 30 days', points: 4, category: 'recency' });
+    } else if (ageHours > 1440) {
+      score -= 12;
+      signals.push({ label: 'Dormant for 60+ days', points: -12, category: 'risk' });
+    }
+  }
