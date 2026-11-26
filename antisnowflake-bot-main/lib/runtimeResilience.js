@@ -186,3 +186,14 @@ function createRuntimeMonitor({
 
 let sharedMonitor = null;
 
+function getRuntimeMonitor(opts) {
+    if (!sharedMonitor) {
+        sharedMonitor = createRuntimeMonitor(opts);
+    }
+    return sharedMonitor;
+}
+
+module.exports = {
+    createRuntimeMonitor,
+    getRuntimeMonitor,
+};
