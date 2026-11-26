@@ -691,3 +691,21 @@ export function OmnichannelPresenceTab({
         </div>
       </div>
 
+      {/* Cross-Channel Composer + Top Performing Posts */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        {/* 1-Click Publish to Buffer with WhatsApp Growth Link */}
+        <form
+          onSubmit={handlePublish}
+          className="space-y-4 rounded-xl border border-border bg-card p-5 lg:col-span-6"
+        >
+          <div className="flex items-center gap-2">
+            <Send className="h-4 w-4 text-primary" />
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">
+                Cross-Channel Composer (Push to Buffer)
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Publish to Instagram, LinkedIn, Facebook, X & more with your WhatsApp Growth Link embedded.
+              </p>
+            </div>
+          </div>
