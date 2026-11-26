@@ -127,3 +127,13 @@ export interface DripSequence {
   updated_at: string;
   steps?: DripSequenceStep[];
 }
+
+export type AbCampaignStatus =
+  | 'draft'
+  | 'running'
+  | 'evaluating'
+  | 'completed'
+  | 'failed';
+
+export type AbWinnerMetric = 'reply_rate' | 'read_rate' | 'conversion_rate';
+
