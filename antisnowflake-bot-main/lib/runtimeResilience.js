@@ -117,3 +117,12 @@ function createRuntimeMonitor({
             return false;
         }
     }
+
+    function start() {
+        if (!memTimer) {
+            memTimer = setInterval(checkMemory, DEFAULT_MEMORY_CHECK_MS);
+            if (typeof memTimer.unref === 'function') memTimer.unref();
+        }
+
+        const rawUrl = env.WACRM_URL || env.WACRM_BASE_URL || env.WACRM_SERVICE_URL;
+        const baseUrl = normalizeBaseUrl(rawUrl);
