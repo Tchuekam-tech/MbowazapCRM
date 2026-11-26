@@ -55,3 +55,16 @@ function createRuntimeMonitor({
         };
     }
 
+    function getMemoryMb() {
+        const m = process.memoryUsage();
+        return {
+            rss: round1(m.rss / 1024 / 1024),
+            heapUsed: round1(m.heapUsed / 1024 / 1024),
+            heapTotal: round1(m.heapTotal / 1024 / 1024),
+        };
+    }
+
+    function checkMemory() {
+        const mem = getMemoryMb();
+        const gcThresholdMb = Number(env.GC_HEAP_THRESHOLD_MB) || 280;
+        const shedThresholdMb = Number(env.MEMORY_SHED_RSS_MB) || 430;
