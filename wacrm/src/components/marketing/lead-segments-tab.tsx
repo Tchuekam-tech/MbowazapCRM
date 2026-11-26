@@ -337,3 +337,35 @@ export function LeadSegmentsTab({
         </div>
       </div>
 
+      {/* Right: Smart Dynamic Segments Builder & Saved List */}
+      <div className="space-y-4 lg:col-span-5">
+        <form
+          onSubmit={handleSaveSegment}
+          className="space-y-4 rounded-xl border border-border bg-card p-5"
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Filter className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                Smart Audience Segment Builder
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Target high-intent or dormant leads for Drip Sequences & A/B Tests.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="seg-name" className="text-xs">Segment Name</Label>
+              <Input
+                id="seg-name"
+                value={segName}
+                onChange={(e) => setSegName(e.target.value)}
+                placeholder="e.g. Hot Instagram Buyers"
+                className="mt-1"
+                required
+              />
+            </div>
