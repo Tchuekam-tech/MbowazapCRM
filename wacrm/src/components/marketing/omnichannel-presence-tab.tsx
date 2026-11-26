@@ -182,3 +182,25 @@ export function OmnichannelPresenceTab({
       setDisconnecting(false);
     }
   }
+
+  function toggleChannel(channelId: string) {
+    setSelectedChannels((prev) =>
+      prev.includes(channelId)
+        ? prev.filter((id) => id !== channelId)
+        : [...prev, channelId]
+    );
+  }
+
+  function injectGrowthLink(link: GrowthLink) {
+    const snippet = `\n\n💬 Chat with us on WhatsApp: ${origin}/go/${link.slug}`;
+    setPostText((prev) => (prev.trim() ? `${prev.trim()}${snippet}` : snippet.trim()));
+  }
+
+  function injectCoupon(coupon: PromoCoupon) {
+    const snippet = ` Use code ${coupon.code} for ${
+      coupon.discount_type === 'percent'
+        ? `${coupon.discount_value}% OFF`
+        : `${formatCurrency(coupon.discount_value, coupon.currency)} OFF`
+    }!`;
+    setPostText((prev) => `${prev}${snippet}`);
+  }
