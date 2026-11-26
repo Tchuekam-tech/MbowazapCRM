@@ -38,3 +38,19 @@ CREATE TABLE IF NOT EXISTS buffer_integrations (
 CREATE INDEX IF NOT EXISTS idx_buffer_integrations_sync
   ON buffer_integrations (status, last_synced_at ASC NULLS FIRST);
 
+ALTER TABLE buffer_integrations ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS set_updated_at ON buffer_integrations;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON buffer_integrations
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP POLICY IF EXISTS "buffer_integrations_select" ON buffer_integrations;
+CREATE POLICY "buffer_integrations_select" ON buffer_integrations
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "buffer_integrations_write" ON buffer_integrations;
+CREATE POLICY "buffer_integrations_write" ON buffer_integrations
+  FOR ALL USING (is_account_member(account_id, 'admin'))
+  WITH CHECK (is_account_member(account_id, 'admin'));
+
+-- 2. Synced social channels from Buffer
