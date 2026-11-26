@@ -177,3 +177,19 @@ export function DripSequencesTab({
       setEnrollingId(null);
     }
   }
+
+  async function handleDelete(id: string) {
+    try {
+      const res = await fetch(`/api/marketing/sequences?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Sequence deleted');
+      onRefresh();
+    } catch {
+      toast.error('Could not delete sequence');
+    }
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
