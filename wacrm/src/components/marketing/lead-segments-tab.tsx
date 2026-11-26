@@ -110,3 +110,26 @@ export function LeadSegmentsTab({
     }
   }
 
+  async function handleAnalyzeLead(contactId: string) {
+    setAnalyzingId(contactId);
+    try {
+      const res = await fetch('/api/marketing/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'analyze', contact_id: contactId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(
+        data.insight?.usedAi
+          ? 'AI deep buyer analysis ready!'
+          : 'Behavioral intent summary updated!'
+      );
+      onRefresh();
+    } catch {
+      toast.error('Analysis failed');
+    } finally {
+      setAnalyzingId(null);
+    }
+  }
+
