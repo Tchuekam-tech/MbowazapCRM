@@ -260,3 +260,29 @@ CREATE POLICY "drip_sequences_write" ON drip_sequences
 -- ============================================================
 -- 5 (defined before steps/variants FKs): PROMO COUPONS
 -- ============================================================
+CREATE TABLE IF NOT EXISTS promo_coupons (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  title TEXT NOT NULL,
+  discount_type TEXT NOT NULL DEFAULT 'percent' CHECK (discount_type IN ('percent', 'fixed')),
+  discount_value NUMERIC(12, 2) NOT NULL CHECK (discount_value > 0),
+  currency TEXT NOT NULL DEFAULT 'USD',
+  min_order_value NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  max_uses INTEGER CHECK (max_uses IS NULL OR max_uses > 0),
+  uses_count INTEGER NOT NULL DEFAULT 0,
+  attributed_revenue NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  expires_at TIMESTAMPTZ,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (account_id, code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_promo_coupons_account
+  ON promo_coupons (account_id, created_at DESC);
+
+ALTER TABLE promo_coupons ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS set_updated_at ON promo_coupons;
