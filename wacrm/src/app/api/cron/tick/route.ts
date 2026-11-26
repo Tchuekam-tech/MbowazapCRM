@@ -30,3 +30,30 @@ export async function GET(request: Request) {
   if (a.length !== b.length || !timingSafeEqual(a, b)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  const startedAt = performance.now();
+
+  const [automations, flows, drips, bufferSync] = await Promise.all([
+    runAutomationsCron(request)
+      .then((r) => r.json())
+      .catch((err) => ({ error: err instanceof Error ? err.message : String(err) })),
+    runFlowsCron(request)
+      .then((r) => r.json())
+      .catch((err) => ({ error: err instanceof Error ? err.message : String(err) })),
+    processDueDripEnrollments(supabaseAdmin(), 40).catch((err) => ({
+      error: err instanceof Error ? err.message : String(err),
+    })),
+    syncStaleBufferIntegrations(supabaseAdmin(), 10).catch((err) => ({
+      error: err instanceof Error ? err.message : String(err),
+    })),
+  ]);
+
+  return NextResponse.json({
+    ok: true,
+    durationMs: Math.round(performance.now() - startedAt),
+    automations,
+    flows,
+    drips,
+    bufferSync,
+  });
+}
