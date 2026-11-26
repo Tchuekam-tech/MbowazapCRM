@@ -464,3 +464,36 @@ export async function runAiDigitalPresenceAudit(
   const aiConfig = await loadAiConfig(db, accountId, { requireActive: false }).catch(
     () => null
   );
+
+  if (aiConfig && report.connected) {
+    try {
+      const digest = JSON.stringify({
+        presenceScore: report.presenceScore,
+        scoreBreakdown: report.scoreBreakdown,
+        totals: report.totals,
+        channels: report.channels.map((c) => ({
+          service: c.service,
+          name: c.name,
+          sentPosts: c.sentPosts,
+          scheduled: c.scheduledPosts,
+          impressions: c.impressions,
+          engagements: c.engagements,
+          engRate: c.engagementRate,
+          waLeads: c.whatsappLeads,
+          hasBridge: c.hasGrowthLinkBridge,
+          paused: c.isQueuePaused,
+        })),
+        topPosts: report.topPosts.slice(0, 4).map((p) => ({
+          service: p.service,
+          text: p.text_content.slice(0, 180),
+          engagements: p.total_engagements,
+          impressions: p.impressions,
+        })),
+      });
+
+      const llmRes = await generateReply({
+        config: aiConfig,
+        systemPrompt:
+          'You are a Chief Digital Growth Officer auditing a business across Buffer social channels AND their WhatsApp CRM funnel. Return ONLY valid JSON (no markdown fences) with keys: "headline" (short punchy verdict), "executiveSummary" (2-3 sharp sentences), "strengths" (2-3 strings), "blindSpots" (2-3 strings), "actionPlan" (array of 3 objects with keys "title", "channel", "impact" ("high"|"medium"), "step"). Be specific with the actual numbers provided.',
+        messages: [{ role: 'user', content: digest }],
+      });
