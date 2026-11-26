@@ -39,3 +39,11 @@ export interface RetryOptions {
 /**
  * Retry a transient async operation with capped exponential backoff and jitter.
  */
+export async function withRetry<T>(
+  fn: (attempt: number) => Promise<T>,
+  opts: RetryOptions = {}
+): Promise<T> {
+  const maxAttempts = Math.max(1, opts.maxAttempts ?? 3);
+  const baseDelayMs = Math.max(10, opts.baseDelayMs ?? 150);
+  const maxDelayMs = Math.max(baseDelayMs, opts.maxDelayMs ?? 2500);
+  const shouldRetry = opts.shouldRetry ?? (() => true);
