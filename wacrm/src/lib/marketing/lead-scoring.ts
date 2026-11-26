@@ -377,3 +377,34 @@ export async function recomputeAccountLeadScores(
       msgsByContact.set(cid, entry);
     }
   }
+
+  const dealsByContact = new Map<
+    string,
+    { open: number; openVal: number; won: number }
+  >();
+  for (const d of (dealsRes.data ?? []) as Array<{
+    contact_id: string | null;
+    status: string | null;
+    value: number | null;
+  }>) {
+    if (!d.contact_id) continue;
+    const entry = dealsByContact.get(d.contact_id) ?? { open: 0, openVal: 0, won: 0 };
+    if (d.status === 'won') entry.won += 1;
+    else if (d.status === 'open' || !d.status) {
+      entry.open += 1;
+      entry.openVal += Number(d.value ?? 0);
+    }
+    dealsByContact.set(d.contact_id, entry);
+  }
+
+  const tagsByContact = new Map<string, string[]>();
+  for (const row of (tagsRes.data ?? []) as unknown as Array<{
+    contact_id: string;
+    tags: { name: string } | { name: string }[] | null;
+  }>) {
+    const tagObj = Array.isArray(row.tags) ? row.tags[0] : row.tags;
+    if (!tagObj?.name) continue;
+    const arr = tagsByContact.get(row.contact_id) ?? [];
+    arr.push(tagObj.name);
+    tagsByContact.set(row.contact_id, arr);
+  }
