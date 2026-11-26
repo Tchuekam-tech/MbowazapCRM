@@ -446,3 +446,43 @@ export function createBufferClient(opts: BufferClientOptions) {
           ? `, dueAt: ${gqlString(input.dueAt)}`
           : '';
       const schedulingType = mode === 'customScheduled' ? 'custom' : 'automatic';
+
+      const data = await graphql<{
+        createPost?: {
+          __typename?: string;
+          post?: { id?: string; text?: string };
+          message?: string;
+        };
+      }>(`
+        mutation CreateOmnichannelPost {
+          createPost(input: {
+            text: ${gqlString(input.text)},
+            channelId: ${gqlString(input.channelId)},
+            schedulingType: ${schedulingType},
+            mode: ${mode}${duePart}
+          }) {
+            __typename
+            ... on PostActionSuccess {
+              post {
+                id
+                text
+              }
+            }
+            ... on Error {
+              message
+            }
+          }
+        }
+      `);
+
+      const res = data.createPost;
+      if (res?.post?.id) {
+        return { id: String(res.post.id), text: res.post.text ?? input.text };
+      }
+      throw new BufferApiError(
+        'graphql_error',
+        res?.message || 'Buffer could not schedule this post.'
+      );
+    },
+  };
+}
