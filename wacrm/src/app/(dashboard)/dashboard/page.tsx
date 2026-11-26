@@ -13,6 +13,7 @@ import {
   Globe,
   ArrowUpRight,
 } from 'lucide-react'
+import type { DigitalPresenceReport } from '@/types'
 
 import {
   loadActivity,
