@@ -17,3 +17,12 @@ import {
   Loader2,
   Activity,
 } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import type {
+  AbCampaign,
+  ContactLeadScore,
+  DigitalPresenceReport,
+  DripSequence,
+  GrowthLink,
+  MarketingAnalyticsSnapshot,
+  MarketingSegment,
