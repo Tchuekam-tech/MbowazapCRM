@@ -558,3 +558,23 @@ export function AbCampaignsTab({
                       <Button
                         size="sm"
                         disabled={!canEdit || isBusy}
+                        onClick={() => handlePromoteWinner(camp.id, camp.verdict?.winner ?? 'A')}
+                      >
+                        {isBusy ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trophy className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        Send Winner ({camp.verdict?.winner ?? 'A'}) to Holdout
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
