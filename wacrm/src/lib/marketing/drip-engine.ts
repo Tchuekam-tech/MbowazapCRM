@@ -109,3 +109,36 @@ export async function processDueDripEnrollments(
     exited: 0,
     failed: 0,
   };
+
+  const { data: due, error } = await db
+    .from('drip_enrollments')
+    .select(
+      'id, sequence_id, account_id, contact_id, conversation_id, current_step_order, next_send_at'
+    )
+    .eq('status', 'active')
+    .lte('next_send_at', now.toISOString())
+    .order('next_send_at', { ascending: true })
+    .limit(limit);
+
+  if (error || !due || due.length === 0) return result;
+
+  for (const enrollment of due as Array<{
+    id: string;
+    sequence_id: string;
+    account_id: string;
+    contact_id: string;
+    conversation_id: string | null;
+    current_step_order: number;
+  }>) {
+    result.processed += 1;
+
+    // Load parent sequence
+    const { data: seq } = await db
+      .from('drip_sequences')
+      .select('*')
+      .eq('id', enrollment.sequence_id)
+      .maybeSingle();
+
+    if (!seq || seq.status !== 'active') {
+      continue;
+    }
