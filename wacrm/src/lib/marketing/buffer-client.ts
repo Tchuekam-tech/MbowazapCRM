@@ -160,3 +160,34 @@ export function createBufferClient(opts: BufferClientOptions) {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const token = opts.apiKey.trim();
 
+  async function graphql<T>(query: string): Promise<T> {
+    if (!token) {
+      throw new BufferApiError('unauthorized', 'Buffer API key is empty.', 401);
+    }
+
+    let res: Response;
+    try {
+      res = await fetchImpl(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ query }),
+        signal: AbortSignal.timeout(timeoutMs),
+        cache: 'no-store',
+      });
+    } catch (err) {
+      const name = err instanceof Error ? err.name : '';
+      if (name === 'TimeoutError' || name === 'AbortError') {
+        throw new BufferApiError(
+          'timeout',
+          `Buffer API did not respond within ${timeoutMs / 1000}s.`
+        );
+      }
+      throw new BufferApiError(
+        'network_error',
+        `Could not connect to Buffer API: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
