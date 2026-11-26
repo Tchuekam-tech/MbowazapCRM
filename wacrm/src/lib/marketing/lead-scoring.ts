@@ -155,3 +155,29 @@ export function computeLeadScore(input: LeadScoreInput): ComputedLeadScore {
     });
     if (primaryIntent === 'General Inquiry') primaryIntent = 'Active Opportunity';
   }
+
+  // 5. Marketing Attribution (+6)
+  if (input.hasGrowthAttribution) {
+    score += 6;
+    signals.push({
+      label: 'Arrived via tracked Growth Link / Ad',
+      points: 6,
+      category: 'attribution',
+    });
+  }
+
+  // 6. Opt-out / compliance penalty
+  const lowerTags = input.tagNames.map((t) => t.toLowerCase());
+  const isOptedOut =
+    lowerTags.some((t) => t.includes('opt-out') || t.includes('opted out') || t === 'stop') ||
+    OPT_OUT_PATTERNS.test(input.recentCustomerTexts[0] ?? '');
+
+  if (isOptedOut) {
+    score -= 60;
+    signals.push({
+      label: 'Opted-out / do-not-message risk',
+      points: -60,
+      category: 'risk',
+    });
+    primaryIntent = 'Opted Out';
+  }
