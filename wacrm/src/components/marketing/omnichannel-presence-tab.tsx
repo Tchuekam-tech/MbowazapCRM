@@ -467,3 +467,28 @@ export function OmnichannelPresenceTab({
             </div>
             <BarChart3 className="h-8 w-8 text-primary/60" />
           </div>
+
+          <div className="space-y-2.5">
+            {[
+              { label: 'Channel Coverage', val: scoreBreakdown.channelCoverage },
+              { label: 'Publishing Consistency', val: scoreBreakdown.publishingConsistency },
+              { label: 'Audience Engagement', val: scoreBreakdown.audienceEngagement },
+              { label: 'WhatsApp Conversion Bridge', val: scoreBreakdown.whatsappConversionBridge },
+            ].map((p) => (
+              <div key={p.label} className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">{p.label}</span>
+                  <span className="font-semibold tabular-nums text-foreground">
+                    {p.val}/25
+                  </span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${(p.val / 25) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
