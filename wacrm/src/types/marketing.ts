@@ -157,3 +157,41 @@ export interface AbCampaignVariant {
   revenue_attributed: number;
 }
 
+export interface AbCampaign {
+  id: string;
+  account_id: string;
+  user_id: string;
+  name: string;
+  goal: string;
+  segment_id: string | null;
+  status: AbCampaignStatus;
+  split_ratio: number;
+  holdout_percent: number;
+  winner_variant: 'A' | 'B' | null;
+  winner_metric: AbWinnerMetric;
+  scheduled_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  variants?: AbCampaignVariant[];
+}
+
+export interface PromoCoupon {
+  id: string;
+  account_id: string;
+  user_id: string;
+  code: string;
+  title: string;
+  discount_type: 'percent' | 'fixed';
+  discount_value: number;
+  currency: string;
+  min_order_value: number;
+  max_uses: number | null;
+  uses_count: number;
+  attributed_revenue: number;
+  expires_at: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
