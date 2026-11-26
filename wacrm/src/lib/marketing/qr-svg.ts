@@ -234,3 +234,39 @@ export function encodeQrMatrix(text: string): boolean[][] {
     modules[r]![c] = dark;
     isFunc[r]![c] = true;
   };
+
+  const drawFinder = (top: number, left: number) => {
+    for (let dr = -1; dr <= 7; dr++) {
+      for (let dc = -1; dc <= 7; dc++) {
+        const r = top + dr;
+        const c = left + dc;
+        if (r < 0 || c < 0 || r >= size || c >= size) continue;
+        const dist = Math.max(Math.abs(dr - 3), Math.abs(dc - 3));
+        setFunc(r, c, dist !== 2 && dist !== 4);
+      }
+    }
+  };
+  drawFinder(0, 0);
+  drawFinder(0, size - 7);
+  drawFinder(size - 7, 0);
+
+  // Timing patterns
+  for (let i = 8; i < size - 8; i++) {
+    setFunc(6, i, i % 2 === 0);
+    setFunc(i, 6, i % 2 === 0);
+  }
+
+  // Alignment patterns
+  const align = spec.align;
+  for (let i = 0; i < align.length; i++) {
+    for (let j = 0; j < align.length; j++) {
+      const cr = align[i]!;
+      const cc = align[j]!;
+      if (isFunc[cr]![cc]) continue;
+      for (let dr = -2; dr <= 2; dr++) {
+        for (let dc = -2; dc <= 2; dc++) {
+          setFunc(cr + dr, cc + dc, Math.max(Math.abs(dr), Math.abs(dc)) !== 1);
+        }
+      }
+    }
+  }
