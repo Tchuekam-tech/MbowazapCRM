@@ -162,10 +162,29 @@ function loadWarmupState() {
     return initial;
 }
 
+let warmupWriteTimer = null;
+function pruneOldWarmupDays(data) {
+    if (!data?.dailyCounts || typeof data.dailyCounts !== 'object') return;
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    for (const dayKey of Object.keys(data.dailyCounts)) {
+        const ts = Date.parse(dayKey);
+        if (Number.isFinite(ts) && ts < cutoff) {
+            delete data.dailyCounts[dayKey];
+        }
+    }
+}
+
 function saveWarmupState(data) {
-    try {
-        fs.writeFileSync(WARMUP_FILE, JSON.stringify(data, null, 2), 'utf8');
-    } catch (_) {}
+    pruneOldWarmupDays(data);
+    if (warmupWriteTimer) return;
+    warmupWriteTimer = setTimeout(() => {
+        warmupWriteTimer = null;
+        const tmp = `${WARMUP_FILE}.${process.pid}.tmp`;
+        fs.promises.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8')
+            .then(() => fs.promises.rename(tmp, WARMUP_FILE))
+            .catch(() => {});
+    }, 500);
+    if (typeof warmupWriteTimer.unref === 'function') warmupWriteTimer.unref();
 }
 
 let warmupState = loadWarmupState();

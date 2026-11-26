@@ -24,6 +24,19 @@ const { getTempQrDataUrl } = require('./qrSession');
 const { createBridgeHandler } = require('./bridge/server');
 const { readSecret } = require('./bridge/signature');
 const bridgeState = require('./bridge/state');
+const { getRuntimeMonitor } = require('./runtimeResilience');
+
+let cachedLandingHtml = null;
+let cachedLandingMtimeMs = 0;
+function getLandingHtml() {
+    const htmlPath = path.join(__dirname, '..', 'public', 'index.html');
+    const stat = fs.statSync(htmlPath);
+    if (!cachedLandingHtml || stat.mtimeMs !== cachedLandingMtimeMs) {
+        cachedLandingHtml = fs.readFileSync(htmlPath, 'utf8');
+        cachedLandingMtimeMs = stat.mtimeMs;
+    }
+    return cachedLandingHtml;
+}
 
 let lastActiveTime = Date.now();
 
@@ -130,10 +143,12 @@ function startHealthCheckServer(port = process.env.PORT || 8080, host = process.
         // Route: / → Serve landing page frontend
         // ──────────────────────────────────────────────
         if (pathname === '/' && req.method === 'GET') {
-            const htmlPath = path.join(__dirname, '..', 'public', 'index.html');
             try {
-                const html = fs.readFileSync(htmlPath, 'utf8');
-                res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+                const html = getLandingHtml();
+                res.writeHead(200, {
+                    'Content-Type': 'text/html; charset=utf-8',
+                    'Cache-Control': 'public, max-age=60',
+                });
                 res.end(html);
             } catch (e) {
                 res.writeHead(500, { 'Content-Type': 'text/plain' });
@@ -150,13 +165,26 @@ function startHealthCheckServer(port = process.env.PORT || 8080, host = process.
             const now = Date.now();
             const timeSinceLastActive = now - lastActiveTime;
             const isHealthy = timeSinceLastActive < 120000;
+            const sockets = sessionManager.getAllSockets();
+            let connectedSockets = 0;
+            for (const [, sock] of sockets) {
+                if (sock?.user && sessionManager.isSocketOpen(sock)) connectedSockets++;
+            }
+            const rt = getRuntimeMonitor().getSnapshot();
 
             // Always 200 — HF Spaces terminates the Space on 5xx health responses
-            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-store',
+            });
             res.end(JSON.stringify({
                 status: isHealthy ? 'healthy' : 'starting',
-                uptime: Math.round(process.uptime()),
-                lastActiveSecondsAgo: Math.round(timeSinceLastActive / 1000)
+                uptime: rt.uptimeSeconds,
+                lastActiveSecondsAgo: Math.round(timeSinceLastActive / 1000),
+                memoryMb: rt.memoryMb,
+                eventLoopLagMs: rt.eventLoopLagMs,
+                activeSockets: sockets.length,
+                connectedSockets,
             }));
             return;
         }
@@ -545,6 +573,13 @@ function startHealthCheckServer(port = process.env.PORT || 8080, host = process.
             console.log(`[HealthCheck] 🚀 Multi-Tenant Server running on ${targetHost}:${actualPort}`);
         });
     };
+
+    // Reverse-proxy keep-alive hardening (Railway / Render / Vercel / Cloudflare):
+    // keeping Node's keepAliveTimeout > upstream proxy idle timeout (60s) eliminates
+    // sporadic 502 Bad Gateway race errors under concurrent load.
+    server.keepAliveTimeout = 65_000;
+    server.headersTimeout = 66_000;
+    server.requestTimeout = 30_000;
 
     bindHost(host, true);
 

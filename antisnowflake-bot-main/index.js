@@ -72,31 +72,31 @@ const { readSecret: readBridgeSecret } = require('./lib/bridge/signature');
 // Import lightweight store
 const store = require('./lib/lightweight_store');
 
-// Initialize store
+// Initialize store & runtime resilience monitor
 store.readFromFile();
 const settings = require('./settings');
-setInterval(() => store.writeToFile(), settings.storeWriteInterval || 10000);
+const { getRuntimeMonitor } = require('./lib/runtimeResilience');
+
+const storePersistTimer = setInterval(() => {
+    void store.writeToFileAsync();
+}, settings.storeWriteInterval || 15000);
+if (typeof storePersistTimer.unref === 'function') storePersistTimer.unref();
 
 if (settings.policyGuard?.enabled) {
     console.log('[policy-guard] Compliance mode is enabled. Privacy-bypass features and fake presence automation are suppressed.');
 }
 
-// Memory optimization
-setInterval(() => { if (global.gc) global.gc(); }, 60_000);
-
-// Memory resilience - prune caches actively when RAM is high instead of abruptly crashing
-setInterval(() => {
-    const used = process.memoryUsage().rss / 1024 / 1024;
-    if (used > 400) {
-        console.warn(`⚠️ RAM at ${Math.round(used)}MB (>400MB threshold), executing memory shed...`);
-        if (global.gc) global.gc();
+// Adaptive memory guard + event-loop lag monitor + CRM keep-alive / cron ticker
+const runtimeMonitor = getRuntimeMonitor({
+    onMemoryPressure: () => {
         if (store && typeof store.cleanupData === 'function') store.cleanupData();
         const sockets = sessionManager.getAllSockets();
         for (const [, s] of sockets) {
             if (s?.msgRetryCounterCache) s.msgRetryCounterCache.flushAll?.();
         }
-    }
-}, 30_000);
+    },
+});
+runtimeMonitor.start();
 
 
 // Multi-tenant reconnect managers
@@ -1184,7 +1184,7 @@ module.exports = { startXeonBotInc, requestPairingCodeForNumber, cancelReconnect
 
         // Start Healthcheck server
         const { startHealthCheckServer } = require('./lib/healthCheck');
-        startHealthCheckServer();
+        global._healthCheckServer = startHealthCheckServer();
 
         // Boot active sessions
         if (fs.existsSync(sessionsRoot)) {
@@ -1239,6 +1239,11 @@ async function gracefulShutdown(signal) {
     shuttingDown = true;
     console.log(chalk.yellow(`\n[Process] Received ${signal}. Initiating graceful shutdown...`));
     try {
+        clearInterval(storePersistTimer);
+        runtimeMonitor.stop();
+        if (global._healthCheckServer && typeof global._healthCheckServer.close === 'function') {
+            try { global._healthCheckServer.close(); } catch (_) {}
+        }
         try {
             const { getWacrmClient } = require('./lib/bridge/wacrmClient');
             const bridgeClient = getWacrmClient();

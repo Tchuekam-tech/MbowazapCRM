@@ -48,6 +48,7 @@ const SESSIONS_ROOT = path.join(__dirname, '../../data/sessions');
 
 const ROUTES = [
     { method: 'GET', pattern: /^\/bridge\/ping$/, name: 'ping' },
+    { method: 'GET', pattern: /^\/bridge\/metrics$/, name: 'metrics' },
     { method: 'POST', pattern: /^\/bridge\/pair$/, name: 'pair' },
     { method: 'POST', pattern: /^\/bridge\/pair\/cancel$/, name: 'cancelPairing' },
     { method: 'GET', pattern: /^\/bridge\/pairings\/([^/]+)$/, name: 'pairing', param: 'pairingRef' },
@@ -66,8 +67,39 @@ function productionDeps() {
         now: () => Date.now(),
         getSecret: () => readSecret(process.env),
         getSocket: (session) => sessionManager.getSocket(session),
+        getAllSockets: () => sessionManager.getAllSockets(),
         deleteSocket: (session) => sessionManager.deleteSocket(session),
         isSocketOpen: (sock) => sessionManager.isSocketOpen(sock),
+        getRuntimeMetrics: () => {
+            const rt = require('../runtimeResilience').getRuntimeMonitor().getSnapshot();
+            const store = require('../lightweight_store');
+            const { getWacrmClient } = require('./wacrmClient');
+            const sockets = sessionManager.getAllSockets();
+            let connectedSockets = 0;
+            for (const [, s] of sockets) {
+                if (sessionManager.isLinked(s) && sessionManager.isSocketOpen(s)) connectedSockets++;
+            }
+            const storeStats = typeof store.getStats === 'function'
+                ? store.getStats()
+                : { messages: 0, contacts: 0, chats: 0 };
+            let outboxPendingBatches = 0;
+            try {
+                outboxPendingBatches = getWacrmClient().pendingBatches();
+            } catch (_) {}
+            return {
+                uptimeSeconds: rt.uptimeSeconds,
+                memoryMb: rt.memoryMb,
+                eventLoopLagMs: rt.eventLoopLagMs,
+                activeSockets: sockets.length,
+                connectedSockets,
+                outboxPendingBatches,
+                storeStats: {
+                    messages: storeStats.messages || 0,
+                    contacts: storeStats.contacts || 0,
+                    chats: storeStats.chats || 0,
+                },
+            };
+        },
         isLinked: (sock) => sessionManager.isLinked(sock),
         requestPairingCode: (phone) => {
             const request = global.requestPairingCodeForNumber || require('../pairServer').generatePairCode;
@@ -98,8 +130,8 @@ function productionDeps() {
                 clearInterval(sock.heartbeatInterval);
                 clearTimeout(sock._presenceTimeout);
                 sock.ev?.removeAllListeners();
-                try { sock.end(); } catch (_) {}
-                try { sock.ws?.close(); } catch (_) {}
+                try { sock.end(); } catch (_) { }
+                try { sock.ws?.close(); } catch (_) { }
                 sessionManager.deleteSocket(session);
             }
             fs.rmSync(dir, { recursive: true, force: true });
@@ -265,6 +297,20 @@ function createBridgeHandler(overrides = {}) {
             return { protocol: PROTOCOL_VERSION, time: d.now() };
         },
 
+        async metrics() {
+            return typeof d.getRuntimeMetrics === 'function'
+                ? d.getRuntimeMetrics()
+                : {
+                    uptimeSeconds: Math.round(process.uptime()),
+                    memoryMb: { rss: 0, heapUsed: 0, heapTotal: 0 },
+                    eventLoopLagMs: { mean: 0, p95: 0, max: 0 },
+                    activeSockets: 0,
+                    connectedSockets: 0,
+                    outboxPendingBatches: 0,
+                    storeStats: { messages: 0, contacts: 0, chats: 0 },
+                };
+        },
+
         async cancelPairing(body) {
             const cmd = parsePairRequest(body);
             withPairing.cancel(cmd.method === 'code' ? cmd.phone : TEMP_QR_SESSION, cmd.pairingRef);
@@ -393,10 +439,10 @@ function createBridgeHandler(overrides = {}) {
                 try {
                     await withTimeout(Promise.resolve(sock.logout()), LOGOUT_TIMEOUT_MS);
                 } catch (_) {
-                    try { sock.end(loggedOutError()); } catch (_) {}
+                    try { sock.end(loggedOutError()); } catch (_) { }
                 }
-                try { sock.ev?.removeAllListeners(); } catch (_) {}
-                try { sock.ws?.close(); } catch (_) {}
+                try { sock.ev?.removeAllListeners(); } catch (_) { }
+                try { sock.ws?.close(); } catch (_) { }
                 d.deleteSocket(session);
             }
             d.removeSessionFiles(session);

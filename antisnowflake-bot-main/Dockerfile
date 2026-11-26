@@ -36,5 +36,9 @@ EXPOSE 8080 7860
 ENV PORT=8080
 ENV HOST="::"
 ENV NODE_ENV=production
+ENV UV_THREADPOOL_SIZE=8
 
-CMD ["node", "--no-warnings", "--expose-gc", "--max-old-space-size=400", "preload.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:${PORT}/health || exit 1
+
+CMD ["node", "--no-warnings", "--expose-gc", "--max-old-space-size=512", "--dns-result-order=ipv4first", "preload.js"]
