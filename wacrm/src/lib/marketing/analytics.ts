@@ -31,3 +31,41 @@ export function buildSendTimeHeatmap(
     const key = `${day}:${block}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
+
+  let maxReplies = 0;
+  for (const v of counts.values()) {
+    if (v > maxReplies) maxReplies = v;
+  }
+
+  const heatmap: MarketingAnalyticsSnapshot['sendTimeHeatmap'] = [];
+  let best: MarketingAnalyticsSnapshot['bestSendWindow'] = null;
+
+  for (let day = 0; day < 7; day++) {
+    for (let block = 0; block < 6; block++) {
+      const replies = counts.get(`${day}:${block}`) ?? 0;
+      const score = maxReplies > 0 ? Math.round((replies / maxReplies) * 100) : 0;
+      heatmap.push({
+        day,
+        hourBlock: block,
+        label: `${DAY_NAMES[day]} ${BLOCK_LABELS[block]}`,
+        replies,
+        score,
+      });
+      if (replies > 0 && (!best || replies > best.replyCount)) {
+        best = {
+          dayName: DAY_NAMES[day]!,
+          hourRange: BLOCK_LABELS[block]!,
+          replyCount: replies,
+        };
+      }
+    }
+  }
+
+  return { heatmap, bestSendWindow: best };
+}
+
+export async function loadMarketingAnalytics(
+  db: SupabaseClient,
+  accountId: string
+): Promise<MarketingAnalyticsSnapshot> {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
