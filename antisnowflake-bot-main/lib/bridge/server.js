@@ -67,6 +67,7 @@ function productionDeps() {
         now: () => Date.now(),
         getSecret: () => readSecret(process.env),
         getSocket: (session) => sessionManager.getSocket(session),
+        getAllSockets: () => sessionManager.getAllSockets(),
         deleteSocket: (session) => sessionManager.deleteSocket(session),
         isSocketOpen: (sock) => sessionManager.isSocketOpen(sock),
         isLinked: (sock) => sessionManager.isLinked(sock),
