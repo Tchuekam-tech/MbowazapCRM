@@ -349,3 +349,24 @@ DROP POLICY IF EXISTS "drip_sequence_steps_select" ON drip_sequence_steps;
 CREATE POLICY "drip_sequence_steps_select" ON drip_sequence_steps
   FOR SELECT USING (is_account_member(account_id, 'viewer'));
 
+DROP POLICY IF EXISTS "drip_sequence_steps_write" ON drip_sequence_steps;
+CREATE POLICY "drip_sequence_steps_write" ON drip_sequence_steps
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
+
+CREATE TABLE IF NOT EXISTS drip_enrollments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sequence_id UUID NOT NULL REFERENCES drip_sequences(id) ON DELETE CASCADE,
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  current_step_order INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'replied', 'exited', 'failed', 'paused')),
+  next_send_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_sent_at TIMESTAMPTZ,
+  last_error TEXT,
+  enrolled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  UNIQUE (sequence_id, contact_id)
+);
+
