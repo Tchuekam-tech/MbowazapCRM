@@ -327,3 +327,25 @@ CREATE POLICY "coupon_redemptions_write" ON coupon_redemptions
   WITH CHECK (is_account_member(account_id, 'agent'));
 
 -- Drip steps & enrollments
+CREATE TABLE IF NOT EXISTS drip_sequence_steps (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sequence_id UUID NOT NULL REFERENCES drip_sequences(id) ON DELETE CASCADE,
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  step_order INTEGER NOT NULL CHECK (step_order >= 1),
+  delay_minutes INTEGER NOT NULL DEFAULT 0 CHECK (delay_minutes >= 0),
+  message_type TEXT NOT NULL DEFAULT 'text' CHECK (message_type IN ('text', 'template', 'image')),
+  content_text TEXT NOT NULL DEFAULT '',
+  media_url TEXT,
+  template_name TEXT,
+  template_language TEXT,
+  coupon_id UUID REFERENCES promo_coupons(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (sequence_id, step_order)
+);
+
+ALTER TABLE drip_sequence_steps ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "drip_sequence_steps_select" ON drip_sequence_steps;
+CREATE POLICY "drip_sequence_steps_select" ON drip_sequence_steps
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
