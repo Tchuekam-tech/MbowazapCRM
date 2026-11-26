@@ -225,3 +225,33 @@ export interface EvaluableContact {
 /**
  * Evaluates whether a contact matches a Smart Segment's ruleset.
  */
+export function matchesSegmentRules(
+  contact: EvaluableContact,
+  rules: SegmentRules,
+  nowMs = Date.now()
+): boolean {
+  if (rules.excludeOptedOut !== false) {
+    const optedOut = contact.tagNames.some((n) => {
+      const l = n.toLowerCase();
+      return l.includes('opt-out') || l.includes('opted out') || l === 'stop';
+    });
+    if (optedOut) return false;
+  }
+
+  if (rules.tiers && rules.tiers.length > 0 && !rules.tiers.includes(contact.tier)) {
+    return false;
+  }
+  if (typeof rules.minScore === 'number' && contact.score < rules.minScore) {
+    return false;
+  }
+  if (typeof rules.maxScore === 'number' && contact.score > rules.maxScore) {
+    return false;
+  }
+  if (rules.tagIds && rules.tagIds.length > 0) {
+    const hasAny = rules.tagIds.some((tid) => contact.tagIds.includes(tid));
+    if (!hasAny) return false;
+  }
+  if (rules.excludeTagIds && rules.excludeTagIds.length > 0) {
+    const hasExcluded = rules.excludeTagIds.some((tid) => contact.tagIds.includes(tid));
+    if (hasExcluded) return false;
+  }
