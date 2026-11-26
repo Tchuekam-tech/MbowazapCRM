@@ -63,3 +63,36 @@ export interface BufferPostMetricItem {
   value: number;
   unit: string | null;
 }
+
+export interface BufferPostPayload {
+  id: string;
+  text: string;
+  status: string;
+  dueAt: string | null;
+  sentAt: string | null;
+  channelId: string;
+  metrics: BufferPostMetricItem[];
+}
+
+export interface BufferPostsResult {
+  posts: BufferPostPayload[];
+  insightsAvailable: boolean;
+}
+
+export interface BufferClientOptions {
+  apiKey: string;
+  endpoint?: string;
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+}
+
+/** Safely quotes a string as a GraphQL string literal. */
+function gqlString(value: string): string {
+  return JSON.stringify(String(value));
+}
+
+function normalizeServiceName(service: string | null | undefined): string {
+  const s = (service || 'social').trim().toLowerCase();
+  if (s === 'x') return 'twitter';
+  return s || 'social';
+}
