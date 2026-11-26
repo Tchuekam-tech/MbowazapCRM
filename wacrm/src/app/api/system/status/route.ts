@@ -67,3 +67,21 @@ export async function GET() {
                 reachable: true,
                 latencyMs: Math.round(performance.now() - botStart),
                 metrics: null,
+                error: null,
+              };
+            } catch (pingErr) {
+              bot = {
+                configured: true,
+                reachable: false,
+                latencyMs: Math.round(performance.now() - botStart),
+                metrics: null,
+                error:
+                  pingErr instanceof Error
+                    ? pingErr.message
+                    : err instanceof Error
+                      ? err.message
+                      : 'Bot unreachable',
+              };
+            }
+          }
+        }
