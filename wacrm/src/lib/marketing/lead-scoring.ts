@@ -329,3 +329,31 @@ export async function recomputeAccountLeadScores(
       .select('contact_id, tags(name)')
       .in('contact_id', contactIds),
   ]);
+
+  const convs = (convRes.data ?? []) as Array<{
+    id: string;
+    contact_id: string;
+    last_message_at: string | null;
+  }>;
+  const convIds = convs.map((c) => c.id);
+  const convToContact = new Map<string, string>();
+  const lastMsgByContact = new Map<string, string | null>();
+  for (const conv of convs) {
+    convToContact.set(conv.id, conv.contact_id);
+    const prev = lastMsgByContact.get(conv.contact_id);
+    if (!prev || (conv.last_message_at && conv.last_message_at > prev)) {
+      lastMsgByContact.set(conv.contact_id, conv.last_message_at);
+    }
+  }
+
+  const msgsByContact = new Map<
+    string,
+    { inbound: number; outbound: number; texts: string[] }
+  >();
+  if (convIds.length > 0) {
+    const { data: msgs } = await db
+      .from('messages')
+      .select('conversation_id, sender_type, content_text, created_at')
+      .in('conversation_id', convIds)
+      .order('created_at', { ascending: false })
+      .limit(Math.min(3000, convIds.length * 12));
