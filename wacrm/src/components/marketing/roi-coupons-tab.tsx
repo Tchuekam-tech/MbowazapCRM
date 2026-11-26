@@ -290,3 +290,34 @@ export function RoiCouponsTab({
               {DAY_LABELS.map((dayName, dayIdx) => (
                 <div key={dayName} className="grid grid-cols-7 items-center gap-1.5">
                   <span className="text-[11px] font-medium text-muted-foreground">
+                    {dayName}
+                  </span>
+                  {BLOCK_SHORT.map((_, blockIdx) => {
+                    const cell = analytics?.sendTimeHeatmap.find(
+                      (c) => c.day === dayIdx && c.hourBlock === blockIdx
+                    );
+                    const score = cell?.score ?? 0;
+                    const bgClass =
+                      score >= 75
+                        ? 'bg-primary text-primary-foreground'
+                        : score >= 45
+                          ? 'bg-primary/60 text-foreground'
+                          : score >= 15
+                            ? 'bg-primary/25 text-foreground'
+                            : 'bg-muted/60 text-muted-foreground';
+                    return (
+                      <div
+                        key={blockIdx}
+                        title={cell ? `${cell.label}: ${cell.replies} customer replies` : ''}
+                        className={`flex h-7 items-center justify-center rounded text-[10px] font-medium tabular-nums ${bgClass}`}
+                      >
+                        {cell?.replies || '·'}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
