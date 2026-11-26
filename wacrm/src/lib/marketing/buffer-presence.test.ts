@@ -99,3 +99,43 @@ describe('Buffer GraphQL Client', () => {
     expect(extractGrowthSlugFromPost(res.posts[0]!.text)).toBe('ig-promo');
   });
 
+  it('maps 401 and 429 HTTP statuses to typed BufferApiError codes', async () => {
+    const unauth = createBufferClient({
+      apiKey: 'bad',
+      fetchImpl: vi.fn(async () => gqlJson({ error: 'Unauthorized' }, 401)),
+    });
+    await expect(unauth.getAccount()).rejects.toMatchObject({
+      name: 'BufferApiError',
+      code: 'unauthorized',
+      httpStatus: 401,
+    });
+
+    const limited = createBufferClient({
+      apiKey: 'ok',
+      fetchImpl: vi.fn(async () => gqlJson({ error: 'Too many requests' }, 429)),
+    });
+    await expect(limited.getAccount()).rejects.toBeInstanceOf(BufferApiError);
+  });
+
+  it('normalizes mixed social post metrics cleanly', () => {
+    const norm = extractNormalizedPostMetrics([
+      { type: 'impressions', name: 'Impressions', value: 4200, unit: 'count' },
+      { type: 'reach', name: 'Reach', value: 3100, unit: 'count' },
+      { type: 'reactions', name: 'Likes', value: 180, unit: 'count' },
+      { type: 'comments', name: 'Comments', value: 24, unit: 'count' },
+      { type: 'shares', name: 'Shares', value: 16, unit: 'count' },
+      { type: 'clicks', name: 'Link Clicks', value: 45, unit: 'count' },
+    ]);
+    expect(norm.impressions).toBe(4200);
+    expect(norm.reach).toBe(3100);
+    expect(norm.totalEngagements).toBe(265);
+  });
+});
+
+describe('Unified Digital Presence Analytics', () => {
+  it('maps UTM aliases to canonical Buffer service names', () => {
+    expect(canonicalSocialService('facebook_ads')).toBe('facebook');
+    expect(canonicalSocialService('IG')).toBe('instagram');
+    expect(canonicalSocialService('x')).toBe('twitter');
+    expect(canonicalSocialService('LinkedIn')).toBe('linkedin');
+  });
