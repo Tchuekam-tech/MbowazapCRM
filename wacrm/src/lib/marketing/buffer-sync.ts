@@ -283,3 +283,31 @@ export async function syncBufferForAccount(
     throw err;
   }
 }
+
+/**
+ * Background cron helper: refreshes stale connected Buffer accounts (>30 min old).
+ */
+export async function syncStaleBufferIntegrations(
+  db: SupabaseClient,
+  maxAccounts = 10
+): Promise<{ synced: number; failed: number }> {
+  const cutoff = new Date(Date.now() - 30 * 60_000).toISOString();
+  const { data: rows } = await db
+    .from('buffer_integrations')
+    .select('account_id')
+    .eq('status', 'connected')
+    .or(`last_synced_at.is.null,last_synced_at.lt.${cutoff}`)
+    .limit(maxAccounts);
+
+  let synced = 0;
+  let failed = 0;
+  for (const row of (rows ?? []) as Array<{ account_id: string }>) {
+    try {
+      await syncBufferForAccount(db, row.account_id);
+      synced += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  return { synced, failed };
+}
