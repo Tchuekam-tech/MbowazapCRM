@@ -185,3 +185,30 @@ export function encodeQrMatrix(text: string): boolean[][] {
   const term = Math.min(4, maxBits - bits.length);
   for (let i = 0; i < term; i++) bits.push(0);
   while (bits.length % 8 !== 0) bits.push(0);
+
+  const dataCw = new Uint8Array(spec.dataCodewords);
+  let byteIdx = 0;
+  for (let i = 0; i < bits.length; i += 8) {
+    let v = 0;
+    for (let j = 0; j < 8; j++) v = (v << 1) | bits[i + j]!;
+    dataCw[byteIdx++] = v;
+  }
+  const padBytes = [0xec, 0x11];
+  let padIdx = 0;
+  while (byteIdx < spec.dataCodewords) {
+    dataCw[byteIdx++] = padBytes[padIdx % 2]!;
+    padIdx++;
+  }
+
+  // 2. Split into blocks + Reed-Solomon ECC + interleave
+  const dataBlocks: Uint8Array[] = [];
+  const ecBlocks: Uint8Array[] = [];
+  let offset = 0;
+  for (const [count, len] of spec.blocks) {
+    for (let b = 0; b < count; b++) {
+      const slice = dataCw.subarray(offset, offset + len);
+      offset += len;
+      dataBlocks.push(slice);
+      ecBlocks.push(rsRemainder(slice, spec.ecPerBlock));
+    }
+  }
