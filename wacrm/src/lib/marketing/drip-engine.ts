@@ -28,3 +28,44 @@ function parseHHMM(hhmm: string, fallbackMinutes: number): number {
   return h * 60 + min;
 }
 
+function getTimeOfDayMinutes(date: Date, timezone: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone || 'UTC',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(date);
+    const h = Number(parts.find((p) => p.type === 'hour')?.value ?? '0') % 24;
+    const m = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+    return h * 60 + m;
+  } catch {
+    return date.getUTCHours() * 60 + date.getUTCMinutes();
+  }
+}
+
+/**
+ * Returns true if `now` falls inside the configured quiet window
+ * (e.g. start='21:00', end='08:00' wraps midnight; '13:00'..'14:00' is daytime).
+ */
+export function isWithinQuietHours(
+  now: Date,
+  quietStart: string,
+  quietEnd: string,
+  timezone = 'UTC'
+): boolean {
+  const start = parseHHMM(quietStart, 21 * 60);
+  const end = parseHHMM(quietEnd, 8 * 60);
+  if (start === end) return false;
+  const cur = getTimeOfDayMinutes(now, timezone);
+  if (start > end) {
+    // Wraps midnight (e.g. 21:00 → 08:00)
+    return cur >= start || cur < end;
+  }
+  return cur >= start && cur < end;
+}
+
+/**
+ * Computes the next allowed send timestamp, pushing forward to quietEnd
+ * if the candidate time lands inside quiet hours.
+ */
