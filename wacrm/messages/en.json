@@ -89,7 +89,8 @@
       "newContact": "New Contact",
       "newDeal": "New Deal",
       "newBroadcast": "New Broadcast",
-      "newAutomation": "New Automation"
+      "newAutomation": "New Automation",
+      "marketingStudio": "Marketing Studio"
     },
     "activityFeed": {
       "title": "Recent Activity",
@@ -2033,5 +2034,22 @@
   },
   "DashboardShell": {
     "loading": "Loading..."
+  },
+  "Marketing": {
+    "title": "Marketing Growth Studio",
+    "subtitle": "Click-to-WhatsApp QR links, AI lead scoring, automated drips, A/B split tests, and revenue ROI.",
+    "kpiLinks": "Growth Link Clicks",
+    "kpiHotLeads": "Hot Leads (70+)",
+    "kpiDrips": "Active Drip Sequences",
+    "kpiExperiments": "A/B Experiments",
+    "kpiRevenue": "Attributed Revenue",
+    "tabs": {
+      "links": "Growth Links & QR",
+      "leads": "Lead AI & Segments",
+      "drips": "Drip Sequences",
+      "campaigns": "AI Copy & A/B Tests",
+      "roi": "ROI, Coupons & Health",
+      "presence": "Omnichannel (Buffer)"
+    }
   }
 }
