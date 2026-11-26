@@ -83,3 +83,26 @@ export interface MarketingSegment {
   created_at: string;
   updated_at: string;
 }
+
+export type DripSequenceStatus = 'draft' | 'active' | 'paused';
+export type DripStepMessageType = 'text' | 'template' | 'image';
+export type DripEnrollmentStatus =
+  | 'active'
+  | 'completed'
+  | 'replied'
+  | 'exited'
+  | 'failed'
+  | 'paused';
+
+export interface DripSequenceStep {
+  id?: string;
+  sequence_id?: string;
+  step_order: number;
+  delay_minutes: number;
+  message_type: DripStepMessageType;
+  content_text: string;
+  media_url?: string | null;
+  template_name?: string | null;
+  template_language?: string | null;
+  coupon_id?: string | null;
+}
