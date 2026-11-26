@@ -71,3 +71,41 @@ export async function POST(request: NextRequest) {
         order_value: orderValue,
         discount_applied: discountApplied,
       });
+
+      const { data: updated, error: updErr } = await ctx.supabase
+        .from('promo_coupons')
+        .update({
+          uses_count: Number(coupon.uses_count ?? 0) + 1,
+          attributed_revenue: Number(coupon.attributed_revenue ?? 0) + netRevenue,
+        })
+        .eq('id', coupon.id)
+        .select()
+        .single();
+
+      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      serverCache.invalidatePrefix(`marketing:analytics:${ctx.accountId}`);
+      return NextResponse.json({ coupon: updated, discountApplied, netRevenue });
+    }
+
+    // Create new trackable promo coupon
+    const code =
+      typeof body.code === 'string'
+        ? body.code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24)
+        : '';
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    const discountValue = Number(body.discount_value ?? 0);
+
+    if (!code || !title || !Number.isFinite(discountValue) || discountValue <= 0) {
+      return NextResponse.json(
+        { error: 'Valid promo code, title, and positive discount value are required' },
+        { status: 400 }
+      );
+    }
+
+    const discountType = body.discount_type === 'fixed' ? 'fixed' : 'percent';
+    if (discountType === 'percent' && discountValue > 100) {
+      return NextResponse.json(
+        { error: 'Percentage discount cannot exceed 100%' },
+        { status: 400 }
+      );
+    }
