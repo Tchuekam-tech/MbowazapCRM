@@ -122,3 +122,17 @@ export class FastTtlCache {
       this.coalesced += 1;
       return pending as Promise<T>;
     }
+
+    this.misses += 1;
+    const promise = loader()
+      .then((val) => {
+        this.set(key, val, ttlMs, swrMs, nowFn());
+        return val;
+      })
+      .finally(() => {
+        this.inflight.delete(key);
+      });
+
+    this.inflight.set(key, promise);
+    return promise;
+  }
