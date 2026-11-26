@@ -198,3 +198,12 @@ function MarketingStudioInner() {
           </p>
           <p className="text-[11px] text-muted-foreground">
             {segments.length} smart segments
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground">{t('kpiExperiments')}</p>
+          <p className="mt-1 text-xl font-bold tabular-nums text-foreground">
+            {campaigns.length}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {analytics?.summary.runningExperiments ?? 0} live tests
