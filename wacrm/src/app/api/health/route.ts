@@ -22,6 +22,20 @@ function hasValidCronSecret(request: NextRequest): boolean {
  *
  * Pass `?deep=1` with `x-cron-secret` for full dependency probes.
  */
+export async function GET(request: NextRequest) {
+  const mem = process.memoryUsage();
+  const base = {
+    ok: true,
+    service: 'wacrm',
+    uptimeSeconds: Math.round(process.uptime()),
+    memoryMb: {
+      rss: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
+      heapUsed: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
+      heapTotal: Math.round((mem.heapTotal / 1024 / 1024) * 10) / 10,
+    },
+    cache: serverCache.stats(),
+    timestamp: new Date().toISOString(),
+  };
   return NextResponse.json(
     {
       ok: true,
