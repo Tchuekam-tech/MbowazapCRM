@@ -91,3 +91,22 @@ export function LeadSegmentsTab({
     return rules;
   }
 
+  async function handleRecomputeAll() {
+    setRecomputing(true);
+    try {
+      const res = await fetch('/api/marketing/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'recompute' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(`Scored ${data.updated ?? 0} contacts in real time!`);
+      onRefresh();
+    } catch {
+      toast.error('Failed to recompute lead scores');
+    } finally {
+      setRecomputing(false);
+    }
+  }
+
