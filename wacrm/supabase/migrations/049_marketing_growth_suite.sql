@@ -219,3 +219,29 @@ CREATE POLICY "marketing_segments_write" ON marketing_segments
 -- ============================================================
 -- 3. MULTI-STEP DRIP & WIN-BACK SEQUENCES
 -- ============================================================
+CREATE TABLE IF NOT EXISTS drip_sequences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'paused')),
+  segment_id UUID REFERENCES marketing_segments(id) ON DELETE SET NULL,
+  stop_on_reply BOOLEAN NOT NULL DEFAULT TRUE,
+  stop_on_tag_id UUID REFERENCES tags(id) ON DELETE SET NULL,
+  quiet_hours_start TEXT NOT NULL DEFAULT '21:00',
+  quiet_hours_end TEXT NOT NULL DEFAULT '08:00',
+  timezone TEXT NOT NULL DEFAULT 'UTC',
+  enrolled_count INTEGER NOT NULL DEFAULT 0,
+  completed_count INTEGER NOT NULL DEFAULT 0,
+  replied_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_drip_sequences_account
+  ON drip_sequences (account_id, created_at DESC);
+
+ALTER TABLE drip_sequences ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS set_updated_at ON drip_sequences;
