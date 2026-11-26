@@ -95,3 +95,37 @@ export function RoiCouponsTab({
   const [redeemValues, setRedeemValues] = useState<Record<string, string>>({});
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
 
+  async function handleCreateCoupon(e: React.FormEvent) {
+    e.preventDefault();
+    if (!code.trim() || !title.trim()) {
+      toast.error('Enter promo code and title.');
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await fetch('/api/marketing/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          title,
+          discount_type: discountType,
+          discount_value: Number(discountValue),
+          currency,
+          max_uses: maxUses ? Number(maxUses) : null,
+          expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(`Promo coupon ${data.coupon.code} created!`);
+      setCode('');
+      setTitle('');
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create coupon');
+    } finally {
+      setCreating(false);
+    }
+  }
+
