@@ -408,3 +408,38 @@ export async function POST(request: NextRequest) {
       })
       .select()
       .single();
+
+    if (cErr || !created) {
+      return NextResponse.json({ error: cErr?.message || 'Failed to create campaign' }, { status: 500 });
+    }
+
+    const compA = lintWhatsAppCopy(bodyA);
+    const compB = lintWhatsAppCopy(bodyB);
+
+    const { data: savedVariants, error: vErr } = await ctx.supabase
+      .from('ab_campaign_variants')
+      .insert([
+        {
+          campaign_id: created.id,
+          account_id: ctx.accountId,
+          variant_key: 'A',
+          label: typeof body.variant_a?.label === 'string' ? body.variant_a.label.trim() || 'Variant A' : 'Variant A',
+          body_text: bodyA,
+          template_name: body.variant_a?.template_name || null,
+          template_language: body.variant_a?.template_language || null,
+          coupon_id: body.variant_a?.coupon_id || null,
+          compliance_score: compA.score,
+        },
+        {
+          campaign_id: created.id,
+          account_id: ctx.accountId,
+          variant_key: 'B',
+          label: typeof body.variant_b?.label === 'string' ? body.variant_b.label.trim() || 'Variant B' : 'Variant B',
+          body_text: bodyB,
+          template_name: body.variant_b?.template_name || null,
+          template_language: body.variant_b?.template_language || null,
+          coupon_id: body.variant_b?.coupon_id || null,
+          compliance_score: compB.score,
+        },
+      ])
+      .select();
