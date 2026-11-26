@@ -154,3 +154,27 @@ export function AbCampaignsTab({
     }
   }
 
+  async function handlePromoteWinner(campaignId: string, winner?: 'A' | 'B') {
+    setBusyCampaignId(campaignId);
+    try {
+      const res = await fetch('/api/marketing/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'promote_winner',
+          campaign_id: campaignId,
+          winner,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(
+        `Variant ${data.winner} declared winner & sent to ${data.sentHoldout} remaining contacts!`
+      );
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not promote winner');
+    } finally {
+      setBusyCampaignId(null);
+    }
+  }
