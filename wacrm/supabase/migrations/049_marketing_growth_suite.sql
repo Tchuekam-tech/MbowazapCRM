@@ -286,3 +286,25 @@ CREATE INDEX IF NOT EXISTS idx_promo_coupons_account
 ALTER TABLE promo_coupons ENABLE ROW LEVEL SECURITY;
 
 DROP TRIGGER IF EXISTS set_updated_at ON promo_coupons;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON promo_coupons
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP POLICY IF EXISTS "promo_coupons_select" ON promo_coupons;
+CREATE POLICY "promo_coupons_select" ON promo_coupons
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "promo_coupons_write" ON promo_coupons;
+CREATE POLICY "promo_coupons_write" ON promo_coupons
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
+
+CREATE TABLE IF NOT EXISTS coupon_redemptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coupon_id UUID NOT NULL REFERENCES promo_coupons(id) ON DELETE CASCADE,
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  deal_id UUID REFERENCES deals(id) ON DELETE SET NULL,
+  order_value NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  discount_applied NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  redeemed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
