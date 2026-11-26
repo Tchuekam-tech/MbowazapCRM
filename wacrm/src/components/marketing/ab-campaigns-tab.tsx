@@ -321,3 +321,20 @@ export function AbCampaignsTab({
               </p>
             </div>
           </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="sm:col-span-2">
+              <Label className="text-xs">Experiment Name</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Weekend Flash Sale Hook Test"
+                className="mt-1 text-xs"
+                required
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Target Segment</Label>
+              <select
+                value={segmentId}
+                onChange={(e) => setSegmentId(e.target.value)}
