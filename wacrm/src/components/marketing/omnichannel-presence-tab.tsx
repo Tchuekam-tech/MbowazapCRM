@@ -383,3 +383,29 @@ export function OmnichannelPresenceTab({
                 {totals.connectedChannels} channels live
               </span>
               {!integration.insights_available && (
+                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+                  Post insights scope limited
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {integration.buffer_account_email || integration.buffer_account_name || 'Connected Account'}
+              {integration.last_synced_at
+                ? ` · Last synced ${new Date(integration.last_synced_at).toLocaleString()}`
+                : ''}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {integration.organizations.length > 1 && canAdmin && (
+            <select
+              value={integration.organization_id}
+              onChange={(e) => handleSwitchOrg(e.target.value)}
+              disabled={syncing}
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+            >
+              {integration.organizations.map((org) => (
+                <option key={org.id} value={org.id}>
+                  {org.name}
+                </option>
