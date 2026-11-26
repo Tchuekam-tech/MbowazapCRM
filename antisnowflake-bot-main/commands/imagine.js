@@ -1,63 +1,65 @@
 const axios = require('axios');
-const { fetchBuffer } = require('../lib/myfunc');
 
 async function imagineCommand(sock, chatId, message) {
     try {
-        // Get the prompt from the message
-        const prompt = message.message?.conversation?.trim() || 
-                      message.message?.extendedTextMessage?.text?.trim() || '';
-        
-        // Remove the command prefix and trim
-        const imagePrompt = prompt.slice(8).trim();
-        
+        const prompt =
+            message.message?.conversation?.trim() ||
+            message.message?.extendedTextMessage?.text?.trim() ||
+            '';
+
+        // Strip any command prefix (.imagine, .flux, etc.)
+        const imagePrompt = prompt.replace(/^\.[a-z0-9_-]+\s*/i, '').trim();
+
         if (!imagePrompt) {
             await sock.sendMessage(chatId, {
-                text: 'Please provide a prompt for the image generation.\nExample: .imagine a beautiful sunset over mountains'
-            }, {
-                quoted: message
-            });
+                text: 'Please provide a prompt for image generation.\nExample: .imagine a beautiful sunset over mountains'
+            }, { quoted: message });
             return;
         }
 
-        // Send processing message
         await sock.sendMessage(chatId, {
             text: '🎨 Generating your image... Please wait.'
-        }, {
-            quoted: message
-        });
+        }, { quoted: message });
 
-        // Enhance the prompt with quality keywords
         const enhancedPrompt = enhancePrompt(imagePrompt);
+        const endpoints = [
+            `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?nologo=true`,
+            `https://shizoapi.onrender.com/api/ai/imagine?apikey=shizo&query=${encodeURIComponent(enhancedPrompt)}`,
+        ];
 
-        // Make API request
-        const response = await axios.get(`https://shizoapi.onrender.com/api/ai/imagine?apikey=shizo&query=${encodeURIComponent(enhancedPrompt)}`, {
-            responseType: 'arraybuffer'
-        });
+        let imageBuffer = null;
+        for (const url of endpoints) {
+            try {
+                const response = await axios.get(url, {
+                    responseType: 'arraybuffer',
+                    timeout: 35000,
+                });
+                const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
+                if (contentType.startsWith('image/') && response.data && response.data.byteLength > 1000) {
+                    imageBuffer = Buffer.from(response.data);
+                    break;
+                }
+            } catch (_) {}
+        }
 
-        // Convert response to buffer
-        const imageBuffer = Buffer.from(response.data);
+        if (!imageBuffer) {
+            throw new Error('Image generation providers returned no valid image');
+        }
 
-        // Send the generated image
         await sock.sendMessage(chatId, {
             image: imageBuffer,
             caption: `🎨 Generated image for prompt: "${imagePrompt}"`
-        }, {
-            quoted: message
-        });
+        }, { quoted: message });
 
     } catch (error) {
         console.error('Error in imagine command:', error);
         await sock.sendMessage(chatId, {
             text: '❌ Failed to generate image. Please try again later.'
-        }, {
-            quoted: message
-        });
+        }, { quoted: message });
     }
 }
 
-// Function to enhance the prompt
 function enhancePrompt(prompt) {
-    // Quality enhancing keywords
     const qualityEnhancers = [
         'high quality',
         'detailed',
@@ -70,15 +72,11 @@ function enhancePrompt(prompt) {
         'cinematic lighting',
         'sharp focus'
     ];
-
-    // Randomly select 3-4 enhancers
-    const numEnhancers = Math.floor(Math.random() * 2) + 3; // Random number between 3-4
-    const selectedEnhancers = qualityEnhancers
+    const numEnhancers = Math.floor(Math.random() * 2) + 3;
+    const selectedEnhancers = [...qualityEnhancers]
         .sort(() => Math.random() - 0.5)
         .slice(0, numEnhancers);
-
-    // Combine original prompt with enhancers
     return `${prompt}, ${selectedEnhancers.join(', ')}`;
 }
 
-module.exports = imagineCommand; 
+module.exports = imagineCommand;

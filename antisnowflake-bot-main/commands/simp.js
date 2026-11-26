@@ -1,13 +1,13 @@
 const fetch = require('node-fetch');
 
-async function simpCommand(sock, chatId, quotedMsg, mentionedJid, sender) {
+async function simpCommand(sock, chatId, quotedMsg, mentionedJid, sender, quotedParticipant = null) {
     try {
         // Determine the target user
-        let who = quotedMsg 
-            ? quotedMsg.sender 
-            : mentionedJid && mentionedJid[0] 
-                ? mentionedJid[0] 
-                : sender;
+        let who =
+            quotedParticipant ||
+            (quotedMsg && quotedMsg.sender) ||
+            (mentionedJid && mentionedJid[0]) ||
+            sender;
 
         // Get the profile picture URL
         let avatarUrl;

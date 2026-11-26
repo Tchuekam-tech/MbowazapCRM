@@ -1,13 +1,13 @@
 const fetch = require('node-fetch');
 
-async function stupidCommand(sock, chatId, quotedMsg, mentionedJid, sender, args) {
+async function stupidCommand(sock, chatId, quotedMsg, mentionedJid, sender, args, quotedParticipant = null) {
     try {
         // Determine the target user
-        let who = quotedMsg 
-            ? quotedMsg.sender 
-            : mentionedJid && mentionedJid[0] 
-                ? mentionedJid[0] 
-                : sender;
+        let who =
+            quotedParticipant ||
+            (quotedMsg && quotedMsg.sender) ||
+            (mentionedJid && mentionedJid[0]) ||
+            sender;
 
         // Get the text for the stupid card (default to "im+stupid" if not provided)
         let text = args && args.length > 0 ? args.join(' ') : 'im+stupid';

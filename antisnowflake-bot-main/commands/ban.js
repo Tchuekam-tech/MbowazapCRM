@@ -55,10 +55,20 @@ async function banCommand(sock, chatId, message) {
 
     try {
         // Add user to banned list
-        const bannedUsers = JSON.parse(fs.readFileSync('./data/banned.json'));
+        const bannedFile = './data/banned.json';
+        let bannedUsers = [];
+        try {
+            if (fs.existsSync(bannedFile)) {
+                const parsed = JSON.parse(fs.readFileSync(bannedFile, 'utf8'));
+                if (Array.isArray(parsed)) bannedUsers = parsed;
+            }
+        } catch (_) {
+            bannedUsers = [];
+        }
         if (!bannedUsers.includes(userToBan)) {
             bannedUsers.push(userToBan);
-            fs.writeFileSync('./data/banned.json', JSON.stringify(bannedUsers, null, 2));
+            fs.mkdirSync('./data', { recursive: true });
+            fs.writeFileSync(bannedFile, JSON.stringify(bannedUsers, null, 2));
             
             await sock.sendMessage(chatId, { 
                 text: `Successfully banned @${userToBan.split('@')[0]}!`,

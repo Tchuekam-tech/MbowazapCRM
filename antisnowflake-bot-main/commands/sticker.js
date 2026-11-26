@@ -121,28 +121,6 @@ async function stickerCommand(sock, chatId, message) {
                 }
             } catch {}
         }
-        // Read the WebP file
-        webpBuffer = fs.readFileSync(tempOutput);
-
-        // If animated and output is too large, re-encode with harsher settings similar to stickercrop
-        if (isAnimated && webpBuffer.length > 1000 * 1024) {
-            try {
-                const tempOutput2 = path.join(tmpDir, `sticker_fallback_${Date.now()}.webp`);
-                // Detect large source to decide compression level
-                const fileSizeKB = mediaBuffer.length / 1024;
-                const isLargeFile = fileSizeKB > 5000; // 5MB
-                const fallbackCmd = isLargeFile
-                    ? `ffmpeg -y -i "${tempInput}" -t 2 -vf "scale=512:512:force_original_aspect_ratio=decrease,fps=8,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000" -c:v libwebp -preset default -loop 0 -vsync 0 -pix_fmt yuva420p -quality 30 -compression_level 6 -b:v 100k -max_muxing_queue_size 1024 "${tempOutput2}"`
-                    : `ffmpeg -y -i "${tempInput}" -t 3 -vf "scale=512:512:force_original_aspect_ratio=decrease,fps=12,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000" -c:v libwebp -preset default -loop 0 -vsync 0 -pix_fmt yuva420p -quality 45 -compression_level 6 -b:v 150k -max_muxing_queue_size 1024 "${tempOutput2}"`;
-                await new Promise((resolve, reject) => {
-                    exec(fallbackCmd, (error) => error ? reject(error) : resolve());
-                });
-                if (fs.existsSync(tempOutput2)) {
-                    webpBuffer = fs.readFileSync(tempOutput2);
-                    try { fs.unlinkSync(tempOutput2); } catch {}
-                }
-            } catch {}
-        }
 
         // Add metadata using webpmux
         const img = new webp.Image();

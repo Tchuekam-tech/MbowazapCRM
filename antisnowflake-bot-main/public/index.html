@@ -534,9 +534,12 @@
       feedback.innerHTML = '';
 
       try {
-        const res = await fetch('/api/status?number=' + currentNumber);
-        const data = await res.json();
-        
+        const res = await fetch('/api/status?number=' + encodeURIComponent(currentNumber));
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || ('HTTP ' + res.status));
+        }
+
         if (data.status === 'connected') {
           await loadDashboardConfig();
           showView('viewDashboard');
@@ -545,7 +548,7 @@
           resetLinkView();
         }
       } catch (err) {
-        feedback.innerHTML = '<span class="error-text"><i class="fas fa-exclamation-triangle"></i> Erreur de connexion avec le serveur.</span>';
+        feedback.innerHTML = '<span class="error-text"><i class="fas fa-exclamation-triangle"></i> ' + (err && err.message ? err.message : 'Erreur de connexion avec le serveur.') + '</span>';
       } finally {
         spinner.style.display = 'none';
       }

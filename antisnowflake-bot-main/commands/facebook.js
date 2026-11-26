@@ -13,8 +13,8 @@ async function facebookCommand(sock, chatId, message) {
             }, { quoted: message });
         }
 
-        // Validate Facebook URL
-        if (!url.includes('facebook.com')) {
+        // Validate Facebook URL (including fb.watch shortlinks)
+        if (!/(?:facebook\.com|fb\.watch|fb\.me)/i.test(url)) {
             return await sock.sendMessage(chatId, { 
                 text: "That is not a Facebook link."
             }, { quoted: message });
@@ -178,6 +178,7 @@ async function facebookCommand(sock, chatId, message) {
             console.error(`URL method failed: ${urlError.message}`);
             
             // Fallback to buffer method
+            let tempFile = null;
             try {
                 // Create temp directory if it doesn't exist
                 const tmpDir = path.join(process.cwd(), 'tmp');
@@ -186,7 +187,7 @@ async function facebookCommand(sock, chatId, message) {
                 }
 
                 // Generate temp file path
-                const tempFile = path.join(tmpDir, `fb_${Date.now()}.mp4`);
+                tempFile = path.join(tmpDir, `fb_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.mp4`);
 
                 // Download the video
                 const videoResponse = await axios({
@@ -206,6 +207,7 @@ async function facebookCommand(sock, chatId, message) {
                 videoResponse.data.pipe(writer);
 
                 await new Promise((resolve, reject) => {
+                    videoResponse.data.on('error', reject);
                     writer.on('finish', resolve);
                     writer.on('error', reject);
                 });
@@ -216,24 +218,21 @@ async function facebookCommand(sock, chatId, message) {
                 }
 
                 // Send the video
-                const caption = title ? `𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗𝗘𝗗 𝗕𝗬 𝗟𝗨𝗖𝗞𝗬 𝗧𝗘𝗖𝗛 𝗛𝗨𝗕-𝗕𝗢𝗧\n\n📝 Title: ${title}` : "𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗𝗘𝗗 𝗕𝗬 𝗟𝗨𝗖𝗞𝗬 𝗧𝗘𝗖𝗛 𝗛𝗨𝗕-𝗕𝗢𝗧";
+                const caption = title ? `𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗𝗘𝗗 𝗕𝗬 𝗧𝗖𝗛𝗨𝗘𝗞-𝗕𝗢𝗧\n\n📝 Title: ${title}` : "𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗𝗘𝗗 𝗕𝗬 𝗧𝗖𝗛𝗨𝗘𝗞-𝗕𝗢𝗧";
                 
                 await sock.sendMessage(chatId, {
                     video: { url: tempFile },
                     mimetype: "video/mp4",
                     caption: caption
                 }, { quoted: message });
-
-                // Clean up temp file
-                try {
-                    fs.unlinkSync(tempFile);
-                } catch (err) {
-                    console.error('Error cleaning up temp file:', err);
-                }
                 return;
             } catch (bufferError) {
                 console.error(`Buffer method also failed: ${bufferError.message}`);
                 throw new Error('Both URL and buffer methods failed');
+            } finally {
+                try {
+                    if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+                } catch (_) {}
             }
         }
 

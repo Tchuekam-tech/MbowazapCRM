@@ -26,9 +26,11 @@ async function pingCommand(sock, chatId, message) {
         const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
 
         // React instantly with a random emoji
-           await sock.sendMessage(chatId, { 
-                     react: { text: randomEmoji }
-                     }, { quoted: message });
+        if (message?.key) {
+            await sock.sendMessage(chatId, {
+                react: { text: randomEmoji, key: message.key }
+            });
+        }
         
         
         

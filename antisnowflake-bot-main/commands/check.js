@@ -25,8 +25,10 @@ async function checkCommand(sock, chatId, message, q) {
 
     console.log("[check] fetching countries for query:", q, "normalized:", code);
 
-    // Always use v3.1
-    const { data } = await axios.get("https://restcountries.com/v3.1/all");
+    // Always use v3.1 with required fields query parameter
+    const { data } = await axios.get("https://restcountries.com/v3.1/all?fields=name,cca2,idd", {
+      timeout: 12000,
+    });
 
     // find matches
     const matches = [];

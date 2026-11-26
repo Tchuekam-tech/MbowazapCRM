@@ -142,7 +142,7 @@ function createWacrmClient({
     function flush() {
         clearTimeout(flushTimer);
         flushTimer = null;
-        if (pending.size === 0 || flushing) return;
+        if (pending.size === 0 || flushing) return drain();
         flushing = true;
         try {
             const q = loadQueue();
@@ -164,7 +164,7 @@ function createWacrmClient({
         } finally {
             flushing = false;
         }
-        void drain();
+        return drain();
     }
 
     async function deliver(batch) {

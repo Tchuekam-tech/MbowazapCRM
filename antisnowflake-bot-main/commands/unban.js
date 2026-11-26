@@ -46,11 +46,21 @@ async function unbanCommand(sock, chatId, message) {
     }
 
     try {
-        const bannedUsers = JSON.parse(fs.readFileSync('./data/banned.json'));
+        const bannedFile = './data/banned.json';
+        let bannedUsers = [];
+        try {
+            if (fs.existsSync(bannedFile)) {
+                const parsed = JSON.parse(fs.readFileSync(bannedFile, 'utf8'));
+                if (Array.isArray(parsed)) bannedUsers = parsed;
+            }
+        } catch (_) {
+            bannedUsers = [];
+        }
         const index = bannedUsers.indexOf(userToUnban);
         if (index > -1) {
             bannedUsers.splice(index, 1);
-            fs.writeFileSync('./data/banned.json', JSON.stringify(bannedUsers, null, 2));
+            fs.mkdirSync('./data', { recursive: true });
+            fs.writeFileSync(bannedFile, JSON.stringify(bannedUsers, null, 2));
             
             await sock.sendMessage(chatId, { 
                 text: `Successfully unbanned ${userToUnban.split('@')[0]}!`,

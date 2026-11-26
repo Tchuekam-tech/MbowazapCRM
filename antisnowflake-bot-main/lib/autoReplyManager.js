@@ -67,29 +67,76 @@ async function downloadMedia(message, type) {
  * Transcribes audio (voice notes) using Groq Whisper API
  */
 async function transcribeAudio(audioBuffer, groqApiKey) {
-    const form = new FormData();
-    form.append('file', audioBuffer, {
-        filename: 'speech.ogg',
-        contentType: 'audio/ogg'
-    });
-    form.append('model', 'whisper-large-v3');
-
-    try {
-        console.log(chalk.cyan('[Audio] Sending voice note to Groq Whisper...'));
-        const response = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', form, {
-            headers: {
-                ...form.getHeaders(),
-                'Authorization': `Bearer ${groqApiKey}`
-            },
-            timeout: 20000
+    if (groqApiKey) {
+        const form = new FormData();
+        form.append('file', audioBuffer, {
+            filename: 'speech.ogg',
+            contentType: 'audio/ogg'
         });
-        const text = response.data?.text || '';
-        console.log(chalk.green(`[Audio] Groq Whisper transcription success: "${text.substring(0, 60)}..."`));
-        return text;
-    } catch (err) {
-        console.error('[Audio] Groq Whisper transcription failed:', err.message);
-        throw err;
+        form.append('model', 'whisper-large-v3');
+
+        try {
+            console.log(chalk.cyan('[Audio] Sending voice note to Groq Whisper...'));
+            const response = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', form, {
+                headers: {
+                    ...form.getHeaders(),
+                    'Authorization': `Bearer ${groqApiKey}`
+                },
+                timeout: 20000
+            });
+            const text = response.data?.text || '';
+            if (text.trim()) {
+                console.log(chalk.green(`[Audio] Groq Whisper transcription success: "${text.substring(0, 60)}..."`));
+                return text;
+            }
+        } catch (err) {
+            console.warn('[Audio] Groq Whisper failed, trying Gemini fallback:', err.message);
+        }
     }
+
+    // Fallback: Gemini multimodal audio transcription
+    const geminiKeys = [...new Set([
+        settings.geminiApiKey,
+        process.env.GEMINI_API_KEY,
+        process.env.GEMINI_API_KEY_2,
+        settings.tchuekamApiKey,
+        process.env.TCHUEKAM_API_KEY,
+    ].filter(k => k && typeof k === 'string' && k.trim() !== ''))];
+
+    if (geminiKeys.length > 0) {
+        const model = settings.tchuekamModel || 'gemini-2.5-flash';
+        const base64Audio = audioBuffer.toString('base64');
+        for (const geminiKey of geminiKeys) {
+            try {
+                const res = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'x-goog-api-key': geminiKey,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [
+                                    { text: 'Transcribe this WhatsApp voice note accurately in its original language. Return only the transcript.' },
+                                    { inlineData: { mimeType: 'audio/ogg', data: base64Audio } }
+                                ]
+                            }],
+                            generationConfig: { maxOutputTokens: 500 }
+                        }),
+                        signal: AbortSignal.timeout(25000)
+                    }
+                );
+                const data = await res.json();
+                const parts = data?.candidates?.[0]?.content?.parts || [];
+                const text = parts.filter(p => typeof p.text === 'string' && !p.thought).map(p => p.text).join('').trim();
+                if (res.ok && text) return text;
+            } catch (_) {}
+        }
+    }
+
+    throw new Error('All audio transcription providers failed');
 }
 
 /**
@@ -110,7 +157,7 @@ async function readImageContent(imageBuffer, mimeType = 'image/jpeg') {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: 'llama-3.2-11b-vision-preview',
+                    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
                     messages: [
                         {
                             role: 'user',
@@ -653,7 +700,11 @@ Never send catalog images if catalogImagesSent is true.`;
                 if (isClosed) {
                     console.log(chalk.bold(chalk.green(`[DealClassifier] 🚨 HOT LEAD DETECTED for ${senderId}! Handing over to owner...`)));
                     try {
-                        await sock.chatModify({ pin: true }, chatId);
+                        try {
+                            await sock.chatModify({ pin: true }, chatId);
+                        } catch (pinOnlyErr) {
+                            console.warn('[DealClassifier] Pinning chat skipped:', pinOnlyErr.message);
+                        }
 
                         // Alert the Owner
                         const ownerNum = (activeSettings.ownerNumber || '237653683174').replace(/[^0-9]/g, '') + '@s.whatsapp.net';
@@ -720,15 +771,13 @@ Never send catalog images if catalogImagesSent is true.`;
         }
         await safePresence(sock, 'paused', chatId);
 
-        // Global Token Bucket Slot (Throttle bursts across all chats)
-        await securityManager.acquireGlobalSendSlot();
-
         // Re-check: an agent may have taken over from wacrm while the reply was being generated.
         if (runHandle.cancelled || !isDavilaAllowed(sock, senderId)) {
             console.log(`[AutoReply] ⏸️ Davila reply for ${senderId.split('@')[0]} dropped — handed over via wacrm.`);
             return;
         }
 
+        // Note: sock.sendMessage already acquires the global send slot in index.js
         await sock.sendMessage(chatId, { text: replyText }, { quoted: message, _origin: 'davila' });
 
         // Track bot response for security checks

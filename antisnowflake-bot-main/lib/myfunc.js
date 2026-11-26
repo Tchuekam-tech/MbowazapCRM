@@ -373,9 +373,11 @@ exports.reSize = (buffer, ukur1, ukur2) => {
 }
 
 let file = require.resolve(__filename)
-fs.watchFile(file, () => {
-    fs.unwatchFile(file)
-    console.log(chalk.redBright(`Update ${__filename}`))
-    delete require.cache[file]
-    require(file)
-})
+if (process.env.NODE_ENV !== 'test') {
+    fs.watchFile(file, { persistent: false }, () => {
+        fs.unwatchFile(file)
+        console.log(chalk.redBright(`Update ${__filename}`))
+        delete require.cache[file]
+        require(file)
+    })
+}

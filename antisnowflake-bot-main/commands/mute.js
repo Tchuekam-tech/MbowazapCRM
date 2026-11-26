@@ -1,7 +1,10 @@
 const isAdmin = require('../lib/isAdmin');
 
 async function muteCommand(sock, chatId, senderId, message, durationInMinutes) {
-    
+    if (!chatId || !chatId.endsWith('@g.us')) {
+        await sock.sendMessage(chatId, { text: '❌ This command can only be used in groups.' }, { quoted: message });
+        return;
+    }
 
     const { isSenderAdmin, isBotAdmin } = await isAdmin(sock, chatId, senderId);
     if (!isBotAdmin) {
@@ -9,7 +12,7 @@ async function muteCommand(sock, chatId, senderId, message, durationInMinutes) {
         return;
     }
 
-    if (!isSenderAdmin) {
+    if (!isSenderAdmin && !message?.key?.fromMe) {
         await sock.sendMessage(chatId, { text: 'Only group admins can use the mute command.' }, { quoted: message });
         return;
     }

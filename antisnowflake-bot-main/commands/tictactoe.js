@@ -88,37 +88,54 @@ async function tictactoeCommand(sock, chatId, senderId, text) {
 
 async function handleTicTacToeMove(sock, chatId, senderId, text) {
     try {
-        // Find player's game
+        const isSurrender = /^(surrender|give up)$/i.test(text);
+
+        // Allow cancelling a WAITING room if player types surrender
+        if (isSurrender) {
+            const waitingRoom = Object.values(games).find(room =>
+                room.id.startsWith('tictactoe') &&
+                room.game.playerX === senderId &&
+                room.state === 'WAITING'
+            );
+            if (waitingRoom) {
+                delete games[waitingRoom.id];
+                await sock.sendMessage(chatId, {
+                    text: `🏳️ @${senderId.split('@')[0]} cancelled the waiting TicTacToe game.`,
+                    mentions: [senderId]
+                });
+                return true;
+            }
+        }
+
+        // Find player's active PLAYING game
         const room = Object.values(games).find(room => 
             room.id.startsWith('tictactoe') && 
             [room.game.playerX, room.game.playerO].includes(senderId) && 
             room.state === 'PLAYING'
         );
 
-        if (!room) return;
-
-        const isSurrender = /^(surrender|give up)$/i.test(text);
+        if (!room) return false;
         
-        if (!isSurrender && !/^[1-9]$/.test(text)) return;
+        if (!isSurrender && !/^[1-9]$/.test(text)) return false;
 
         // Allow surrender at any time, not just during player's turn
         if (senderId !== room.game.currentTurn && !isSurrender) {
             await sock.sendMessage(chatId, { 
                 text: '❌ Not your turn!' 
             });
-            return;
+            return true;
         }
 
         let ok = isSurrender ? true : room.game.turn(
             senderId === room.game.playerO,
-            parseInt(text) - 1
+            parseInt(text, 10) - 1
         );
 
         if (!ok) {
             await sock.sendMessage(chatId, { 
                 text: '❌ Invalid move! That position is already taken.' 
             });
-            return;
+            return true;
         }
 
         let winner = room.game.winner;
@@ -150,7 +167,7 @@ async function handleTicTacToeMove(sock, chatId, senderId, text) {
             
             // Delete the game immediately after surrender
             delete games[room.id];
-            return;
+            return true;
         }
 
         let gameStatus;
@@ -159,7 +176,8 @@ async function handleTicTacToeMove(sock, chatId, senderId, text) {
         } else if (isTie) {
             gameStatus = `🤝 Game ended in a draw!`;
         } else {
-            gameStatus = `🎲 Turn: @${room.game.currentTurn.split('@')[0]} (${senderId === room.game.playerX ? '❎' : '⭕'})`;
+            const nextSymbol = room.game.currentTurn === room.game.playerX ? '❎' : '⭕';
+            gameStatus = `🎲 Turn: @${room.game.currentTurn.split('@')[0]} (${nextSymbol})`;
         }
 
         const str = `
@@ -198,9 +216,11 @@ ${!winner && !isTie ? '• Type a number (1-9) to make your move\n• Type *surr
         if (winner || isTie) {
             delete games[room.id];
         }
+        return true;
 
     } catch (error) {
         console.error('Error in tictactoe move:', error);
+        return false;
     }
 }
 

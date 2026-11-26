@@ -579,7 +579,7 @@ function startHealthCheckServer(port = process.env.PORT || 8080, host = process.
     // sporadic 502 Bad Gateway race errors under concurrent load.
     server.keepAliveTimeout = 65_000;
     server.headersTimeout = 66_000;
-    server.requestTimeout = 30_000;
+    server.requestTimeout = 90_000;
 
     bindHost(host, true);
 

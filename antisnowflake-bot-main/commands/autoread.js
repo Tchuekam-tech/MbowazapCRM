@@ -167,27 +167,26 @@ function isBotMentionedInMessage(message, botNumber) {
 
 // Function to handle autoread functionality
 async function handleAutoread(sock, message) {
-    if (isAutoreadEnabled()) {
-        // Get bot's ID
-        const botNumber = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-        
-        // Check if bot is mentioned
-        const isBotMentioned = isBotMentionedInMessage(message, botNumber);
-        
-        // If bot is mentioned, read the message internally but don't mark as read in UI
-        if (isBotMentioned) {
-            
-            // We don't call sock.readMessages() here, so the message stays unread in the UI
-            return false; // Indicates message was not marked as read
-        } else {
-            // For regular messages, mark as read normally
-            const key = { remoteJid: message.key.remoteJid, id: message.key.id, participant: message.key.participant };
-            await sock.readMessages([key]);
-            //console.log('✅ Marked message as read from ' + (message.key.participant || message.key.remoteJid).split('@')[0]);
-            return true; // Indicates message was marked as read
+    try {
+        if (!isAutoreadEnabled()) return false;
+        const botId = sock?.user?.id || '';
+        const botNumber = botId ? `${botId.split(':')[0].split('@')[0]}@s.whatsapp.net` : '';
+        if (botNumber && isBotMentionedInMessage(message, botNumber)) {
+            return false;
         }
+        if (typeof sock?.readMessages === 'function' && message?.key?.remoteJid && message?.key?.id) {
+            const key = {
+                remoteJid: message.key.remoteJid,
+                id: message.key.id,
+                participant: message.key.participant
+            };
+            await sock.readMessages([key]);
+            return true;
+        }
+    } catch (err) {
+        console.error('Error in handleAutoread:', err?.message || err);
     }
-    return false; // Autoread is disabled
+    return false;
 }
 
 module.exports = {

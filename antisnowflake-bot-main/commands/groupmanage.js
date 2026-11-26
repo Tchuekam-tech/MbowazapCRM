@@ -59,27 +59,30 @@ async function setGroupPhoto(sock, chatId, senderId, message) {
     if (!check.ok) return;
 
     const quoted = message.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+    const isSticker = !quoted?.imageMessage && Boolean(quoted?.stickerMessage);
     const imageMessage = quoted?.imageMessage || quoted?.stickerMessage;
     if (!imageMessage) {
         await sock.sendMessage(chatId, { text: 'Reply to an image/sticker with .setgpp' }, { quoted: message });
         return;
     }
+    let imgPath = null;
     try {
         const tmpDir = path.join(process.cwd(), 'tmp');
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
-        const stream = await downloadContentFromMessage(imageMessage, 'image');
+        const stream = await downloadContentFromMessage(imageMessage, isSticker ? 'sticker' : 'image');
         let buffer = Buffer.from([]);
         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
 
-        const imgPath = path.join(tmpDir, `gpp_${Date.now()}.jpg`);
+        imgPath = path.join(tmpDir, `gpp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.jpg`);
         fs.writeFileSync(imgPath, buffer);
 
         await sock.updateProfilePicture(chatId, { url: imgPath });
-        try { fs.unlinkSync(imgPath); } catch (_) {}
         await sock.sendMessage(chatId, { text: '✅ Group profile photo updated.' }, { quoted: message });
     } catch (e) {
         await sock.sendMessage(chatId, { text: '❌ Failed to update group profile photo.' }, { quoted: message });
+    } finally {
+        try { if (imgPath && fs.existsSync(imgPath)) fs.unlinkSync(imgPath); } catch (_) {}
     }
 }
 

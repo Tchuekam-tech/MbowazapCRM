@@ -1,10 +1,25 @@
+const fs = require("fs");
 const settings = require("../settings");
+
+function getBotModeLabel() {
+    try {
+        if (global.botModeCache && typeof global.botModeCache.isPublic === "boolean") {
+            return global.botModeCache.isPublic ? "Public" : "Private";
+        }
+        const data = JSON.parse(fs.readFileSync("./data/messageCount.json", "utf8"));
+        return data.isPublic ? "Public" : "Private";
+    } catch {
+        return "Public";
+    }
+}
+
 async function aliveCommand(sock, chatId, message) {
     try {
+        const modeLabel = getBotModeLabel();
         const message1 = `╭══✦〔 🤖 *ᴀᴍ ᴀʟɪᴠᴇ..!* 〕✦═╮\n│\n` +
                        `│ 🚀 *ᴠᴇʀsɪᴏɴ*    : ${settings.version}\n` +
                        `│ ⛳ *ꜱᴛᴀᴛᴜꜱ*    : Online\n` +
-                       `│ 🌍 *ᴍᴏᴅᴇ*      : Public\n│\n` +
+                       `│ 🌍 *ᴍᴏᴅᴇ*      : ${modeLabel}\n│\n` +
                        `│ 🌟 *ꜰᴇᴀᴛᴜʀᴇꜱ*:\n` +
                        `│  ➟ ᴠɪᴇᴡ ᴏɴᴄᴇ\n` +
                        `│  ➟ ɢʀᴏᴜᴘ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ\n` +

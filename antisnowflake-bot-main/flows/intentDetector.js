@@ -59,13 +59,13 @@ function detectIntent(m, currentState = '') {
             if (cleanNum === '2') return { intent: 'SELECT_OBJ_2', value: 'obj_2' };
             if (cleanNum === '3') return { intent: 'SELECT_OBJ_3', value: 'obj_3' };
             if (cleanNum === '4') return { intent: 'SELECT_OBJ_4', value: 'obj_4' };
-        } else if (currentState === 'AWAITING_CLOSING_CHOICE') {
+        } else if (currentState === 'AWAITING_CLOSING' || currentState === 'AWAITING_CLOSING_CHOICE') {
             if (cleanNum === '1') return { intent: 'READY' };
             if (cleanNum === '2') return { intent: 'QUESTIONS' };
-        } else if (currentState === 'AWAITING_COMMITMENT') {
+        } else if (currentState === 'COMMITMENT' || currentState === 'AWAITING_COMMITMENT') {
             if (cleanNum === '1') return { intent: 'CONFIRM_YES' };
             if (cleanNum === '2') return { intent: 'CONFIRM_CHANGE' };
-        } else if (currentState === 'AWAITING_FAQ_MENU') {
+        } else if (currentState === 'FAQ' || currentState === 'AWAITING_FAQ_MENU') {
             if (cleanNum === '1') return { intent: 'FAQ_HOW' };
             if (cleanNum === '2') return { intent: 'FAQ_DELIVERY' };
             if (cleanNum === '3') return { intent: 'FAQ_PAYMENT' };

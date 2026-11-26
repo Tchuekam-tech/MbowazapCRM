@@ -1,70 +1,57 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-
-const channelInfo = {
-    contextInfo: {
-        forwardingScore: 999,
-        isForwarded: true,
-        forwardedNewsletterMessageInfo: {
-            newsletterJid: '120363420656466131@newsletter',
-            newsletterName: 'Tchuek Bot',
-            serverMessageId: -1
-        }
-    }
-};
+const isOwnerOrSudo = require('../lib/isOwner');
 
 async function clearSessionCommand(sock, chatId, msg) {
     try {
-        // Check if sender is owner
-        if (!msg.key.fromMe) {
-            await sock.sendMessage(chatId, { 
-                text: '❌ This command can only be used by the owner!',
-                ...channelInfo
-            });
+        const senderId = msg?.key?.participant || msg?.key?.remoteJid || '';
+        const allowed = Boolean(msg?.key?.fromMe) || await isOwnerOrSudo(senderId, sock, chatId);
+        if (!allowed) {
+            await sock.sendMessage(chatId, {
+                text: '❌ This command can only be used by the owner or sudo!'
+            }, { quoted: msg });
             return;
         }
 
-        // Define session directory
-        const sessionDir = path.join(__dirname, '../session');
+        const botDigits = String(sock?.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        const multiTenantDir = botDigits ? path.join(__dirname, '../data/sessions', botDigits) : null;
+        const legacyDir = path.join(__dirname, '../session');
+        const sessionDir = (multiTenantDir && fs.existsSync(multiTenantDir)) ? multiTenantDir : legacyDir;
 
         if (!fs.existsSync(sessionDir)) {
-            await sock.sendMessage(chatId, { 
-                text: '❌ Session directory not found!',
-                ...channelInfo
-            });
+            await sock.sendMessage(chatId, {
+                text: '❌ Session directory not found!'
+            }, { quoted: msg });
             return;
         }
 
         let filesCleared = 0;
         let errors = 0;
-        let errorDetails = [];
+        const errorDetails = [];
 
-        // Send initial status
-        await sock.sendMessage(chatId, { 
-            text: `🔍 Optimizing session files for better performance...`,
-            ...channelInfo
-        });
+        await sock.sendMessage(chatId, {
+            text: '🔍 Optimizing session files for better performance...'
+        }, { quoted: msg });
 
         const files = fs.readdirSync(sessionDir);
-        
-        // Count files by type for optimization
         let appStateSyncCount = 0;
         let preKeyCount = 0;
 
-        for (const file of files) {
-            if (file.startsWith('app-state-sync-')) appStateSyncCount++;
-            if (file.startsWith('pre-key-')) preKeyCount++;
-        }
+        // Preserve critical Signal identity & encryption session files so chats don't break
+        const shouldPreserve = (file) =>
+            file === 'creds.json' ||
+            file === 'creds.json.bak' ||
+            file.startsWith('session-') ||
+            file.startsWith('sender-key-');
 
-        // Delete files
         for (const file of files) {
-            if (file === 'creds.json') {
-                // Skip creds.json file
-                continue;
-            }
+            if (shouldPreserve(file)) continue;
+            const filePath = path.join(sessionDir, file);
             try {
-                const filePath = path.join(sessionDir, file);
+                const stat = fs.statSync(filePath);
+                if (!stat.isFile()) continue;
+                if (file.startsWith('app-state-sync-')) appStateSyncCount++;
+                if (file.startsWith('pre-key-')) preKeyCount++;
                 fs.unlinkSync(filePath);
                 filesCleared++;
             } catch (error) {
@@ -73,27 +60,23 @@ async function clearSessionCommand(sock, chatId, msg) {
             }
         }
 
-        // Send completion message
-        const message = `╭══✦〔 *ᴄʟᴇᴀʀᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ* 〕✦═╮:\n│ \n` +
-                       `┊⭘ 📊 *ꜱᴛᴀᴛɪꜱᴛɪᴄꜱ:* \n` +
-                       `┊⭘ ᴛᴏᴛᴀʟ ꜰɪʟᴇꜱ ᴄʟᴇᴀʀᴇᴅ: *${filesCleared}*\n` +
-                       `┊⭘ ᴀᴘᴘ ꜱᴛᴀᴛᴇ ꜱʏɴᴄ ꜰɪʟᴇꜱ: *${appStateSyncCount}*\n` +
-                       `┊⭘ ᴘʀᴇ-ᴋᴇʏ ꜰɪʟᴇꜱ: *${preKeyCount}*\n` +
-                       `╰═✦═✦═✦═✦═✦═✦═✦═✦═✦═╯`+
-                       (errors > 0 ? `\n⚠️ Errors encountered: ${errors}\n${errorDetails.join('\n')}` : '');
+        const summary =
+            `╭══✦〔 *ᴄʟᴇᴀʀᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ* 〕✦═╮\n` +
+            `│ 📊 *ꜱᴛᴀᴛɪꜱᴛɪᴄꜱ:*\n` +
+            `│ • Total files cleared: *${filesCleared}*\n` +
+            `│ • App state sync files: *${appStateSyncCount}*\n` +
+            `│ • Pre-key files: *${preKeyCount}*\n` +
+            `│ • Active credentials & Signal sessions preserved ✅\n` +
+            `╰═✦═✦═✦═✦═✦═✦═✦═✦═✦═╯` +
+            (errors > 0 ? `\n⚠️ Errors encountered: ${errors}\n${errorDetails.join('\n')}` : '');
 
-        await sock.sendMessage(chatId, { 
-            text: message,
-            ...channelInfo
-        });
-
+        await sock.sendMessage(chatId, { text: summary }, { quoted: msg });
     } catch (error) {
         console.error('Error in clearsession command:', error);
-        await sock.sendMessage(chatId, { 
-            text: '❌ Failed to clear session files!',
-            ...channelInfo
-        });
+        await sock.sendMessage(chatId, {
+            text: '❌ Failed to clear session files!'
+        }, { quoted: msg });
     }
 }
 
-module.exports = clearSessionCommand; 
+module.exports = clearSessionCommand;

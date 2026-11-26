@@ -24,7 +24,8 @@ async function setProfilePicture(sock, chatId, msg) {
             return;
         }
 
-        // Check if quoted message contains an image
+        // Check if quoted message contains an image or sticker
+        const isSticker = !quotedMessage.imageMessage && Boolean(quotedMessage.stickerMessage);
         const imageMessage = quotedMessage.imageMessage || quotedMessage.stickerMessage;
         if (!imageMessage) {
             await sock.sendMessage(chatId, { 
@@ -39,28 +40,25 @@ async function setProfilePicture(sock, chatId, msg) {
             fs.mkdirSync(tmpDir, { recursive: true });
         }
 
-        // Download the image
-        const stream = await downloadContentFromMessage(imageMessage, 'image');
-        let buffer = Buffer.from([]);
-        
-        for await (const chunk of stream) {
-            buffer = Buffer.concat([buffer, chunk]);
+        let imagePath = null;
+        try {
+            // Download the media with proper Baileys media type
+            const stream = await downloadContentFromMessage(imageMessage, isSticker ? 'sticker' : 'image');
+            let buffer = Buffer.from([]);
+            for await (const chunk of stream) {
+                buffer = Buffer.concat([buffer, chunk]);
+            }
+
+            imagePath = path.join(tmpDir, `profile_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.jpg`);
+            fs.writeFileSync(imagePath, buffer);
+
+            await sock.updateProfilePicture(sock.user.id, { url: imagePath });
+            await sock.sendMessage(chatId, { 
+                text: '✅ Successfully updated bot profile picture!' 
+            });
+        } finally {
+            try { if (imagePath && fs.existsSync(imagePath)) fs.unlinkSync(imagePath); } catch (_) {}
         }
-
-        const imagePath = path.join(tmpDir, `profile_${Date.now()}.jpg`);
-        
-        // Save the image
-        fs.writeFileSync(imagePath, buffer);
-
-        // Set the profile picture
-        await sock.updateProfilePicture(sock.user.id, { url: imagePath });
-
-        // Clean up the temporary file
-        fs.unlinkSync(imagePath);
-
-        await sock.sendMessage(chatId, { 
-            text: '✅ Successfully updated bot profile picture!' 
-        });
 
     } catch (error) {
         console.error('Error in setpp command:', error);

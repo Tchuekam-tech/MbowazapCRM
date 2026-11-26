@@ -34,7 +34,7 @@ const getFolderSizeInMB = (folderPath) => {
     }
 };
 
-// Function to clean temp folder if size exceeds 10MB
+// Function to clean temp folder if size exceeds 200MB (files only, preserving subdirectories like pair_sessions)
 const cleanTempFolderIfLarge = () => {
     try {
         const sizeMB = getFolderSizeInMB(TEMP_MEDIA_DIR);
@@ -42,8 +42,13 @@ const cleanTempFolderIfLarge = () => {
         if (sizeMB > 200) {
             const files = fs.readdirSync(TEMP_MEDIA_DIR);
             for (const file of files) {
+                if (file === 'pair_sessions') continue;
                 const filePath = path.join(TEMP_MEDIA_DIR, file);
-                fs.unlinkSync(filePath);
+                try {
+                    if (fs.lstatSync(filePath).isFile()) {
+                        fs.unlinkSync(filePath);
+                    }
+                } catch (_) {}
             }
         }
     } catch (err) {
@@ -51,8 +56,9 @@ const cleanTempFolderIfLarge = () => {
     }
 };
 
-// Start periodic cleanup check every 1 minute
-setInterval(cleanTempFolderIfLarge, 60 * 1000);
+// Start periodic cleanup check every 1 minute (unref so it never blocks process exit/tests)
+const tempCleanupTimer = setInterval(cleanTempFolderIfLarge, 60 * 1000);
+if (typeof tempCleanupTimer.unref === 'function') tempCleanupTimer.unref();
 
 // Load config
 function loadAntideleteConfig() {

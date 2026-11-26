@@ -20,12 +20,14 @@ async function bibleCommand(sock, chatId, message, q) {
     if (response.status === 200 && response.data.text) {
       const { reference, translation_name, verses } = response.data;
 
-      // Pull details from the first verse object
+      // Use full passage text so multi-verse ranges (e.g. John 3:16-18) aren't truncated to 1 verse
       const verseData = verses?.[0] || {};
       const book = verseData.book_name || "Unknown";
       const chapter = verseData.chapter || "Unknown";
-      const verse = verseData.verse || "Unknown";
-      const text = verseData.text || response.data.text;
+      const verse = verses?.length > 1
+        ? `${verses[0].verse}-${verses[verses.length - 1].verse}`
+        : (verseData.verse || "Unknown");
+      const text = response.data.text || verseData.text || "";
 
       const verseMessage =
         `📜 *𝘽𝙄𝘽𝙇𝙀 𝙑𝙀𝙍𝙎𝙀 𝙁𝙊𝙐𝙉𝘿!* 📜\n\n` +

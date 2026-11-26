@@ -3,6 +3,10 @@ const store = require('../lib/lightweight_store');
 
 async function deleteCommand(sock, chatId, message, senderId) {
     try {
+        if (!chatId || !chatId.endsWith('@g.us')) {
+            await sock.sendMessage(chatId, { text: '❌ This command can only be used in groups.' }, { quoted: message });
+            return;
+        }
         const { isSenderAdmin, isBotAdmin } = await isAdmin(sock, chatId, senderId);
 
         if (!isBotAdmin) {
@@ -10,7 +14,7 @@ async function deleteCommand(sock, chatId, message, senderId) {
             return;
         }
 
-        if (!isSenderAdmin) {
+        if (!isSenderAdmin && !message?.key?.fromMe) {
             await sock.sendMessage(chatId, { text: 'Only admins can use the .delete command.' }, { quoted: message });
             return;
         }

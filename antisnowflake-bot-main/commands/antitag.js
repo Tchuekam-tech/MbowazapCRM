@@ -75,8 +75,14 @@ async function handleAntitagCommand(sock, chatId, userMessage, senderId, isSende
 
 async function handleTagDetection(sock, chatId, message, senderId) {
     try {
+        if (!chatId || !chatId.endsWith('@g.us')) return;
+        if (message?.key?.fromMe) return;
         const antitagSetting = await getAntitag(chatId, 'on');
         if (!antitagSetting || !antitagSetting.enabled) return;
+
+        // Skip admins and verify bot is admin (LID-aware)
+        const { isSenderAdmin, isBotAdmin } = await isAdmin(sock, chatId, senderId);
+        if (isSenderAdmin || !isBotAdmin) return;
 
         // Get mentioned JIDs from contextInfo (proper mentions)
         const mentionedJids = message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];

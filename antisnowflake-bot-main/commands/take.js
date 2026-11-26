@@ -17,17 +17,21 @@ async function takeCommand(sock, chatId, message, args) {
         const packname = args.join(' ') || 'Knight Bot';
 
         try {
-            // Download the sticker
+            const ctxInfo = message.message.extendedTextMessage.contextInfo;
+            // Download the sticker using proper Baileys key object
             const stickerBuffer = await downloadMediaMessage(
                 {
-                    key: message.message.extendedTextMessage.contextInfo.stanzaId,
+                    key: {
+                        remoteJid: chatId,
+                        id: ctxInfo.stanzaId,
+                        participant: ctxInfo.participant,
+                    },
                     message: quotedMessage,
-                    messageType: 'stickerMessage'
                 },
                 'buffer',
                 {},
                 {
-                    logger: console,
+                    logger: undefined,
                     reuploadRequest: sock.updateMediaMessage
                 }
             );

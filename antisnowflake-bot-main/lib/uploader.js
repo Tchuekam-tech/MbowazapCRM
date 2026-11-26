@@ -19,17 +19,20 @@ function TelegraPh (Path) {
 	return new Promise (async (resolve, reject) => {
 		if (!fs.existsSync(Path)) return reject(new Error("File not Found"))
 		try {
+			// telegra.ph upload endpoint is deprecated; route through catbox.moe
 			const form = new BodyForm();
-			form.append("file", fs.createReadStream(Path))
-			const data = await  axios({
-				url: "https://telegra.ph/upload",
+			form.append("reqtype", "fileupload");
+			form.append("fileToUpload", fs.createReadStream(Path));
+			const res = await axios({
+				url: "https://catbox.moe/user/api.php",
 				method: "POST",
-				headers: {
-					...form.getHeaders()
-				},
-				data: form
-			})
-			return resolve("https://telegra.ph" + data.data[0].src)
+				headers: { ...form.getHeaders() },
+				data: form,
+				timeout: 20000
+			});
+			const url = String(res.data || '').trim();
+			if (/^https?:\/\//i.test(url)) return resolve(url);
+			return reject(new Error("Upload provider returned invalid URL"));
 		} catch (err) {
 			return reject(new Error(String(err)))
 		}

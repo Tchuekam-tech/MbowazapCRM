@@ -46,36 +46,24 @@ async function instagramCommand(sock, chatId, message) {
             processedMessages.delete(message.key.id);
         }, 5 * 60 * 1000);
 
-        const text = message.message?.conversation || message.message?.extendedTextMessage?.text;
-        
-        if (!text) {
-            return await sock.sendMessage(chatId, { 
-                text: "Please provide an Instagram link for the video."
-            });
-        }
+        const text =
+            message.message?.conversation ||
+            message.message?.extendedTextMessage?.text ||
+            '';
 
-        // Check for various Instagram URL formats
-        const instagramPatterns = [
-            /https?:\/\/(?:www\.)?instagram\.com\//,
-            /https?:\/\/(?:www\.)?instagr\.am\//,
-            /https?:\/\/(?:www\.)?instagram\.com\/p\//,
-            /https?:\/\/(?:www\.)?instagram\.com\/reel\//,
-            /https?:\/\/(?:www\.)?instagram\.com\/tv\//
-        ];
-
-        const isValidUrl = instagramPatterns.some(pattern => pattern.test(text));
-        
-        if (!isValidUrl) {
-            return await sock.sendMessage(chatId, { 
-                text: "That is not a valid Instagram link. Please provide a valid Instagram post, reel, or video link."
-            });
+        const urlMatch = text.match(/https?:\/\/(?:www\.)?(?:instagram\.com|instagr\.am)\/[^\s]+/i);
+        if (!urlMatch) {
+            return await sock.sendMessage(chatId, {
+                text: "Please provide a valid Instagram post, reel, or video link.\nExample: .ig https://www.instagram.com/reel/..."
+            }, { quoted: message });
         }
+        const targetUrl = urlMatch[0];
 
         await sock.sendMessage(chatId, {
             react: { text: '🔄', key: message.key }
         });
 
-        const downloadData = await igdl(text);
+        const downloadData = await igdl(targetUrl);
         
         if (!downloadData || !downloadData.data || downloadData.data.length === 0) {
             return await sock.sendMessage(chatId, { 

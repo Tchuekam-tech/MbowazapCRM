@@ -1,15 +1,18 @@
 const fs = require('fs');
 const path = require('path');
+const isOwnerOrSudo = require('../lib/isOwner');
 
-// Function to clear a single directory
+const PRESERVED_DIRS = new Set(['pair_sessions']);
+
 function clearDirectory(dirPath) {
     try {
         if (!fs.existsSync(dirPath)) {
-            return { success: false, message: `Directory does not exist: ${dirPath}` };
+            return { success: true, message: `${path.basename(dirPath)} already clean (0 files)`, count: 0 };
         }
         const files = fs.readdirSync(dirPath);
         let deletedCount = 0;
         for (const file of files) {
+            if (PRESERVED_DIRS.has(file)) continue;
             try {
                 const filePath = path.join(dirPath, file);
                 const stat = fs.lstatSync(filePath);
@@ -20,84 +23,53 @@ function clearDirectory(dirPath) {
                 }
                 deletedCount++;
             } catch (err) {
-                // Only log errors
                 console.error(`Error deleting file ${file}:`, err);
             }
         }
-        return { success: true, message: `Cleared ${deletedCount} files in ${path.basename(dirPath)}`, count: deletedCount };
+        return { success: true, message: `Cleared ${deletedCount} item(s) in ${path.basename(dirPath)}`, count: deletedCount };
     } catch (error) {
         console.error('Error in clearDirectory:', error);
         return { success: false, message: `Failed to clear files in ${path.basename(dirPath)}`, error: error.message };
     }
 }
 
-// Function to clear both tmp and temp directories
 async function clearTmpDirectory() {
     const tmpDir = path.join(process.cwd(), 'tmp');
     const tempDir = path.join(process.cwd(), 'temp');
-    const results = [];
-    results.push(clearDirectory(tmpDir));
-    results.push(clearDirectory(tempDir));
-    // Combine results
+    const results = [clearDirectory(tmpDir), clearDirectory(tempDir)];
     const success = results.every(r => r.success);
     const totalDeleted = results.reduce((sum, r) => sum + (r.count || 0), 0);
     const message = results.map(r => r.message).join(' | ');
     return { success, message, count: totalDeleted };
 }
 
-// Function to handle manual command
 async function clearTmpCommand(sock, chatId, msg) {
     try {
-        // Check if user is owner
-        const isOwner = msg.key.fromMe;
-        if (!isOwner) {
-            await sock.sendMessage(chatId, { 
-                text: '❌ This command is only available for the owner!' 
-            });
+        const senderId = msg?.key?.participant || msg?.key?.remoteJid || '';
+        const allowed = Boolean(msg?.key?.fromMe) || await isOwnerOrSudo(senderId, sock, chatId);
+        if (!allowed) {
+            await sock.sendMessage(chatId, {
+                text: '❌ This command is only available for the owner or sudo!'
+            }, { quoted: msg });
             return;
         }
 
         const result = await clearTmpDirectory();
-        
-        if (result.success) {
-            await sock.sendMessage(chatId, { 
-                text: `✅ ${result.message}` 
-            });
-        } else {
-            await sock.sendMessage(chatId, { 
-                text: `❌ ${result.message}` 
-            });
-        }
-
+        await sock.sendMessage(chatId, {
+            text: result.success ? `✅ ${result.message}` : `❌ ${result.message}`
+        }, { quoted: msg });
     } catch (error) {
         console.error('Error in cleartmp command:', error);
-        await sock.sendMessage(chatId, { 
-            text: '❌ Failed to clear temporary files!' 
-        });
+        await sock.sendMessage(chatId, {
+            text: '❌ Failed to clear temporary files!'
+        }, { quoted: msg });
     }
 }
 
-// Start automatic clearing every 6 hours
-function startAutoClear() {
-    // Run immediately on startup
-    clearTmpDirectory().then(result => {
-        if (!result.success) {
-            console.error(`[Auto Clear] ${result.message}`);
-        }
-        // No log for success, regardless of count
-    });
+// Schedule periodic cleanup without wiping files synchronously on require() and without keeping tests alive
+const autoClearTimer = setInterval(() => {
+    void clearTmpDirectory();
+}, 6 * 60 * 60 * 1000);
+if (typeof autoClearTimer.unref === 'function') autoClearTimer.unref();
 
-    // Set interval for every 6 hours
-    setInterval(async () => {
-        const result = await clearTmpDirectory();
-        if (!result.success) {
-            console.error(`[Auto Clear] ${result.message}`);
-        }
-        // No log for success, regardless of count
-    }, 6 * 60 * 60 * 1000); // 6 hours in milliseconds
-}
-
-// Start the automatic clearing
-startAutoClear();
-
-module.exports = clearTmpCommand; 
+module.exports = clearTmpCommand;

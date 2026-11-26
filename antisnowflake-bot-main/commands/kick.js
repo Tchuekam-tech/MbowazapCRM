@@ -1,6 +1,10 @@
 const isAdmin = require('../lib/isAdmin');
 
 async function kickCommand(sock, chatId, senderId, mentionedJids, message) {
+    if (!chatId || !chatId.endsWith('@g.us')) {
+        await sock.sendMessage(chatId, { text: '❌ This command can only be used in groups.' }, { quoted: message });
+        return;
+    }
     const isOwner = message.key.fromMe;
     if (!isOwner) {
         const { isSenderAdmin, isBotAdmin } = await isAdmin(sock, chatId, senderId);

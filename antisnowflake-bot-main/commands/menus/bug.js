@@ -21,24 +21,11 @@ module.exports = async (sock, chatId, message) => {
 > ${settings.caption}
 `;
 
-    let imageBuffer = null;
-    if (fs.existsSync(imagePath)) {
-        imageBuffer = fs.readFileSync(imagePath);
-    }
+    const payload = fs.existsSync(imagePath)
+        ? { image: fs.readFileSync(imagePath), caption }
+        : { text: caption };
 
-    await sock.sendMessage(chatId, {
-        ...(imageBuffer ? { image: imageBuffer } : {}),
-        caption,
-        contextInfo: {
-            forwardingScore: 1,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-                newsletterJid: '120363420656466131@newsletter',
-                newsletterName: 'Tchuek Bot',
-                serverMessageId: -1
-            }
-        }
-    }, { quoted: message });
+    await sock.sendMessage(chatId, payload, { quoted: message });
 
     await sock.sendMessage(chatId, {
         react: { text: '📂', key: message.key }

@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     openssl \
     ffmpeg \
+    fonts-dejavu-core \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

@@ -4,97 +4,60 @@ const FileType = require('file-type');
 const fs = require('fs');
 const path = require('path');
 
-/**
- * Upload file to qu.ax
- * Supported mimetypes:
- * - `image/jpeg`
- * - `image/jpg`
- * - `image/png`
- * @param {Buffer} buffer File Buffer
- * @return {Promise<string>}
- */
 async function uploadImage(buffer) {
+    let tempFile = null;
     try {
-        // Create temp directory if it doesn't exist
         const tmpDir = path.join(process.cwd(), 'tmp');
-        if (!fs.existsSync(tmpDir)) {
-            fs.mkdirSync(tmpDir, { recursive: true });
-        }
+        fs.mkdirSync(tmpDir, { recursive: true });
 
-        // Get file type
         const fileType = await FileType.fromBuffer(buffer);
         const { ext, mime } = fileType || { ext: 'png', mime: 'image/png' };
-        const tempFile = path.join(tmpDir, `temp_${Date.now()}.${ext}`);
-
-        // Save buffer to temp file
+        tempFile = path.join(tmpDir, `upload_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`);
         fs.writeFileSync(tempFile, buffer);
 
-        // Create form data
-        const form = new FormData();
-        form.append('files[]', fs.createReadStream(tempFile));
-
-        // Upload to qu.ax
-        const response = await fetch('https://qu.ax/upload.php', {
-            method: 'POST',
-            body: form,
-            headers: form.getHeaders()
-        });
-
-        // Clean up temp file
-        fs.unlinkSync(tempFile);
-
-        const result = await response.json();
-        if (result && result.success) {
-            return result.files[0].url;
-        } else {
-            // Fallback to telegraph if qu.ax fails
-            const telegraphForm = new FormData();
-            telegraphForm.append('file', buffer, {
-                filename: `upload.${ext}`,
-                contentType: mime
-            });
-
-            const telegraphResponse = await fetch('https://telegra.ph/upload', {
+        // 1. Primary: qu.ax
+        try {
+            const form = new FormData();
+            form.append('files[]', fs.createReadStream(tempFile));
+            const response = await fetch('https://qu.ax/upload.php', {
                 method: 'POST',
-                body: telegraphForm
+                body: form,
+                headers: form.getHeaders(),
+                timeout: 20000,
             });
-
-            const img = await telegraphResponse.json();
-            if (img[0]?.src) {
-                return 'https://telegra.ph' + img[0].src;
+            const result = await response.json();
+            if (result?.success && result.files?.[0]?.url) {
+                return result.files[0].url;
             }
-            
-            throw new Error('Failed to upload image to both services');
+        } catch (_) {}
+
+        // 2. Fallback: catbox.moe (replaces retired telegra.ph)
+        const catboxForm = new FormData();
+        catboxForm.append('reqtype', 'fileupload');
+        catboxForm.append('fileToUpload', buffer, {
+            filename: `upload.${ext}`,
+            contentType: mime,
+        });
+        const catboxRes = await fetch('https://catbox.moe/user/api.php', {
+            method: 'POST',
+            body: catboxForm,
+            headers: catboxForm.getHeaders(),
+            timeout: 20000,
+        });
+        const urlText = (await catboxRes.text()).trim();
+        if (catboxRes.ok && /^https?:\/\//i.test(urlText)) {
+            return urlText;
         }
+
+        throw new Error('Failed to upload image to hosting providers');
     } catch (error) {
-        console.error('Upload error:', error);
+        console.error('Upload error:', error?.message || error);
         throw error;
+    } finally {
+        try {
+            if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+        } catch (_) {}
     }
 }
 
 module.exports = { uploadImage };
-
-/**
- * Alternative upload to telegra.ph (backup)
- */
-/*
-async function uploadImageTelegraph(buffer) {
-    try {
-        const { ext, mime } = await fileTypeFromBuffer(buffer);
-        const form = new FormData();
-        const blob = new Blob([buffer.toArrayBuffer()], { type: mime });
-        form.append('file', blob, 'tmp.' + ext);
-
-        const response = await fetch('https://telegra.ph/upload', {
-            method: 'POST',
-            body: form
-        });
-
-        const img = await response.json();
-        if (img.error) throw img.error;
-        return 'https://telegra.ph' + img[0].src;
-    } catch (error) {
-        throw error;
-    }
-}
-*/ 

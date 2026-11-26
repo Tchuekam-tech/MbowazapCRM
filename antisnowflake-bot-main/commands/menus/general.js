@@ -48,24 +48,9 @@ module.exports = async (sock, chatId, message) => {
 > ${settings.caption}
 `;
 
-    // Build payload
-    let msgPayload = {
-        caption,
-        contextInfo: {
-            forwardingScore: 1,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-                newsletterJid: '120363420656466131@newsletter',
-                newsletterName: 'Tchuek Bot',
-                serverMessageId: -1
-            }
-        }
-    };
-
-    // Attach image if available
-    if (fs.existsSync(imagePath)) {
-        msgPayload.image = fs.readFileSync(imagePath);
-    }
+    const msgPayload = fs.existsSync(imagePath)
+        ? { image: fs.readFileSync(imagePath), caption }
+        : { text: caption };
 
     // Send menu
     await sock.sendMessage(chatId, msgPayload, { quoted: message });

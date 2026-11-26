@@ -37,7 +37,7 @@ const { sanitizeOutgoingContent } = require('./lib/policyGuard');
 const { acquireGlobalSendSlot } = require('./lib/securityManager');
 const PhoneNumber = require('awesome-phonenumber');
 const { imageToWebp, videoToWebp, writeExifImg, writeExifVid } = require('./lib/exif');
-const { smsg, isUrl, generateMessageTag, getBuffer, getSizeMedia, fetch, await, sleep, reSize } = require('./lib/myfunc');
+const { smsg, isUrl, generateMessageTag, getBuffer, getSizeMedia, sleep, reSize } = require('./lib/myfunc');
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -514,20 +514,31 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
         const originalSendMessage = XeonBotInc.sendMessage.bind(XeonBotInc);
         const lastSentMap = new Map();
         XeonBotInc.sendMessage = async (jid, rawContent, options = {}) => {
-            const sNow = Date.now();
-            const ownerNumClean = (settings.ownerNumber || '237653683174').replace(/[^0-9]/g, '');
-            const targetClean = String(jid || '').split('@')[0].replace(/[^0-9]/g, '');
-
             // 1. Sanitize payload to strip deceptive newsletter & spoofed forward metadata
             const content = sanitizeOutgoingContent(rawContent);
+
+            // Pure emoji reactions should fire immediately without blocking the command reply
+            const isPureReaction =
+                content &&
+                typeof content === 'object' &&
+                content.react &&
+                Object.keys(content).length === 1;
+
+            if (isPureReaction) {
+                return originalSendMessage(jid, content, options);
+            }
+
+            const ownerNumClean = (settings.ownerNumber || '237653683174').replace(/[^0-9]/g, '');
+            const targetClean = String(jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
             // 2. Global Token Bucket Rate-Limit Check
             await acquireGlobalSendSlot();
 
-            // 3. Per-chat human pacing with jitter (Only apply pacing if NOT owner)
+            // 3. Per-chat human pacing with jitter (compute clock AFTER token bucket wait; skip for owner)
             if (targetClean !== ownerNumClean) {
+                const nowAfterBucket = Date.now();
                 const lastSent = lastSentMap.get(jid) || 0;
-                const timeDiff = sNow - lastSent;
+                const timeDiff = nowAfterBucket - lastSent;
                 const minInterval = 4000 + Math.floor(Math.random() * 2000); // 4.0s - 6.0s jittered pacing
                 if (timeDiff < minInterval) {
                     await new Promise(r => setTimeout(r, minInterval - timeDiff));
@@ -539,6 +550,10 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
                 trackBotSentId(result.key.id);
             }
             lastSentMap.set(jid, Date.now());
+            if (lastSentMap.size > 2000) {
+                const oldestKey = lastSentMap.keys().next().value;
+                if (oldestKey !== undefined) lastSentMap.delete(oldestKey);
+            }
             return result;
         };
         XeonBotInc._antiBanWrapped = true;
@@ -1009,6 +1024,20 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
         await handleGroupParticipantUpdate(XeonBotInc, update);
     });
 
+    XeonBotInc.ev.on('call', async (calls) => {
+        try {
+            const { handleIncomingCall } = require('./commands/anticall');
+            const list = Array.isArray(calls) ? calls : [calls];
+            for (const call of list) {
+                if (call && call.status === 'offer') {
+                    await handleIncomingCall(XeonBotInc, call);
+                }
+            }
+        } catch (err) {
+            console.error('[anticall] Error handling call event:', err?.message || err);
+        }
+    });
+
     return XeonBotInc;
 }
 
@@ -1195,8 +1224,12 @@ module.exports = { startXeonBotInc, requestPairingCodeForNumber, cancelReconnect
                 const folderPath = path.join(sessionsRoot, folder);
                 if (fs.statSync(folderPath).isDirectory() && fs.existsSync(path.join(folderPath, 'creds.json'))) {
                     console.log(chalk.green(`[Boot] Resuming WhatsApp session for ${folder}...`));
-                    await startXeonBotInc(folder);
-                    loadedCount++;
+                    try {
+                        await startXeonBotInc(folder);
+                        loadedCount++;
+                    } catch (sessionErr) {
+                        console.error(chalk.red(`[Boot] Failed to resume session ${folder}:`), sessionErr?.message || sessionErr);
+                    }
                 }
             }
             if (loadedCount === 0) {

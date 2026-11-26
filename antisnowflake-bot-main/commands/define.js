@@ -13,8 +13,8 @@ async function defineCommand(sock, chatId, message, q) {
     }
 
     const word = q.trim();
-    const url = `https://api.dictionaryapi.dev/api/v2/entries/en/${word}`;
-    const response = await axios.get(url);
+    const url = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`;
+    const response = await axios.get(url, { timeout: 10000 });
     const definitionData = response.data[0];
 
     // Get the first valid definition
@@ -48,13 +48,15 @@ async function defineCommand(sock, chatId, message, q) {
       `📝 *Synonyms*: ${synonyms}\n\n` +
       `🔗 *Powered By TCHUEK-TECH*`;
 
-    // Send audio if available
+    // Send audio if available (best-effort so broken CDN audio doesn't block definition text)
     if (audio) {
-      await sock.sendMessage(
-        chatId,
-        { audio: { url: audio }, mimetype: "audio/mpeg" },
-        { quoted: message }
-      );
+      try {
+        await sock.sendMessage(
+          chatId,
+          { audio: { url: audio }, mimetype: "audio/mpeg" },
+          { quoted: message }
+        );
+      } catch (_) {}
     }
 
     await sock.sendMessage(chatId, { text: wordInfo }, { quoted: message });

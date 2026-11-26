@@ -1,64 +1,74 @@
 const settings = require('../settings');
 const { isSudo } = require('./index');
 
+function cleanNumericId(jid) {
+    if (!jid || typeof jid !== 'string') return '';
+    return jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+}
+
 async function isOwnerOrSudo(senderId, sock = null, chatId = null) {
-    const ownerJid = settings.ownerNumber + "@s.whatsapp.net";
-    const ownerNumberClean = settings.ownerNumber.split(':')[0].split('@')[0];
-    
+    if (!senderId || typeof senderId !== 'string') return false;
+
+    const ownerNumberClean = cleanNumericId(String(settings.ownerNumber || ''));
+    const ownerJid = ownerNumberClean ? `${ownerNumberClean}@s.whatsapp.net` : '';
+
     // Direct JID match
-    if (senderId === ownerJid) {
+    if (ownerJid && senderId === ownerJid) {
         return true;
     }
-    
+
     // Extract sender's numeric parts
-    const senderIdClean = senderId.split(':')[0].split('@')[0];
-    const senderLidNumeric = senderId.includes('@lid') ? senderId.split('@')[0].split(':')[0] : '';
-    
+    const senderIdClean = cleanNumericId(senderId);
+    const senderLidNumeric = senderId.includes('@lid') ? cleanNumericId(senderId) : '';
+
     // Check if sender's phone number matches owner number
-    if (senderIdClean === ownerNumberClean) {
+    if (ownerNumberClean && senderIdClean && senderIdClean === ownerNumberClean) {
         return true;
     }
-    
-    // In groups, check if sender's LID matches bot's LID (owner uses same account as bot)
+
+    // In groups, check if sender's LID matches bot's LID or owner's participant record
     if (sock && chatId && chatId.endsWith('@g.us') && senderId.includes('@lid')) {
         try {
-            // Get bot's LID numeric
             const botLid = sock.user?.lid || '';
-            const botLidNumeric = botLid.includes(':') ? botLid.split(':')[0] : (botLid.includes('@') ? botLid.split('@')[0] : botLid);
-            
+            const botLidNumeric = cleanNumericId(botLid);
+
             // Check if sender's LID numeric matches bot's LID numeric
             if (senderLidNumeric && botLidNumeric && senderLidNumeric === botLidNumeric) {
                 return true;
             }
-            
-            // Also check participant data for additional matching
+
+            // Look up THIS sender in group participants (NEVER match by ownerNumberClean here!)
             const metadata = await sock.groupMetadata(chatId);
-            const participants = metadata.participants || [];
-            
+            const participants = metadata?.participants || [];
+
             const participant = participants.find(p => {
                 const pLid = p.lid || '';
-                const pLidNumeric = pLid.includes(':') ? pLid.split(':')[0] : (pLid.includes('@') ? pLid.split('@')[0] : pLid);
+                const pLidNumeric = cleanNumericId(pLid);
                 const pId = p.id || '';
-                const pIdClean = pId.split(':')[0].split('@')[0];
-                
+                const pIdClean = cleanNumericId(pId);
+
                 return (
-                    p.lid === senderId || 
-                    p.id === senderId ||
-                    pLidNumeric === senderLidNumeric ||
-                    pIdClean === senderIdClean ||
-                    pIdClean === ownerNumberClean
+                    (pLid && pLid === senderId) ||
+                    (pId && pId === senderId) ||
+                    (senderLidNumeric && pLidNumeric && pLidNumeric === senderLidNumeric) ||
+                    (senderIdClean && pIdClean && pIdClean === senderIdClean)
                 );
             });
-            
+
             if (participant) {
                 const participantId = participant.id || '';
                 const participantLid = participant.lid || '';
-                const participantIdClean = participantId.split(':')[0].split('@')[0];
-                const participantLidNumeric = participantLid.includes(':') ? participantLid.split(':')[0] : (participantLid.includes('@') ? participantLid.split('@')[0] : participantLid);
-                
-                if (participantId === ownerJid || 
-                    participantIdClean === ownerNumberClean ||
-                    participantLidNumeric === botLidNumeric) {
+                const participantPhone = participant.phoneNumber || '';
+                const participantIdClean = cleanNumericId(participantId);
+                const participantPhoneClean = cleanNumericId(participantPhone);
+                const participantLidNumeric = cleanNumericId(participantLid);
+
+                if (
+                    (ownerJid && participantId === ownerJid) ||
+                    (ownerNumberClean && participantIdClean && participantIdClean === ownerNumberClean) ||
+                    (ownerNumberClean && participantPhoneClean && participantPhoneClean === ownerNumberClean) ||
+                    (botLidNumeric && participantLidNumeric && participantLidNumeric === botLidNumeric)
+                ) {
                     return true;
                 }
             }
@@ -66,12 +76,7 @@ async function isOwnerOrSudo(senderId, sock = null, chatId = null) {
             console.error('❌ [isOwner] Error checking participant data:', e);
         }
     }
-    
-    // Check if sender ID contains owner number (fallback)
-    if (senderId.includes(ownerNumberClean)) {
-        return true;
-    }
-    
+
     // Check sudo status
     try {
         return await isSudo(senderId);

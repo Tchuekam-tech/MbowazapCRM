@@ -142,19 +142,10 @@ async function handleBadwordDetection(sock, chatId, message, userMessage, sender
 
    // console.log('Bad word detected in:', userMessage);
 
-    // Check if bot is admin before taking action
-    const groupMetadata = await sock.groupMetadata(chatId);
-    const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-    const bot = groupMetadata.participants.find(p => p.id === botId);
-    if (!bot?.admin) {
-       // console.log('Bot is not admin, cannot take action');
-        return;
-    }
-
-    // Check if sender is admin
-    const participant = groupMetadata.participants.find(p => p.id === senderId);
-    if (participant?.admin) {
-        //console.log('Sender is admin, skipping action');
+    // Check if bot is admin & skip if sender is admin (LID-aware via isAdmin helper)
+    const isAdmin = require('./isAdmin');
+    const { isSenderAdmin, isBotAdmin } = await isAdmin(sock, chatId, senderId);
+    if (!isBotAdmin || isSenderAdmin) {
         return;
     }
 

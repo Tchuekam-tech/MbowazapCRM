@@ -73,142 +73,100 @@ async function handleChatbotCommand(sock, chatId, message, match) {
         await showTyping(sock, chatId);
         return sock.sendMessage(chatId, {
             text: `╭══✦〔 *ᴄʜᴀᴛʙᴏᴛ ꜱᴇᴛᴜᴘ* 〕✦═╮\n│ \n│ *.chatbot on*\n│ Enable chatbot\n│ \n│ *.chatbot off*\n│ Disable chatbot in this group\n│ \n╰═✦═✦═✦═✦═✦═✦═✦═✦═✦═╯`,
-            quoted: message
-        });
+        }, { quoted: message });
     }
 
     const data = loadUserGroupData();
-    
-    // Get bot's number
-    const botNumber = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-    
-    // Check if sender is bot owner
-    const senderId = message.key.participant || message.participant || message.pushName || message.key.remoteJid;
-    const isOwner = senderId === botNumber;
+    if (!data.chatbot) data.chatbot = {};
 
-    // If it's the bot owner, allow access immediately
-    if (isOwner) {
-        if (match === 'on') {
-            await showTyping(sock, chatId);
-            if (data.chatbot[chatId]) {
-                return sock.sendMessage(chatId, { 
-                    text: '*Chatbot is already enabled for this group*',
-                    quoted: message
-                });
-            }
-            data.chatbot[chatId] = true;
-            saveUserGroupData(data);
-            console.log(`✅ Chatbot enabled for group ${chatId}`);
-            return sock.sendMessage(chatId, { 
-                text: '*Chatbot has been enabled for this group*',
-                quoted: message
-            });
-        }
+    const isAdminCheck = require('../lib/isAdmin');
+    const isOwnerOrSudo = require('../lib/isOwner');
+    const senderId = message.key.participant || message.participant || message.key.remoteJid;
+    const isOwner = Boolean(message.key?.fromMe) || await isOwnerOrSudo(senderId, sock, chatId);
 
-        if (match === 'off') {
-            await showTyping(sock, chatId);
-            if (!data.chatbot[chatId]) {
-                return sock.sendMessage(chatId, { 
-                    text: '*Chatbot is already disabled for this group*',
-                    quoted: message
-                });
-            }
-            delete data.chatbot[chatId];
-            saveUserGroupData(data);
-            console.log(`✅ Chatbot disabled for group ${chatId}`);
-            return sock.sendMessage(chatId, { 
-                text: '*Chatbot has been disabled for this group*',
-                quoted: message
-            });
-        }
+    let senderIsAdmin = false;
+    if (!isOwner && chatId.endsWith('@g.us')) {
+        const status = await isAdminCheck(sock, chatId, senderId);
+        senderIsAdmin = status.isSenderAdmin;
     }
 
-    // For non-owners, check admin status
-    let isAdmin = false;
-    if (chatId.endsWith('@g.us')) {
-        try {
-            const groupMetadata = await sock.groupMetadata(chatId);
-            isAdmin = groupMetadata.participants.some(p => p.id === senderId && (p.admin === 'admin' || p.admin === 'superadmin'));
-        } catch (e) {
-            console.warn('⚠️ Could not fetch group metadata. Bot might not be admin.');
-        }
-    }
-
-    if (!isAdmin && !isOwner) {
+    if (!senderIsAdmin && !isOwner) {
         await showTyping(sock, chatId);
         return sock.sendMessage(chatId, {
             text: '❌ Only group admins or the bot owner can use this command.',
-            quoted: message
-        });
+        }, { quoted: message });
     }
 
     if (match === 'on') {
         await showTyping(sock, chatId);
         if (data.chatbot[chatId]) {
-            return sock.sendMessage(chatId, { 
+            return sock.sendMessage(chatId, {
                 text: '*Chatbot is already enabled for this group*',
-                quoted: message
-            });
+            }, { quoted: message });
         }
         data.chatbot[chatId] = true;
         saveUserGroupData(data);
         console.log(`✅ Chatbot enabled for group ${chatId}`);
-        return sock.sendMessage(chatId, { 
+        return sock.sendMessage(chatId, {
             text: '*Chatbot has been enabled for this group*',
-            quoted: message
-        });
+        }, { quoted: message });
     }
 
     if (match === 'off') {
         await showTyping(sock, chatId);
         if (!data.chatbot[chatId]) {
-            return sock.sendMessage(chatId, { 
+            return sock.sendMessage(chatId, {
                 text: '*Chatbot is already disabled for this group*',
-                quoted: message
-            });
+            }, { quoted: message });
         }
         delete data.chatbot[chatId];
         saveUserGroupData(data);
         console.log(`✅ Chatbot disabled for group ${chatId}`);
-        return sock.sendMessage(chatId, { 
+        return sock.sendMessage(chatId, {
             text: '*Chatbot has been disabled for this group*',
-            quoted: message
-        });
+        }, { quoted: message });
     }
 
     await showTyping(sock, chatId);
-    return sock.sendMessage(chatId, { 
+    return sock.sendMessage(chatId, {
         text: '*Invalid command. Use .chatbot to see usage*',
-        quoted: message
-    });
+    }, { quoted: message });
 }
 
 async function handleChatbotResponse(sock, chatId, message, userMessage, senderId) {
     const data = loadUserGroupData();
-    if (!data.chatbot[chatId]) return;
+    if (!data.chatbot?.[chatId]) return;
 
     try {
-        // Get bot's ID
-        const botNumber = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+        const botIdRaw = sock.user?.id || '';
+        const botLidRaw = sock.user?.lid || '';
+        const botDigits = botIdRaw.split('@')[0].split(':')[0];
+        const botLidDigits = botLidRaw.split('@')[0].split(':')[0];
+        const botNumber = botDigits ? `${botDigits}@s.whatsapp.net` : '';
 
-        // Check for mentions and replies
+        const matchesBot = (jid) => {
+            if (!jid || typeof jid !== 'string') return false;
+            const clean = jid.split('@')[0].split(':')[0];
+            return Boolean(
+                (botNumber && jid === botNumber) ||
+                (botDigits && clean === botDigits) ||
+                (botLidDigits && clean === botLidDigits)
+            );
+        };
+
         let isBotMentioned = false;
         let isReplyToBot = false;
 
-        // Check if message is a reply and contains bot mention
         if (message.message?.extendedTextMessage) {
             const mentionedJid = message.message.extendedTextMessage.contextInfo?.mentionedJid || [];
             const quotedParticipant = message.message.extendedTextMessage.contextInfo?.participant;
-            
-            // Check if bot is mentioned in the reply
-            isBotMentioned = mentionedJid.some(jid => jid === botNumber);
-            
-            // Check if replying to bot's message
-            isReplyToBot = quotedParticipant === botNumber;
-        }
-        // Also check regular mentions in conversation
-        else if (message.message?.conversation) {
-            isBotMentioned = userMessage.includes(`@${botNumber.split('@')[0]}`);
+            isBotMentioned = mentionedJid.some(matchesBot);
+            isReplyToBot = matchesBot(quotedParticipant);
+        } else if (message.message?.conversation) {
+            isBotMentioned = Boolean(
+                (botDigits && userMessage.includes(`@${botDigits}`)) ||
+                (botLidDigits && userMessage.includes(`@${botLidDigits}`))
+            );
         }
 
         if (!isBotMentioned && !isReplyToBot) return;

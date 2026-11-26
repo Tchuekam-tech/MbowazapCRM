@@ -41,6 +41,7 @@ async function playCommand(sock, chatId, message) {
         // --- Multi-API fallback (Izumi → Violetics → SnapSave) ---
         try {
             // 1️⃣ Izumi API
+            const izumiUrl = `https://izumiiiiiiii.dpdns.org/downloader/youtube?url=${encodeURIComponent(videoUrl)}&format=mp3`;
             const res = await axios.get(izumiUrl, { timeout: 25000 });
             if (res.data?.result?.download) {
                 songData = {
@@ -111,19 +112,26 @@ async function playCommand(sock, chatId, message) {
             `> Powered by TCHUEK-TECH`;
 
         let sentMsg;
-        try {
-            sentMsg = await sock.sendMessage(chatId, {
-                image: { url: video.thumbnail },
-                caption: songInfo
-            }, { quoted: message });
-        } catch {
+        if (video.thumbnail) {
+            try {
+                sentMsg = await sock.sendMessage(chatId, {
+                    image: { url: video.thumbnail },
+                    caption: songInfo
+                }, { quoted: message });
+            } catch {
+                sentMsg = await sock.sendMessage(chatId, { text: songInfo }, { quoted: message });
+            }
+        } else {
             sentMsg = await sock.sendMessage(chatId, { text: songInfo }, { quoted: message });
         }
+
+        if (!sock?.ev || typeof sock.ev.on !== 'function' || !sentMsg?.key?.id) return;
 
         // 🕹️ Wait for user reply
         const listener = async ({ messages }) => {
             try {
-                const r = messages[0];
+                const r = messages?.[0];
+                if (!r?.message || r.key?.remoteJid !== chatId) return;
                 const body = r.message?.conversation || r.message?.extendedTextMessage?.text;
                 if (!body) return;
                 const normalized = body.trim();
@@ -159,9 +167,9 @@ async function playCommand(sock, chatId, message) {
 
         sock.ev.on("messages.upsert", listener);
         const timeout = setTimeout(() => {
-            sock.ev.off("messages.upsert", listener);
-            sock.sendMessage(chatId, { text: "⌛ Session timed out. Please use the command again." });
+            try { sock.ev.off("messages.upsert", listener); } catch (_) {}
         }, REPLY_TIMEOUT_MS);
+        if (typeof timeout.unref === 'function') timeout.unref();
 
     } catch (error) {
         console.error('Error in playCommand:', error);

@@ -32,11 +32,12 @@ function cleanOldStatuses() {
   savedStatuses = savedStatuses.filter((s) => now - s.timestamp < 86400);
   if (savedStatuses.length !== before) saveStatuses();
 }
-setInterval(cleanOldStatuses, 60 * 60 * 1000); // every hour
+const statusCleanupTimer = setInterval(cleanOldStatuses, 60 * 60 * 1000); // every hour
+if (typeof statusCleanupTimer.unref === 'function') statusCleanupTimer.unref();
 
 // === AUTO REFRESH FUNCTION ===
 function startAutoRefresh(sock) {
-  setInterval(async () => {
+  const autoRefreshTimer = setInterval(async () => {
     try {
       console.log("🔄 Auto-refreshing status cache...");
       const statuses = sock.store?.messages["status@broadcast"]?.array || [];

@@ -1,7 +1,11 @@
-const { isAdmin } = require('../lib/isAdmin');
+const isAdmin = require('../lib/isAdmin');
 
 // Function to handle manual promotions via command
 async function promoteCommand(sock, chatId, mentionedJids, message) {
+    if (!chatId || !chatId.endsWith('@g.us')) {
+        await sock.sendMessage(chatId, { text: '❌ This command can only be used in groups.' }, { quoted: message });
+        return;
+    }
     let userToPromote = [];
     
     // Check for mentioned users

@@ -1,24 +1,28 @@
-async function shipCommand(sock, chatId, msg, groupMetadata) {
+async function shipCommand(sock, chatId, msg) {
     try {
-        // Get all participants from the group
-        const participants = await sock.groupMetadata(chatId);
-        const ps = participants.participants.map(v => v.id);
-        
-        // Get two random participants
-        let firstUser, secondUser;
-        
-        // Select first random user
-        firstUser = ps[Math.floor(Math.random() * ps.length)];
-        
-        // Select second random user (different from first)
-        do {
-            secondUser = ps[Math.floor(Math.random() * ps.length)];
-        } while (secondUser === firstUser);
+        if (!chatId || !chatId.endsWith('@g.us')) {
+            await sock.sendMessage(chatId, { text: '❌ This command can only be used in groups!' }, { quoted: msg });
+            return;
+        }
 
-        // Format the mentions
+        const participants = await sock.groupMetadata(chatId);
+        const ps = (participants?.participants || []).map(v => v.id).filter(Boolean);
+
+        if (ps.length < 2) {
+            await sock.sendMessage(chatId, {
+                text: '❌ Need at least 2 members in this group to ship!'
+            }, { quoted: msg });
+            return;
+        }
+
+        const firstIdx = Math.floor(Math.random() * ps.length);
+        let secondIdx = Math.floor(Math.random() * (ps.length - 1));
+        if (secondIdx >= firstIdx) secondIdx += 1;
+
+        const firstUser = ps[firstIdx];
+        const secondUser = ps[secondIdx];
         const formatMention = id => '@' + id.split('@')[0];
 
-        // Create and send the ship message
         await sock.sendMessage(chatId, {
             text: `${formatMention(firstUser)} ❤️ ${formatMention(secondUser)}\nCongratulations 💖🍻`,
             mentions: [firstUser, secondUser]
@@ -30,4 +34,4 @@ async function shipCommand(sock, chatId, msg, groupMetadata) {
     }
 }
 
-module.exports = shipCommand; 
+module.exports = shipCommand;
