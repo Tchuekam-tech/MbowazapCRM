@@ -38,3 +38,32 @@ describe('Feature 1: Growth Links, Attribution & Pure SVG QR', () => {
     // Top-left finder pattern corner must be dark
     expect(shortMatrix[0]![0]).toBe(true);
     expect(shortMatrix[6]![6]).toBe(true);
+
+    const svg = renderQrSvg('https://mbowazapcrm-production.up.railway.app/go/black-friday-2026');
+    expect(svg).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+    expect(svg).toContain('<path d="M');
+    expect(svg).toMatch(/<\/svg>$/);
+  });
+});
+
+describe('Feature 2: Behavioral Lead Scoring & Smart Segments', () => {
+  const nowMs = Date.parse('2026-11-26T12:00:00Z');
+
+  it('scores high-intent active buyers as Hot (70+)', () => {
+    const res = computeLeadScore({
+      inboundMessageCount: 6,
+      outboundMessageCount: 4,
+      recentCustomerTexts: ['Bonjour, quel est le prix du pack Business? Je veux commander aujourd hui'],
+      lastMessageAt: '2026-11-26T10:00:00Z',
+      openDealsCount: 1,
+      openDealsValue: 900,
+      wonDealsCount: 0,
+      tagNames: ['Instagram Lead'],
+      hasGrowthAttribution: true,
+      nowMs,
+    });
+    expect(res.score).toBeGreaterThanOrEqual(75);
+    expect(res.tier).toBe('hot');
+    expect(res.signals.length).toBeGreaterThanOrEqual(4);
+  });
+
