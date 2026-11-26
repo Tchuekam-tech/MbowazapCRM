@@ -293,3 +293,23 @@ export function DripSequencesTab({
                     className="h-7 w-16 text-xs"
                   />
                   {coupons.length > 0 && (
+                    <select
+                      value={step.coupon_id || ''}
+                      onChange={(e) =>
+                        updateStep(idx, { coupon_id: e.target.value || null })
+                      }
+                      className="h-7 rounded border border-border bg-background px-2 text-[11px] text-foreground"
+                    >
+                      <option value="">No coupon</option>
+                      {coupons.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Coupon: {c.code}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {steps.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeStep(idx)}
+                      className="text-muted-foreground hover:text-destructive"
