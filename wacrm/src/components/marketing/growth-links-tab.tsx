@@ -224,3 +224,33 @@ export function GrowthLinksTab({
               A compact [Ref:CODE] tag is appended automatically for 100% attribution.
             </p>
           </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="gl-source" className="text-xs">UTM Source / Channel</Label>
+              <select
+                id="gl-source"
+                value={utmSource}
+                onChange={(e) => setUtmSource(e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground"
+              >
+                <option value="instagram">Instagram</option>
+                <option value="tiktok">TikTok</option>
+                <option value="facebook_ads">Facebook Ads</option>
+                <option value="google_ads">Google Ads</option>
+                <option value="qr_flyer">Print / QR Flyer</option>
+                <option value="website">Website Widget</option>
+                <option value="youtube">YouTube</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="gl-campaign" className="text-xs">UTM Campaign</Label>
+              <Input
+                id="gl-campaign"
+                value={utmCampaign}
+                onChange={(e) => setUtmCampaign(e.target.value)}
+                placeholder="black-friday-2026"
+                className="mt-1 text-xs"
+              />
+            </div>
+          </div>
