@@ -302,3 +302,22 @@ export function AbCampaignsTab({
             </Button>
           </div>
         </div>
+
+        {/* A/B Split-Test Configuration */}
+        <form
+          onSubmit={handleCreateCampaign}
+          className="space-y-4 rounded-xl border border-border bg-card p-5 lg:col-span-7"
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <FlaskConical className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                A/B Split-Test Experiment Setup
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Test two hooks on a sample audience, then send the winner to the holdout group.
+              </p>
+            </div>
+          </div>
