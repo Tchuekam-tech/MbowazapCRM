@@ -429,3 +429,27 @@ CREATE POLICY "ab_campaigns_write" ON ab_campaigns
   FOR ALL USING (is_account_member(account_id, 'agent'))
   WITH CHECK (is_account_member(account_id, 'agent'));
 
+CREATE TABLE IF NOT EXISTS ab_campaign_variants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID NOT NULL REFERENCES ab_campaigns(id) ON DELETE CASCADE,
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  variant_key TEXT NOT NULL CHECK (variant_key IN ('A', 'B')),
+  label TEXT NOT NULL DEFAULT '',
+  body_text TEXT NOT NULL,
+  template_name TEXT,
+  template_language TEXT,
+  media_url TEXT,
+  coupon_id UUID REFERENCES promo_coupons(id) ON DELETE SET NULL,
+  compliance_score INTEGER NOT NULL DEFAULT 100 CHECK (compliance_score >= 0 AND compliance_score <= 100),
+  sent_count INTEGER NOT NULL DEFAULT 0,
+  delivered_count INTEGER NOT NULL DEFAULT 0,
+  read_count INTEGER NOT NULL DEFAULT 0,
+  replied_count INTEGER NOT NULL DEFAULT 0,
+  conversions_count INTEGER NOT NULL DEFAULT 0,
+  revenue_attributed NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  UNIQUE (campaign_id, variant_key)
+);
+
+ALTER TABLE ab_campaign_variants ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "ab_campaign_variants_select" ON ab_campaign_variants;
