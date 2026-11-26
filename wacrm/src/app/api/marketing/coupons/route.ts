@@ -143,3 +143,43 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const ctx = await requireRole('agent');
+    const body = await request.json();
+    const id = typeof body.id === 'string' ? body.id : '';
+    if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+
+    const { data, error } = await ctx.supabase
+      .from('promo_coupons')
+      .update({ is_active: Boolean(body.is_active) })
+      .eq('id', id)
+      .eq('account_id', ctx.accountId)
+      .select()
+      .single();
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ coupon: data });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const ctx = await requireRole('agent');
+    const id = request.nextUrl.searchParams.get('id');
+    if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+
+    const { error } = await ctx.supabase
+      .from('promo_coupons')
+      .delete()
+      .eq('id', id)
+      .eq('account_id', ctx.accountId);
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ deleted: true });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
