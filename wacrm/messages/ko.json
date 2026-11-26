@@ -89,7 +89,8 @@
       "newContact": "새 연락처",
       "newDeal": "새 딜",
       "newBroadcast": "새 브로드캐스트",
-      "newAutomation": "새 자동화"
+      "newAutomation": "새 자동화",
+      "marketingStudio": "마케팅 스튜디오"
     },
     "activityFeed": {
       "title": "최근 활동",
@@ -2033,5 +2034,22 @@
   },
   "DashboardShell": {
     "loading": "불러오는 중..."
+  },
+  "Marketing": {
+    "title": "마케팅 성장 스튜디오",
+    "subtitle": "WhatsApp 클릭 링크 및 QR, AI 리드 스코어링, 자동 드립 시퀀스, A/B 테스트 및 ROI 분석.",
+    "kpiLinks": "링크 클릭 수",
+    "kpiHotLeads": "핫 리드 (70+)",
+    "kpiDrips": "활성 드립 시퀀스",
+    "kpiExperiments": "A/B 실험",
+    "kpiRevenue": "귀속 매출",
+    "tabs": {
+      "links": "성장 링크 및 QR",
+      "leads": "AI 리드 및 세그먼트",
+      "drips": "드립 시퀀스",
+      "campaigns": "AI 카피 및 A/B 테스트",
+      "roi": "ROI, 쿠폰 및 서버 상태",
+      "presence": "옴니채널 (Buffer)"
+    }
   }
 }
