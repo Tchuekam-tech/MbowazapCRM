@@ -308,3 +308,38 @@ export function OmnichannelPresenceTab({
               : 'Admin Role Required to Connect Buffer'}
           </Button>
         </form>
+
+        <div className="space-y-4 rounded-xl border border-border bg-card p-6 lg:col-span-6">
+          <h3 className="text-sm font-semibold text-foreground">
+            What Unlocks Instantly Once Connected
+          </h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {[
+              {
+                title: '360° Digital Presence Score',
+                desc: 'Live 0–100 score unifying Channel Coverage, Consistency, Engagement, and WhatsApp Conversion Bridge.',
+              },
+              {
+                title: 'Social → WhatsApp Attribution',
+                desc: 'See exactly how Instagram, LinkedIn, TikTok, Facebook & X drive WhatsApp clicks, hot leads & revenue.',
+              },
+              {
+                title: 'AI Digital Strategist Audit',
+                desc: '1-click deep analysis across all your social posts + CRM funnel spotting blind spots & top wins.',
+              },
+              {
+                title: '1-Click Cross-Channel Publishing',
+                desc: 'Queue posts directly to Buffer with your MboWazap /go/ Growth Links & promo coupons embedded.',
+              },
+            ].map((item) => (
+              <div
+                key={item.title}
+                className="rounded-lg border border-border bg-muted/30 p-3.5"
+              >
+                <p className="text-xs font-semibold text-foreground">{item.title}</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  {item.desc}
+                </p>
+              </div>
+            ))}
+          </div>
