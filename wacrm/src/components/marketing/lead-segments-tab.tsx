@@ -55,3 +55,27 @@ const TIER_BADGE: Record<
   },
 };
 
+export function LeadSegmentsTab({
+  leads,
+  segments,
+  tags,
+  canEdit,
+  onRefresh,
+}: LeadSegmentsTabProps) {
+  const [tierFilter, setTierFilter] = useState<'all' | LeadTier>('all');
+  const [recomputing, setRecomputing] = useState(false);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+
+  // Segment Builder state
+  const [segName, setSegName] = useState('');
+  const [segTiers, setSegTiers] = useState<LeadTier[]>(['hot']);
+  const [minScore, setMinScore] = useState('');
+  const [inactiveDays, setInactiveDays] = useState('');
+  const [activeWithinDays, setActiveWithinDays] = useState('');
+  const [selectedTagId, setSelectedTagId] = useState('');
+  const [utmSource, setUtmSource] = useState('');
+  const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [savingSeg, setSavingSeg] = useState(false);
+
+  const filteredLeads =
+    tierFilter === 'all' ? leads : leads.filter((l) => l.tier === tierFilter);
