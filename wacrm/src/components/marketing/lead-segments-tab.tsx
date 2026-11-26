@@ -33,3 +33,25 @@ interface LeadSegmentsTabProps {
   canEdit: boolean;
   onRefresh: () => void;
 }
+
+const TIER_BADGE: Record<
+  LeadTier,
+  { label: string; icon: typeof Flame; classes: string }
+> = {
+  hot: {
+    label: 'Hot',
+    icon: Flame,
+    classes: 'border-orange-500/40 bg-orange-500/10 text-orange-400',
+  },
+  warm: {
+    label: 'Warm',
+    icon: Zap,
+    classes: 'border-amber-500/40 bg-amber-500/10 text-amber-400',
+  },
+  cold: {
+    label: 'Cold',
+    icon: Snowflake,
+    classes: 'border-sky-500/40 bg-sky-500/10 text-sky-400',
+  },
+};
+
