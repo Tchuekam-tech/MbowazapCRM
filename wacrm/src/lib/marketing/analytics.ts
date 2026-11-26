@@ -69,3 +69,51 @@ export async function loadMarketingAnalytics(
   accountId: string
 ): Promise<MarketingAnalyticsSnapshot> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
+
+  const [
+    linksRes,
+    scoresRes,
+    sequencesRes,
+    campaignsRes,
+    couponsRes,
+    wonDealsRes,
+    contactsRes,
+    customerMsgsRes,
+  ] = await Promise.all([
+    db
+      .from('growth_links')
+      .select('utm_source, clicks_count, conversions_count, attributed_revenue, is_active')
+      .eq('account_id', accountId),
+    db
+      .from('contact_lead_scores')
+      .select('score, tier')
+      .eq('account_id', accountId),
+    db
+      .from('drip_sequences')
+      .select('status, replied_count')
+      .eq('account_id', accountId),
+    db
+      .from('ab_campaigns')
+      .select('status')
+      .eq('account_id', accountId),
+    db
+      .from('promo_coupons')
+      .select('uses_count, attributed_revenue, is_active')
+      .eq('account_id', accountId),
+    db
+      .from('deals')
+      .select('value')
+      .eq('account_id', accountId)
+      .eq('status', 'won'),
+    db
+      .from('contacts')
+      .select('utm_source')
+      .eq('account_id', accountId),
+    db
+      .from('messages')
+      .select('created_at')
+      .eq('sender_type', 'customer')
+      .gte('created_at', thirtyDaysAgo)
+      .order('created_at', { ascending: false })
+      .limit(2000),
+  ]);
