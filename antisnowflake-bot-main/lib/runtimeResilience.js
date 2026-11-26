@@ -88,3 +88,14 @@ function createRuntimeMonitor({
             const res = await fetchImpl(`${baseUrl}/api/health`, {
                 method: 'GET',
                 signal: AbortSignal.timeout(8000),
+            });
+            lastKeepAliveAt = Date.now();
+            lastKeepAliveOk = res.ok;
+            return res.ok;
+        } catch (err) {
+            lastKeepAliveAt = Date.now();
+            lastKeepAliveOk = false;
+            log.warn(`[resilience] WACRM keep-alive failed: ${err?.message || err}`);
+            return false;
+        }
+    }
