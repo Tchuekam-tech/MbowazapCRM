@@ -79,3 +79,27 @@ export async function POST(request: NextRequest) {
     const ctx = await requireRole('agent');
     const body = await request.json().catch(() => ({}));
     const action = typeof body.action === 'string' ? body.action : 'recompute';
+
+    if (action === 'analyze' && typeof body.contact_id === 'string') {
+      const insight = await aiDeepAnalyzeContact(
+        ctx.supabase,
+        ctx.accountId,
+        body.contact_id
+      );
+      const { data: lead } = await ctx.supabase
+        .from('contact_lead_scores')
+        .select('*')
+        .eq('account_id', ctx.accountId)
+        .eq('contact_id', body.contact_id)
+        .maybeSingle();
+      return NextResponse.json({ ok: true, insight, lead });
+    }
+
+    const updated = await recomputeAccountLeadScores(ctx.supabase, ctx.accountId, {
+      limit: 300,
+    });
+    return NextResponse.json({ ok: true, updated });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
