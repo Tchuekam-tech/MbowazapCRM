@@ -506,3 +506,23 @@ export function LeadSegmentsTab({
                 <p className="text-sm font-medium text-foreground">{seg.name}</p>
                 <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Users className="h-3 w-3" />
+                  {seg.cached_count.toLocaleString()} matching contacts
+                </p>
+              </div>
+              {canEdit && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDeleteSegment(seg.id)}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
