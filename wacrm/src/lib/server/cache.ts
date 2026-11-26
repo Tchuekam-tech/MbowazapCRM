@@ -75,3 +75,25 @@ export class FastTtlCache {
       staleUntil: now + ttlMs + Math.max(0, staleWhileRevalidateMs),
     });
   }
+
+  /**
+   * Fetch with TTL caching, singleflight deduplication, and optional
+   * stale-while-revalidate background refresh.
+   */
+  async getOrLoad<T>(
+    key: string,
+    ttlMs: number,
+    loader: () => Promise<T>,
+    opts: { staleWhileRevalidateMs?: number; now?: () => number } = {}
+  ): Promise<T> {
+    const nowFn = opts.now ?? Date.now;
+    const now = nowFn();
+    const swrMs = opts.staleWhileRevalidateMs ?? 0;
+
+    const existing = this.store.get(key);
+    if (existing && existing.freshUntil > now) {
+      this.store.delete(key);
+      this.store.set(key, existing);
+      this.hits += 1;
+      return existing.value as T;
+    }
