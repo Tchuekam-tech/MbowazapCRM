@@ -24,3 +24,18 @@ export async function mapWithConcurrency<T, R>(
       results[idx] = await worker(items[idx]!, idx);
     }
   }
+
+  await Promise.all(Array.from({ length: limit }, () => runWorker()));
+  return results;
+}
+
+export interface RetryOptions {
+  maxAttempts?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  shouldRetry?: (err: unknown, attempt: number) => boolean;
+}
+
+/**
+ * Retry a transient async operation with capped exponential backoff and jitter.
+ */
