@@ -66,3 +66,18 @@ describe('mapWithConcurrency & withRetry', () => {
     expect(peak).toBeLessThanOrEqual(3);
     expect(out).toEqual([10, 20, 30, 40, 50, 60, 70]);
   });
+
+  it('retries transient failures up to maxAttempts', async () => {
+    let attempts = 0;
+    const res = await withRetry(
+      async () => {
+        attempts += 1;
+        if (attempts < 3) throw new Error('transient');
+        return 'ok';
+      },
+      { maxAttempts: 3, baseDelayMs: 10 }
+    );
+    expect(res).toBe('ok');
+    expect(attempts).toBe(3);
+  });
+});
