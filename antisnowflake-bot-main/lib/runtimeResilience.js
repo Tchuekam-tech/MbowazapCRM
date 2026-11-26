@@ -10,3 +10,11 @@
  *   4. Optional built-in cron ticker for WACRM /api/cron/tick so drip
  *      sequences, delayed automations, and flows run 24/7 automatically
  */
+
+const { monitorEventLoopDelay } = require('perf_hooks');
+const { normalizeBaseUrl } = require('./bridge/wacrmClient');
+
+const DEFAULT_MEMORY_CHECK_MS = 30_000;
+const DEFAULT_KEEPALIVE_MS = 4 * 60 * 1000; // 4 min — under Render/Railway idle windows
+const DEFAULT_CRON_TICK_MS = 60_000; // 1 min cadence for due drips & automations
+
