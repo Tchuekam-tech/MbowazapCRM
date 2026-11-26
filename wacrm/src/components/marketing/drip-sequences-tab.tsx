@@ -116,3 +116,19 @@ export function DripSequencesTab({
           stop_on_reply: stopOnReply,
           quiet_hours_start: quietStart,
           quiet_hours_end: quietEnd,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+          steps,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success('Automated Drip Sequence created!');
+      setName('');
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create sequence');
+    } finally {
+      setSaving(false);
+    }
+  }
+
