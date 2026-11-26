@@ -136,3 +136,18 @@ export class FastTtlCache {
     this.inflight.set(key, promise);
     return promise;
   }
+
+  delete(key: string): void {
+    this.store.delete(key);
+  }
+
+  invalidatePrefix(prefix: string): number {
+    let removed = 0;
+    for (const key of this.store.keys()) {
+      if (key.startsWith(prefix)) {
+        this.store.delete(key);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
