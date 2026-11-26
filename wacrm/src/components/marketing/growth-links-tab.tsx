@@ -134,12 +134,16 @@ export function GrowthLinksTab({
     }
   }
 
-  function handleCopy(link: GrowthLink) {
+  async function handleCopy(link: GrowthLink) {
     const url = `${origin}/go/${link.slug}`;
-    void navigator.clipboard.writeText(url);
-    setCopiedId(link.id);
-    toast.success('Short link copied to clipboard');
-    setTimeout(() => setCopiedId(null), 2000);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(link.id);
+      toast.success('Short link copied to clipboard');
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error('Could not copy link to clipboard');
+    }
   }
 
   function handleDownloadQr() {

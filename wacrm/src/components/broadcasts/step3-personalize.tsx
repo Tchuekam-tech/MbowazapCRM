@@ -53,6 +53,7 @@ const contactFields = [
   { value: 'name', labelKey: 'name' },
   { value: 'phone', labelKey: 'phone' },
   { value: 'email', labelKey: 'email' },
+  { value: 'company', labelKey: 'company' },
 ];
 
 const SAMPLE_CONTACT: Contact = {
@@ -131,7 +132,9 @@ export function Step3Personalize({
   const placeholders = useMemo(() => {
     const matches = template.body_text.match(/\{\{(\d+)\}\}/g);
     if (!matches) return [];
-    return [...new Set(matches)].sort();
+    return [...new Set(matches)].sort(
+      (a, b) => Number(a.slice(2, -2)) - Number(b.slice(2, -2)),
+    );
   }, [template.body_text]);
 
   // Templates with an IMAGE/VIDEO/DOCUMENT header need a media URL at
@@ -322,7 +325,13 @@ export function Step3Personalize({
                       }
                     >
                       <SelectTrigger className="w-full border-border bg-muted text-foreground">
-                        <SelectValue />
+                        <SelectValue>
+                          {mapping.type === 'static'
+                            ? t('personalize.typeStatic')
+                            : mapping.type === 'field'
+                              ? t('personalize.typeContact')
+                              : t('personalize.typeCustom')}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="border-border bg-popover">
                         <SelectItem value="static">{t('personalize.typeStatic')}</SelectItem>
@@ -355,7 +364,18 @@ export function Step3Personalize({
                         }
                       >
                         <SelectTrigger className="w-full border-border bg-muted text-foreground">
-                          <SelectValue placeholder={t('personalize.selectContactField')} />
+                          <SelectValue placeholder={t('personalize.selectContactField')}>
+                            {mapping.value
+                              ? (() => {
+                                  const match = contactFields.find(
+                                    (f) => f.value === mapping.value,
+                                  );
+                                  return match
+                                    ? t(`personalize.fieldMap.${match.labelKey}`)
+                                    : mapping.value;
+                                })()
+                              : null}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="border-border bg-popover">
                           {contactFields.map((field) => (
@@ -381,7 +401,12 @@ export function Step3Personalize({
                                   ? t('personalize.noCustomFields')
                                   : t('personalize.selectCustomField')
                             }
-                          />
+                          >
+                            {mapping.value
+                              ? (customFields.find((f) => f.id === mapping.value)
+                                  ?.field_name ?? mapping.value)
+                              : null}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="border-border bg-popover">
                           {customFields.map((f) => (

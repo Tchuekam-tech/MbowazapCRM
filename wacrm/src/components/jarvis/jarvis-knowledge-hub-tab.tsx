@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import {
   BookOpen,
@@ -50,6 +50,10 @@ export function JarvisKnowledgeHubTab({
 }: JarvisKnowledgeHubTabProps) {
   const [profile, setProfile] = useState<JarvisCompanyProfile>(data.profile);
   const [savingProfile, setSavingProfile] = useState(false);
+
+  useEffect(() => {
+    setProfile(data.profile);
+  }, [data.profile]);
 
   // Website connector state
   const [siteUrl, setSiteUrl] = useState('');
@@ -235,7 +239,13 @@ export function JarvisKnowledgeHubTab({
         toast.error(json.error || 'Sync failed');
         return;
       }
-      toast.success(`Synced ${json.synced} website source(s)`);
+      if (json.failed > 0 && json.synced > 0) {
+        toast.warning(`Synced ${json.synced} website(s), ${json.failed} failed`);
+      } else if (json.failed > 0 && !json.synced) {
+        toast.error(`Failed to sync ${json.failed} website source(s)`);
+      } else {
+        toast.success(`Synced ${json.synced} website source(s)`);
+      }
       await onRefresh();
     } catch {
       toast.error('Network error syncing websites');

@@ -121,9 +121,10 @@ export function MobileHomeHero({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text }),
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         toast.error(json.error || "Jarvis could not answer right now");
+        if (!promptOverride) setQuery(text);
         return;
       }
       setAnswer(String(json.assistantMessage?.content ?? ""));
@@ -134,6 +135,7 @@ export function MobileHomeHero({
       }
     } catch {
       toast.error("Network error talking to Jarvis");
+      if (!promptOverride) setQuery(text);
     } finally {
       setAsking(false);
     }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   Bot,
@@ -43,6 +43,17 @@ export function JarvisAutonomyTab({
 }: JarvisAutonomyTabProps) {
   const [cfg, setCfg] = useState<JarvisConfig>(data.config);
   const [saving, setSaving] = useState(false);
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setCfg(data.config);
+  }, [data.config]);
+
+  useEffect(() => {
+    return () => {
+      if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    };
+  }, []);
 
   // Live typing preview sandbox
   const [sampleMsg, setSampleMsg] = useState(
@@ -67,10 +78,12 @@ export function JarvisAutonomyTab({
       toast.info('Enable Typing Simulation above to preview');
       return;
     }
+    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
     setSimDelivered(false);
     setSimPreviewActive(true);
     const ms = Math.min(4500, Math.max(800, estimatedTypingMs));
-    setTimeout(() => {
+    previewTimerRef.current = setTimeout(() => {
+      previewTimerRef.current = null;
       setSimPreviewActive(false);
       setSimDelivered(true);
     }, ms);
@@ -78,11 +91,21 @@ export function JarvisAutonomyTab({
 
   const handleSave = async () => {
     setSaving(true);
+    const clampedMin = Math.max(0, Math.min(15000, Number(cfg.typing_min_ms) || 0));
+    const clampedMax = Math.max(
+      Math.max(500, clampedMin),
+      Math.min(20000, Number(cfg.typing_max_ms) || 500),
+    );
+    const payload = {
+      ...cfg,
+      typing_min_ms: clampedMin,
+      typing_max_ms: clampedMax,
+    };
     try {
       const res = await fetch('/api/jarvis', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cfg),
+        body: JSON.stringify(payload),
       });
       const json = await res.json();
       if (!res.ok) {

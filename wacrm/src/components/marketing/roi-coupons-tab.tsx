@@ -113,7 +113,9 @@ export function RoiCouponsTab({
           discount_value: Number(discountValue),
           currency,
           max_uses: maxUses ? Number(maxUses) : null,
-          expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+          expires_at: expiresAt
+            ? new Date(`${expiresAt}T23:59:59.999Z`).toISOString()
+            : null,
         }),
       });
       const data = await res.json();
@@ -444,10 +446,14 @@ export function RoiCouponsTab({
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => {
-                      void navigator.clipboard.writeText(c.code);
-                      setCopiedId(c.id);
-                      setTimeout(() => setCopiedId(null), 1500);
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(c.code);
+                        setCopiedId(c.id);
+                        setTimeout(() => setCopiedId(null), 1500);
+                      } catch {
+                        toast.error('Could not copy coupon code to clipboard');
+                      }
                     }}
                   >
                     {copiedId === c.id ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}

@@ -20,6 +20,12 @@ import { useTranslations } from 'next-intl';
 interface AudienceConfig {
   type: string;
   tagIds?: string[];
+  excludeTagIds?: string[];
+  customField?: {
+    fieldId: string;
+    operator: string;
+    value: string;
+  };
   csvContacts?: { phone: string; name?: string }[];
 }
 
@@ -57,18 +63,55 @@ export function Step4ScheduleSend({
       try {
         const supabase = createClient();
 
+        const excludedIds = new Set<string>();
+        if (audience.excludeTagIds && audience.excludeTagIds.length > 0) {
+          const { data: exRows } = await supabase
+            .from('contact_tags')
+            .select('contact_id')
+            .in('tag_id', audience.excludeTagIds);
+          for (const r of exRows ?? []) excludedIds.add(r.contact_id);
+        }
+
         if (audience.type === 'all') {
-          const { count } = await supabase
-            .from('contacts')
-            .select('*', { count: 'exact', head: true });
-          setEstimatedReach(count ?? 0);
+          if (excludedIds.size === 0) {
+            const { count } = await supabase
+              .from('contacts')
+              .select('*', { count: 'exact', head: true });
+            setEstimatedReach(count ?? 0);
+          } else {
+            const { data: allRows } = await supabase.from('contacts').select('id');
+            setEstimatedReach(
+              (allRows ?? []).filter((c) => !excludedIds.has(c.id)).length,
+            );
+          }
         } else if (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) {
           const { data: contactTags } = await supabase
             .from('contact_tags')
             .select('contact_id')
             .in('tag_id', audience.tagIds);
 
-          const uniqueIds = new Set((contactTags ?? []).map((ct) => ct.contact_id));
+          const uniqueIds = new Set(
+            (contactTags ?? [])
+              .map((ct) => ct.contact_id)
+              .filter((id) => !excludedIds.has(id)),
+          );
+          setEstimatedReach(uniqueIds.size);
+        } else if (audience.type === 'custom_field' && audience.customField?.fieldId) {
+          const { fieldId, operator, value } = audience.customField;
+          let q = supabase
+            .from('contact_custom_values')
+            .select('contact_id')
+            .eq('field_id', fieldId);
+          if (operator === 'is') q = q.eq('value', value);
+          else if (operator === 'is_not') q = q.neq('value', value);
+          else if (operator === 'contains') q = q.ilike('value', `%${value}%`);
+          else if (operator === 'is_not_empty') q = q.neq('value', '');
+          const { data: cfRows } = await q;
+          const uniqueIds = new Set(
+            (cfRows ?? [])
+              .map((r) => r.contact_id)
+              .filter((id) => !excludedIds.has(id)),
+          );
           setEstimatedReach(uniqueIds.size);
         } else if (audience.type === 'csv' && audience.csvContacts) {
           setEstimatedReach(audience.csvContacts.length);

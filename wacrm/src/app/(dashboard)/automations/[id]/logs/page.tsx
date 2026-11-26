@@ -56,7 +56,11 @@ export default function AutomationLogsPage({
         ])
         if (autRes.error) throw autRes.error
         if (logRes.error) throw logRes.error
-        setAutomation(autRes.data as Automation | null)
+        if (!autRes.data) {
+          setError(t("loadError"))
+          return
+        }
+        setAutomation(autRes.data as Automation)
         setLogs((logRes.data ?? []) as AutomationLog[])
       } catch (err) {
         setError(err instanceof Error ? err.message : t("loadError"))
@@ -133,8 +137,10 @@ export default function AutomationLogsPage({
                       {log.contact?.name ?? log.contact?.phone ?? t("unknownContact")}
                     </div>
                     <div className="truncate text-xs text-muted-foreground">
-                      {log.trigger_event} · {log.steps_executed?.length ?? 0}{" "}
-                      {log.steps_executed?.length === 1 ? t("step", { count: 1 }).replace("1 ", "") : t("stepPlural", { count: log.steps_executed?.length ?? 0 }).replace(/^[0-9]+ /, "")}
+                      {log.trigger_event} ·{" "}
+                      {(log.steps_executed?.length ?? 0) === 1
+                        ? t("step", { count: 1 })
+                        : t("stepPlural", { count: log.steps_executed?.length ?? 0 })}
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground">

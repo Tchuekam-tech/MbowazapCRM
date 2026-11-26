@@ -169,6 +169,7 @@ export function MediaLightbox({
         <div className="relative flex items-center justify-center">
           {item.kind === "image" ? (
             <LightboxImage
+              key={item.messageId}
               item={item}
               zoomed={zoomed}
               onToggleZoom={toggleZoom}

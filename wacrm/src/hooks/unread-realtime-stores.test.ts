@@ -42,7 +42,14 @@ function createStrictSupabaseMock() {
       }
       if (table === "conversations") {
         return {
-          select: async () => ({ data: mockState.conversations, error: null }),
+          select: () => ({
+            gt: async (col: string, val: number) => ({
+              data: mockState.conversations.filter(
+                (row) => Number((row as Record<string, unknown>)[col] ?? 0) > val,
+              ),
+              error: null,
+            }),
+          }),
         };
       }
       throw new Error(`Unexpected table: ${table}`);

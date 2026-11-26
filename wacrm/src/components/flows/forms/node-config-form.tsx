@@ -25,6 +25,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import {
   Loader2,
   Paperclip,
@@ -635,7 +636,13 @@ function ConditionForm({
             }
           >
             <SelectTrigger className="bg-muted">
-              <SelectValue />
+              <SelectValue>
+                {subject === "var"
+                  ? t("capturedVariable")
+                  : subject === "tag"
+                    ? t("contactHasTag")
+                    : t("contactField")}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="var">{t("capturedVariable")}</SelectItem>
@@ -658,7 +665,12 @@ function ConditionForm({
               onValueChange={(v) => onUpdateConfig({ subject_key: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder={t("pickTag")} />
+                <SelectValue placeholder={t("pickTag")}>
+                  {cfg.subject_key
+                    ? (tags.find((tg) => tg.id === cfg.subject_key)?.name ??
+                      cfg.subject_key)
+                    : null}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {tags.map((t) => (
@@ -674,7 +686,9 @@ function ConditionForm({
               onValueChange={(v) => onUpdateConfig({ subject_key: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder={t("pickField")} />
+                <SelectValue placeholder={t("pickField")}>
+                  {cfg.subject_key || null}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="name">name</SelectItem>
@@ -711,7 +725,15 @@ function ConditionForm({
             }
           >
             <SelectTrigger className="bg-muted">
-              <SelectValue />
+              <SelectValue>
+                {operator === "present"
+                  ? t("isPresent")
+                  : operator === "absent"
+                    ? t("isAbsent")
+                    : operator === "equals"
+                      ? t("equals")
+                      : t("contains")}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="present">{t("isPresent")}</SelectItem>
@@ -790,7 +812,9 @@ function SetTagForm({
             }
           >
             <SelectTrigger className="bg-muted">
-              <SelectValue />
+              <SelectValue>
+                {(cfg.mode ?? "add") === "add" ? t("addTag") : t("removeTag")}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="add">{t("addTag")}</SelectItem>
@@ -806,7 +830,12 @@ function SetTagForm({
               onValueChange={(v) => onUpdateConfig({ tag_id: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder={t("pickTag")} />
+                <SelectValue placeholder={t("pickTag")}>
+                  {cfg.tag_id
+                    ? (tags.find((tg) => tg.id === cfg.tag_id)?.name ??
+                      cfg.tag_id)
+                    : null}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {tags.map((t) => (
@@ -848,12 +877,15 @@ function useUserTags(): UserTag[] {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/tags").catch(() => null);
-        if (!res || !res.ok) return;
-        const json = (await res.json()) as { tags?: UserTag[] };
-        if (!cancelled) setTags(json.tags ?? []);
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("tags")
+          .select("id, name, color")
+          .order("name");
+        if (error || cancelled) return;
+        setTags((data ?? []) as UserTag[]);
       } catch {
-        // Tags endpoint absent — caller falls back to raw input.
+        // Non-fatal — caller falls back to raw input.
       }
     })();
     return () => {
@@ -962,7 +994,13 @@ function SendMediaForm({
           }}
         >
           <SelectTrigger className="bg-muted">
-            <SelectValue />
+            <SelectValue>
+              {mediaType === "image"
+                ? t("imageLabel")
+                : mediaType === "video"
+                  ? t("videoLabel")
+                  : t("documentLabel")}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="image">{t("imageLabel")}</SelectItem>

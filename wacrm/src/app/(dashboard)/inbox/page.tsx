@@ -251,14 +251,14 @@ function InboxPageInner() {
             prev.map((c) =>
               c.id === newMsg.conversation_id
                 ? {
-                    ...c,
-                    last_message_text: newMsg.content_text ?? "",
-                    last_message_at: newMsg.created_at,
-                    unread_count:
-                      activeConversation?.id === newMsg.conversation_id
-                        ? 0
-                        : c.unread_count + 1,
-                  }
+                  ...c,
+                  last_message_text: newMsg.content_text ?? "",
+                  last_message_at: newMsg.created_at,
+                  unread_count:
+                    activeConversation?.id === newMsg.conversation_id
+                      ? 0
+                      : c.unread_count + 1,
+                }
                 : c,
             ),
           );
@@ -318,10 +318,10 @@ function InboxPageInner() {
             prev.map((c) =>
               c.id === conv.id
                 ? {
-                    ...c,
-                    ...conv,
-                    unread_count: isActive ? 0 : conv.unread_count,
-                  }
+                  ...c,
+                  ...conv,
+                  unread_count: isActive ? 0 : conv.unread_count,
+                }
                 : c,
             ),
           );
@@ -495,6 +495,29 @@ function InboxPageInner() {
     [activeConversation?.id, router]
   );
 
+  // React to ?c=<id> URL changes even while already mounted on /inbox
+  // (e.g., clicking a browser notification or deep link).
+  useEffect(() => {
+    if (!deepLinkConvId) return;
+    if (autoSelectedForDeepLinkRef.current === deepLinkConvId) return;
+    if (activeConversation?.id === deepLinkConvId) {
+      autoSelectedForDeepLinkRef.current = deepLinkConvId;
+      return;
+    }
+    const match = conversations.find((c) => c.id === deepLinkConvId);
+    if (!match) return;
+    autoSelectedForDeepLinkRef.current = deepLinkConvId;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveConversation(match);
+    setActiveContact(match.contact ?? null);
+    setMessages([]);
+    if (match.unread_count > 0) {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === match.id ? { ...c, unread_count: 0 } : c)),
+      );
+    }
+  }, [deepLinkConvId, conversations, activeConversation?.id]);
+
   // Mobile "back" — deselect the conversation so the list pane comes
   // back. Also clears the ?c= param so a refresh lands on the list
   // instead of re-opening the thread the user just backed out of.
@@ -642,31 +665,19 @@ function InboxPageInner() {
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
+            onOpenMobileContact={() => setMobileContactDrawerOpen(true)}
           />
         </div>
 
         {/* Right panel: Contact sidebar — desktop only, and only when the
             agent hasn't collapsed it via the thread-header toggle (#258).
-            On mobile (<lg), surfaced via the slide-over Contact Drawer below. */}
+            On mobile (<lg), surfaced via the inline header button & slide-over drawer. */}
         {contactPanelOpen && (
           <div className="hidden lg:block">
             <ContactSidebar contact={activeContact} />
           </div>
         )}
       </div>
-
-      {/* Mobile floating Lead/Contact Intelligence button when chatting */}
-      {hasActiveConv && activeContact && !mobileContactDrawerOpen && (
-        <button
-          type="button"
-          onClick={() => setMobileContactDrawerOpen(true)}
-          aria-label="Open contact details & lead score"
-          className="tap-press fixed right-3 top-[4.25rem] z-20 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/95 px-3 py-1.5 text-xs font-semibold text-foreground shadow-lg backdrop-blur-md lg:hidden"
-        >
-          <UserRound className="h-3.5 w-3.5 text-primary" />
-          Lead Info
-        </button>
-      )}
 
       {/* Mobile slide-over Contact & Lead Score Drawer */}
       {mobileContactDrawerOpen && activeContact && (

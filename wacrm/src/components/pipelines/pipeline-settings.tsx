@@ -113,7 +113,7 @@ export function PipelineSettings({
     const stageRows = localStages.map((s, i) => ({
       id: s.id,
       pipeline_id: s.pipeline_id,
-      name: s.name,
+      name: s.name.trim() || s.name,
       color: s.color,
       position: i,
     }));
@@ -159,14 +159,19 @@ export function PipelineSettings({
     setLocalStages([...localStages, data as PipelineStage]);
     setNewStageName("");
     setNewStageColor(STAGE_COLORS[(localStages.length + 1) % STAGE_COLORS.length]);
+    onStagesChanged();
   }
 
   async function handleRemoveStage(stageId: string) {
     // Refuse to delete if deals still reference the stage (FK would fail).
-    const { count } = await supabase
+    const { count, error: countError } = await supabase
       .from("deals")
       .select("id", { count: "exact", head: true })
       .eq("stage_id", stageId);
+    if (countError) {
+      toast.error(t("toastFailedDeleteStage"));
+      return;
+    }
     if (count && count > 0) {
       toast.error(t("toastMoveOrDeleteDeals"));
       return;
@@ -180,6 +185,7 @@ export function PipelineSettings({
       return;
     }
     setLocalStages(localStages.filter((s) => s.id !== stageId));
+    onStagesChanged();
   }
 
   async function handleDeletePipeline() {

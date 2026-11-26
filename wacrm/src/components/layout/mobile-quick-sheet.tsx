@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -29,10 +29,31 @@ interface MobileQuickSheetProps {
 }
 
 export function MobileQuickSheet({ onOpenSidebar }: MobileQuickSheetProps) {
-  const { quickSheetOpen, setQuickSheetOpen } = useMobileChrome();
+  const { quickSheetOpen, setQuickSheetOpen, hideMobileDock } = useMobileChrome();
   const router = useRouter();
   const t = useTranslations("MobileDock");
   const [scanning, setScanning] = useState(false);
+
+  // Close sheet when dock hides (e.g. entering an inbox thread), on Escape, and lock body scroll
+  useEffect(() => {
+    if (hideMobileDock && quickSheetOpen) {
+      setQuickSheetOpen(false);
+    }
+  }, [hideMobileDock, quickSheetOpen, setQuickSheetOpen]);
+
+  useEffect(() => {
+    if (!quickSheetOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setQuickSheetOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [quickSheetOpen, setQuickSheetOpen]);
 
   if (!quickSheetOpen) return null;
 
@@ -130,7 +151,7 @@ export function MobileQuickSheet({ onOpenSidebar }: MobileQuickSheetProps) {
 
       {/* Tactile Rounded Sheet */}
       <div
-        className="relative z-10 mx-3 mb-24 overflow-hidden rounded-[28px] border border-border bg-card p-5 shadow-2xl animate-in slide-in-from-bottom-6 duration-200"
+        className="relative z-10 mx-3 mb-24 max-h-[82dvh] overflow-y-auto rounded-[28px] border border-border bg-card p-5 shadow-2xl animate-in slide-in-from-bottom-6 duration-200"
         style={{ marginBottom: "calc(5.2rem + env(safe-area-inset-bottom))" }}
       >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-muted-foreground/30" />

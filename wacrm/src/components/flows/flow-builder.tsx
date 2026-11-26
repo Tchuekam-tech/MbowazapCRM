@@ -292,7 +292,13 @@ function TriggerPanel({
             }
           >
             <SelectTrigger className="bg-muted">
-              <SelectValue />
+              <SelectValue>
+                {state.trigger_type === 'keyword'
+                  ? t('triggerKeywordTitle')
+                  : state.trigger_type === 'first_inbound_message'
+                    ? t('triggerFirstInboundTitle')
+                    : t('triggerManualTitle')}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="keyword">

@@ -51,7 +51,10 @@ export function MobileBottomDock() {
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 z-30 flex items-center justify-center gap-2.5 px-4 lg:hidden"
+      className={cn(
+        "pointer-events-none fixed inset-x-0 flex items-center justify-center gap-2.5 px-4 lg:hidden",
+        quickSheetOpen ? "z-50" : "z-30",
+      )}
       style={{ bottom: "max(0.85rem, env(safe-area-inset-bottom))" }}
     >
       {/* Floating Capsule Navigation Pill */}
@@ -71,6 +74,7 @@ export function MobileBottomDock() {
             <Link
               key={item.href}
               href={item.href}
+              aria-label={t(item.labelKey)}
               aria-current={isActive ? "page" : undefined}
               className={cn(
                 "tap-press relative flex h-11 items-center justify-center gap-1.5 rounded-full transition-all duration-200",

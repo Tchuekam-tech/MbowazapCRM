@@ -61,24 +61,29 @@ export function AiUsageCard() {
 
   const [days, setDays] = useState<number>(30);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<UsageResponse | null>(null);
   const loadedRef = useRef<string | null>(null);
 
   const fetchUsage = useCallback(async (windowDays: number) => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`/api/ai/usage?days=${windowDays}`, {
         cache: 'no-store',
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
-        toast.error(json?.error ?? t('loadFailed'));
+        const msg = json?.error ?? t('loadFailed');
+        toast.error(msg);
+        setError(msg);
         setData(null);
         return;
       }
       setData(json as UsageResponse);
     } catch {
       toast.error(t('loadFailed'));
+      setError(t('loadFailed'));
       setData(null);
     } finally {
       setLoading(false);
@@ -123,7 +128,7 @@ export function AiUsageCard() {
             onValueChange={(v) => setDays(Number(v))}
           >
             <SelectTrigger className="w-32 flex-shrink-0">
-              <SelectValue />
+              <SelectValue>{t('window', { days })}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {WINDOWS.map((w) => (
@@ -136,8 +141,19 @@ export function AiUsageCard() {
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        {loading || !data ? (
+        {loading ? (
           <Skeleton className="h-[220px] w-full" />
+        ) : !data ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-10 text-center text-sm text-muted-foreground">
+            <p>{error ?? t('loadFailed')}</p>
+            <button
+              type="button"
+              onClick={() => void fetchUsage(days)}
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+            >
+              Retry
+            </button>
+          </div>
         ) : !hasSpend ? (
           <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-sm text-muted-foreground">
             <BarChart3 className="h-8 w-8 opacity-40" />

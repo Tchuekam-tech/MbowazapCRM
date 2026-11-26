@@ -141,6 +141,7 @@ export function OmnichannelPresenceTab({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      setSelectedChannels([]);
       toast.success(`Switched Buffer workspace to ${data.sync?.organizationName || orgId}`);
       onRefresh();
     } catch (err) {
@@ -174,6 +175,7 @@ export function OmnichannelPresenceTab({
     try {
       const res = await fetch('/api/marketing/buffer', { method: 'DELETE' });
       if (!res.ok) throw new Error('Disconnect failed');
+      setSelectedChannels([]);
       toast.success('Buffer disconnected and cached social data removed.');
       onRefresh();
     } catch {
@@ -224,12 +226,20 @@ export function OmnichannelPresenceTab({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Publish failed');
-      toast.success(
-        publishMode === 'shareNow'
-          ? `Published immediately to ${data.succeeded} channel(s)!`
-          : `Queued to ${data.succeeded} Buffer channel(s)!`
-      );
-      setPostText('');
+      if (data.failed > 0 && data.succeeded > 0) {
+        toast.warning(
+          `Published to ${data.succeeded} channel(s), but ${data.failed} failed.`
+        );
+      } else if (data.failed > 0 && !data.succeeded) {
+        toast.error(`Failed to publish to ${data.failed} channel(s).`);
+      } else {
+        toast.success(
+          publishMode === 'shareNow'
+            ? `Published immediately to ${data.succeeded} channel(s)!`
+            : `Queued to ${data.succeeded} Buffer channel(s)!`
+        );
+      }
+      if (data.succeeded > 0) setPostText('');
       onRefresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Publishing failed');

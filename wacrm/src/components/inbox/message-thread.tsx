@@ -21,6 +21,7 @@ import {
   MessageSquare,
   ChevronDown,
   UserPlus,
+  UserRound,
   Check,
   Clock,
   ArrowLeft,
@@ -108,6 +109,7 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
+  onOpenMobileContact?: () => void;
   provider?: "meta" | "mbowazap" | null;
 }
 
@@ -167,6 +169,7 @@ export function MessageThread({
   onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
+  onOpenMobileContact,
   provider,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
@@ -656,10 +659,15 @@ export function MessageThread({
       if (!conversation) return;
 
       const supabase = createClient();
-      await supabase
+      const { error } = await supabase
         .from("conversations")
         .update({ status })
         .eq("id", conversation.id);
+
+      if (error) {
+        toast.error(error.message || "Failed to update status");
+        return;
+      }
 
       onStatusChange(conversation.id, status);
     },
@@ -960,6 +968,17 @@ export function MessageThread({
               smaller laptops; this lets agents reclaim it when they just
               want to read and reply. Hidden on mobile, where the sidebar
               never renders as a permanent panel anyway. Issue #258. */}
+          {onOpenMobileContact && contact && (
+            <button
+              type="button"
+              onClick={onOpenMobileContact}
+              aria-label={t("showContactPanel")}
+              title={t("showContact")}
+              className="tap-press inline-flex h-7 w-7 items-center justify-center rounded-md text-primary transition-colors hover:bg-muted lg:hidden"
+            >
+              <UserRound className="h-4 w-4" />
+            </button>
+          )}
           {onToggleContactPanel && (
             <button
               type="button"
@@ -1129,7 +1148,7 @@ export function MessageThread({
                       ? {
                           authorLabel:
                             parent.sender_type === "agent" || parent.sender_type === "bot"
-                              ? t("me") 
+                              ? t("me").replace(/^\s*\((.+)\)\s*$/, "$1").replace(/^./, (c) => c.toUpperCase())
                               : contact?.name || contact?.phone || t("unknown"),
                           preview: buildReplyPreview(parent, tQuote),
                         }
@@ -1191,8 +1210,9 @@ export function MessageThread({
         }}
       />
 
-      {/* Composer */}
+      {/* Composer — keyed by conversation.id so drafts/media/recordings never leak across chats */}
       <MessageComposer
+        key={conversation.id}
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         onSend={handleSend}

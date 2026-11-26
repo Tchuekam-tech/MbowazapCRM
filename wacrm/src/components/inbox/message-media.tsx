@@ -123,8 +123,10 @@ export function MediaImageBubble({
 }) {
   const { src, status } = useMediaBlobUrl(message.media_url);
   // The fetch can succeed and the bytes still not be a decodable image.
-  const [broken, setBroken] = useState(false);
+  // Track the specific src URL that failed so a retry/URL change clears it.
+  const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
   const { downloading, download } = useMediaDownload(message, t);
+  const broken = Boolean(src && brokenUrl === src);
 
   if (status === "error" || broken) {
     return (
@@ -148,7 +150,7 @@ export function MediaImageBubble({
       src={src}
       alt={t("imageAlt")}
       className={cn(MEDIA_BOX, "rounded-lg object-contain")}
-      onError={() => setBroken(true)}
+      onError={() => setBrokenUrl(src)}
     />
   );
 

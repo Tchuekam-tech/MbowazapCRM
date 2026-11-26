@@ -262,7 +262,11 @@ export default function ContactsPage() {
       toast.error(t('toastFailedDelete'));
     } else {
       toast.success(t('toastDeleted'));
-      fetchContacts();
+      if (contacts.length <= 1 && page > 0) {
+        setPage((p) => Math.max(0, p - 1));
+      } else {
+        fetchContacts();
+      }
     }
 
     setDeleting(false);
@@ -306,8 +310,14 @@ export default function ContactsPage() {
       toast.error(t('toastBulkFailedDelete'));
     } else {
       toast.success(t('toastBulkDeleted', { count: ids.length }));
+      const deletedAllOnPage =
+        contacts.length > 0 && contacts.every((c) => selected.has(c.id));
       setSelected(new Set());
-      fetchContacts();
+      if (deletedAllOnPage && page > 0) {
+        setPage((p) => Math.max(0, p - 1));
+      } else {
+        fetchContacts();
+      }
     }
 
     setDeleting(false);

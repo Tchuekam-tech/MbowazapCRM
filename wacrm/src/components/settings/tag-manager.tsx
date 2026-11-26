@@ -66,13 +66,12 @@ export function TagManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user?.id]);
 
-  async function fetchTags(userId: string) {
+  async function fetchTags(_userId: string) {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('tags')
         .select('*')
-        .eq('user_id', userId)
         .order('created_at', { ascending: true });
 
       if (error) throw error;

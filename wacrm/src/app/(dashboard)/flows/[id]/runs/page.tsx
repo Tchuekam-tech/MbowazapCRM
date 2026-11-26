@@ -15,7 +15,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistance, formatDistanceToNow } from "date-fns";
 
 import { useTranslations } from "next-intl";
 
@@ -223,8 +223,8 @@ function RunCard({
   const contactLabel =
     run.contact?.name?.trim() || run.contact?.phone || t("unknownContact");
   const duration = run.ended_at
-    ? formatDistanceToNow(new Date(run.ended_at), {
-        addSuffix: false,
+    ? formatDistance(new Date(run.started_at), new Date(run.ended_at), {
+        includeSeconds: true,
       })
     : null;
   return (

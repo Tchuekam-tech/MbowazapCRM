@@ -73,6 +73,7 @@ export function DripSequencesTab({
   const [steps, setSteps] = useState<DripSequenceStep[]>(DEFAULT_STEPS);
   const [saving, setSaving] = useState(false);
   const [enrollingId, setEnrollingId] = useState<string | null>(null);
+  const [enrollSegmentBySeq, setEnrollSegmentBySeq] = useState<Record<string, string>>({});
 
   function addStep() {
     setSteps((prev) => [
@@ -153,7 +154,11 @@ export function DripSequencesTab({
       toast.error('Create a Smart Segment first to enroll an audience.');
       return;
     }
-    const targetSegId = seq.segment_id || segments[0]?.id;
+    const targetSegId = seq.segment_id || enrollSegmentBySeq[seq.id] || '';
+    if (!targetSegId) {
+      toast.error('Select a Smart Segment to enroll for this sequence.');
+      return;
+    }
     setEnrollingId(seq.id);
     try {
       const res = await fetch('/api/marketing/sequences', {
@@ -384,11 +389,35 @@ export function DripSequencesTab({
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {!seq.segment_id && segments.length > 0 && (
+                      <select
+                        aria-label={`Select segment for ${seq.name}`}
+                        value={enrollSegmentBySeq[seq.id] ?? ''}
+                        onChange={(e) =>
+                          setEnrollSegmentBySeq((prev) => ({
+                            ...prev,
+                            [seq.id]: e.target.value,
+                          }))
+                        }
+                        className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+                      >
+                        <option value="">Pick segment…</option>
+                        {segments.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.cached_count})
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={!canEdit || enrollingId === seq.id}
+                      disabled={
+                        !canEdit ||
+                        enrollingId === seq.id ||
+                        (!seq.segment_id && !enrollSegmentBySeq[seq.id])
+                      }
                       onClick={() => handleEnrollSegment(seq)}
                     >
                       {enrollingId === seq.id ? (

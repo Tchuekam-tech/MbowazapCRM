@@ -521,7 +521,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
               }),
             });
 
-            data = await res.json();
+            data = await res.json().catch(() => ({}));
             if (res.ok) break;
 
             const retryIn =

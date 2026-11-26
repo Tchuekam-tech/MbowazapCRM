@@ -60,11 +60,14 @@ function startSubscription() {
             const row = payload.new as Notification;
             if (!row.read_at) setCount((n) => n + 1);
           } else if (payload.eventType === "UPDATE") {
-            // Updates here only ever set read_at (marking a notification
-            // read). Derive purely from the new row so we don't rely on
-            // payload.old columns, which require REPLICA IDENTITY FULL.
             const newRow = payload.new as Notification;
-            if (newRow.read_at) setCount((n) => Math.max(0, n - 1));
+            const oldRow = (payload.old ?? {}) as Partial<Notification>;
+            // Guard against double-decrement if an already-read row is updated again
+            if (newRow.read_at && !oldRow.read_at) {
+              setCount((n) => Math.max(0, n - 1));
+            } else if (!newRow.read_at && oldRow.read_at) {
+              setCount((n) => n + 1);
+            }
           } else if (payload.eventType === "DELETE") {
             const oldRow = payload.old as Partial<Notification>;
             if (!oldRow.read_at) setCount((n) => Math.max(0, n - 1));

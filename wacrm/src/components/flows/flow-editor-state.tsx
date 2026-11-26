@@ -104,7 +104,7 @@ export interface FlowEditorContextValue {
   removeNode: (key: string) => void;
 
   // Actions
-  save: () => Promise<void>;
+  save: () => Promise<boolean>;
   setStatus: (status: BuilderState["status"]) => Promise<void>;
   deleteFlow: () => Promise<void>;
 
@@ -329,7 +329,7 @@ export function FlowEditorProvider({
   );
 
   // ---- Save (PUT) ----
-  const save = useCallback(async () => {
+  const save = useCallback(async (): Promise<boolean> => {
     setSaving(true);
     try {
       const res = await fetch(`/api/flows/${initialFlow.id}`, {
@@ -350,13 +350,15 @@ export function FlowEditorProvider({
       }
       setDirty(false);
       toast.success(t("saved"));
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Save failed";
       toast.error(msg);
+      return false;
     } finally {
       setSaving(false);
     }
-  }, [initialFlow.id, state]);
+  }, [initialFlow.id, state, t]);
 
   // ---- Activate / Pause / Archive ----
   const setStatus = useCallback(
@@ -368,10 +370,10 @@ export function FlowEditorProvider({
       setActivating(true);
       try {
         // Always save first so the activation validator sees the
-        // latest state — the user shouldn't have to remember "save
-        // then activate".
+        // latest state — abort activation if saving failed.
         if (next === "active") {
-          await save();
+          const savedOk = await save();
+          if (!savedOk) return;
         }
         const res = await fetch(`/api/flows/${initialFlow.id}/activate`, {
           method: "POST",
@@ -474,28 +476,29 @@ export function FlowEditorProvider({
     (type: NodeType): string => {
       const meta = NODE_META[type];
       const base = slugify(meta.slugSeed, type);
-      let createdKey = base;
+      // Compute key synchronously against current nodes so React 19's
+      // deferred functional updater doesn't return a stale base key.
+      const node_key = uniqueNodeKey(base, state.nodes);
       setState((s) => {
-        const node_key = uniqueNodeKey(base, s.nodes);
-        createdKey = node_key;
+        const resolvedKey = s.nodes.some((n) => n.node_key === node_key)
+          ? uniqueNodeKey(base, s.nodes)
+          : node_key;
         const next: BuilderNode = {
-          node_key,
+          node_key: resolvedKey,
           node_type: type,
           config: defaultConfigFor(type),
         };
         return {
           ...s,
           nodes: [...s.nodes, next],
-          // If this is the first node and it's a start, pick it as
-          // the entry automatically. Saves a click.
           entry_node_id:
             s.entry_node_id ??
-            (type === "start" ? node_key : s.entry_node_id ?? null),
+            (type === "start" ? resolvedKey : s.entry_node_id ?? null),
         };
       });
-      return createdKey;
+      return node_key;
     },
-    [setState],
+    [setState, state.nodes],
   );
 
   const removeNode = useCallback(

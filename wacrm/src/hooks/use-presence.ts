@@ -57,6 +57,7 @@ export function usePresence(enabled = true): UsePresenceResult {
   const active = enabled && !!accountId;
 
   useEffect(() => {
+    setRows(new Map());
     if (!active || !accountId) return;
 
     const supabase = createClient();

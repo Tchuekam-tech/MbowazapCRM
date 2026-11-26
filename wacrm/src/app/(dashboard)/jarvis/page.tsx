@@ -1,8 +1,9 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import {
   BookOpen,
   BrainCircuit,
@@ -34,45 +35,51 @@ const VALID_TABS: ReadonlySet<JarvisTab> = new Set([
 
 function JarvisPageInner() {
   const t = useTranslations('Jarvis');
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { accountRole } = useAuth();
   const canEdit = accountRole ? canEditSettings(accountRole) : false;
 
-  const initialTabParam = searchParams.get('tab') as JarvisTab | null;
-  const [tab, setTab] = useState<JarvisTab>(
-    initialTabParam && VALID_TABS.has(initialTabParam) ? initialTabParam : 'command'
+  const tabParam = searchParams.get('tab') as JarvisTab | null;
+  const tab: JarvisTab =
+    tabParam && VALID_TABS.has(tabParam) ? tabParam : 'command';
+  const setTab = useCallback(
+    (next: JarvisTab) => {
+      router.replace(`/jarvis?tab=${next}`, { scroll: false });
+    },
+    [router],
   );
   const [data, setData] = useState<JarvisOverviewPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadOverview = useCallback(async () => {
+  const loadOverview = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
     try {
       const res = await fetch('/api/jarvis', { cache: 'no-store' });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(json.error || 'Failed to load Jarvis Command Center');
+        const msg = json.error || 'Failed to load Jarvis Command Center';
+        setError(msg);
+        if (isRefresh) toast.error(msg);
         return;
       }
       setData(json as JarvisOverviewPayload);
       setError(null);
     } catch {
-      setError('Could not reach Jarvis API');
+      const msg = 'Could not reach Jarvis API';
+      setError(msg);
+      if (isRefresh) toast.error(msg);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadOverview();
+    void loadOverview(false);
   }, [loadOverview]);
-
-  useEffect(() => {
-    const param = searchParams.get('tab') as JarvisTab | null;
-    if (param && VALID_TABS.has(param)) {
-      setTab(param);
-    }
-  }, [searchParams]);
 
   return (
     <div className="space-y-5">
@@ -115,10 +122,10 @@ function JarvisPageInner() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => void loadOverview()}
-          disabled={loading}
+          onClick={() => void loadOverview(true)}
+          disabled={loading || refreshing}
         >
-          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading || refreshing ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
       </div>

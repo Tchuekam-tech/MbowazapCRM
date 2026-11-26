@@ -193,13 +193,12 @@ export function TemplateManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user?.id]);
 
-  async function fetchTemplates(userId: string) {
+  async function fetchTemplates(_userId: string) {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('message_templates')
         .select('*')
-        .eq('user_id', userId)
         .order('created_at', { ascending: false });
       if (error) throw error;
       setTemplates(data || []);
@@ -723,7 +722,7 @@ export function TemplateManager() {
                   }
                 >
                   <SelectTrigger className="w-full bg-muted border-border text-foreground">
-                    <SelectValue />
+                    <SelectValue>{form.category}</SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-popover border-border">
                     {CATEGORIES.map((cat) => (
@@ -784,7 +783,17 @@ export function TemplateManager() {
                 }
               >
                 <SelectTrigger className="w-full bg-muted border-border text-foreground">
-                  <SelectValue />
+                  <SelectValue>
+                    {form.header_format === 'none'
+                      ? t('headerNone')
+                      : form.header_format === 'text'
+                        ? t('headerText')
+                        : form.header_format === 'image'
+                          ? t('headerImage')
+                          : form.header_format === 'video'
+                            ? t('headerVideo')
+                            : t('headerDocument')}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="bg-popover border-border">
                   {HEADER_FORMATS.map((type) => (
@@ -992,7 +1001,15 @@ export function TemplateManager() {
                           }}
                         >
                           <SelectTrigger className="w-40 bg-muted border-border text-foreground h-8 text-xs">
-                            <SelectValue />
+                            <SelectValue>
+                              {btn.type === 'QUICK_REPLY'
+                                ? t('btnQuickReply')
+                                : btn.type === 'URL'
+                                  ? t('btnUrl')
+                                  : btn.type === 'PHONE_NUMBER'
+                                    ? t('btnPhone')
+                                    : t('btnCopyCode')}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent className="bg-popover border-border">
                             <SelectItem

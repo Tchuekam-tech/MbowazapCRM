@@ -554,20 +554,52 @@ export function AbCampaignsTab({
                         Launch Split Test
                       </Button>
                     )}
-                    {camp.status === 'evaluating' && (
-                      <Button
-                        size="sm"
-                        disabled={!canEdit || isBusy}
-                        onClick={() => handlePromoteWinner(camp.id, camp.verdict?.winner ?? 'A')}
-                      >
-                        {isBusy ? (
-                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Trophy className="mr-1.5 h-3.5 w-3.5" />
-                        )}
-                        Send Winner ({camp.verdict?.winner ?? 'A'}) to Holdout
-                      </Button>
-                    )}
+                    {camp.status === 'evaluating' &&
+                      (camp.verdict?.winner ? (
+                        <Button
+                          size="sm"
+                          disabled={!canEdit || isBusy}
+                          onClick={() =>
+                            handlePromoteWinner(camp.id, camp.verdict!.winner!)
+                          }
+                        >
+                          {isBusy ? (
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trophy className="mr-1.5 h-3.5 w-3.5" />
+                          )}
+                          Send Winner ({camp.verdict.winner}) to Holdout
+                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!canEdit || isBusy}
+                            onClick={() => handlePromoteWinner(camp.id, 'A')}
+                          >
+                            {isBusy ? (
+                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trophy className="mr-1.5 h-3.5 w-3.5" />
+                            )}
+                            Pick Variant A
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!canEdit || isBusy}
+                            onClick={() => handlePromoteWinner(camp.id, 'B')}
+                          >
+                            {isBusy ? (
+                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trophy className="mr-1.5 h-3.5 w-3.5" />
+                            )}
+                            Pick Variant B
+                          </Button>
+                        </>
+                      ))}
                   </div>
                 </div>
               );

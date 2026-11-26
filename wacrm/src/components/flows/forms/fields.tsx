@@ -107,13 +107,26 @@ export function NodeKeySelect({
 }) {
   const t = useTranslations("Flows.builder.form");
   const options = nodes.filter((n) => n.node_key !== excludeKey);
+  const selected = value ? options.find((n) => n.node_key === value) : null;
+  const SelectedIcon = selected ? NODE_META[selected.node_type].icon : null;
   return (
     <Select
       value={value ?? "__none__"}
       onValueChange={(v) => onChange(v === "__none__" ? null : v)}
     >
       <SelectTrigger className={cn("bg-muted", className)}>
-        <SelectValue placeholder={placeholder ?? "—"} />
+        <SelectValue placeholder={placeholder ?? "—"}>
+          {selected && SelectedIcon ? (
+            <span className="inline-flex items-center gap-1.5">
+              <SelectedIcon
+                className={cn("h-3 w-3", NODE_META[selected.node_type].color)}
+              />
+              {selected.node_key}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">{placeholder ?? t("none")}</span>
+          )}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="__none__">{t("none")}</SelectItem>

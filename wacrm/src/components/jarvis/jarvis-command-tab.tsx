@@ -109,10 +109,11 @@ export function JarvisCommandTab({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         toast.error(json.error || 'Jarvis failed to respond');
         setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+        if (!promptOverride) setChatInput(text);
         return;
       }
       setMessages((prev) => [
@@ -128,6 +129,7 @@ export function JarvisCommandTab({
     } catch {
       toast.error('Network error talking to Jarvis');
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+      if (!promptOverride) setChatInput(text);
     } finally {
       setSendingChat(false);
     }
@@ -136,10 +138,13 @@ export function JarvisCommandTab({
   const handleClearChat = async () => {
     try {
       const res = await fetch('/api/jarvis/chat', { method: 'DELETE' });
-      if (res.ok) {
-        setMessages([]);
-        toast.success('Command console cleared');
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        toast.error(json.error || 'Failed to clear chat');
+        return;
       }
+      setMessages([]);
+      toast.success('Command console cleared');
     } catch {
       toast.error('Failed to clear chat');
     }

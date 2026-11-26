@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { useCan } from '@/hooks/use-can';
@@ -52,10 +52,16 @@ export default function MarketingStudioPage() {
 
 function MarketingStudioInner() {
   const t = useTranslations('Marketing');
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState(
-    initialTab && VALID_TABS.has(initialTab) ? initialTab : 'links'
+  const urlTab = searchParams.get('tab');
+  const activeTab = urlTab && VALID_TABS.has(urlTab) ? urlTab : 'links';
+  const setActiveTab = useCallback(
+    (next: string) => {
+      if (!VALID_TABS.has(next)) return;
+      router.replace(`/marketing?tab=${next}`, { scroll: false });
+    },
+    [router],
   );
 
   const { defaultCurrency } = useAuth();

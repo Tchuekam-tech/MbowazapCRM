@@ -27,22 +27,26 @@ export default function EditAutomationPage({
   useEffect(() => {
     let cancelled = false
     async function load() {
-      const res = await fetch(`/api/automations/${id}`)
-      if (!res.ok) {
-        if (!cancelled) setError(t("loadError", { status: res.status }))
-        return
+      try {
+        const res = await fetch(`/api/automations/${id}`)
+        if (!res.ok) {
+          if (!cancelled) setError(t("loadError", { status: res.status }))
+          return
+        }
+        const body = await res.json()
+        if (cancelled) return
+        setInitial({
+          id: body.automation.id,
+          name: body.automation.name ?? "",
+          description: body.automation.description ?? "",
+          trigger_type: body.automation.trigger_type as AutomationTriggerType,
+          trigger_config: body.automation.trigger_config ?? {},
+          is_active: !!body.automation.is_active,
+          steps: fromServerSteps((body.steps ?? []) as ServerStepNode[]),
+        })
+      } catch {
+        if (!cancelled) setError(t("loadError", { status: 0 }))
       }
-      const body = await res.json()
-      if (cancelled) return
-      setInitial({
-        id: body.automation.id,
-        name: body.automation.name ?? "",
-        description: body.automation.description ?? "",
-        trigger_type: body.automation.trigger_type as AutomationTriggerType,
-        trigger_config: body.automation.trigger_config ?? {},
-        is_active: !!body.automation.is_active,
-        steps: fromServerSteps((body.steps ?? []) as ServerStepNode[]),
-      })
     }
     load()
     return () => {

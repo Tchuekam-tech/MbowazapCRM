@@ -103,16 +103,27 @@ function Donut({ data, currency }: { data: PipelineDonutData; currency: string }
       <svg viewBox={`0 0 ${size} ${size}`} className="h-48 w-48" role="img" aria-label={t('ariaLabel')}>
         {/* background ring */}
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--muted)" strokeWidth={ringWidth} />
-        {segments.map((seg) => (
-          <path
-            key={seg.id}
-            d={seg.path}
+        {data.stages.length === 1 ? (
+          <circle
+            cx={cx}
+            cy={cy}
+            r={r}
             fill="none"
-            stroke={seg.color}
+            stroke={data.stages[0].color}
             strokeWidth={ringWidth}
-            strokeLinecap="butt"
           />
-        ))}
+        ) : (
+          segments.map((seg) => (
+            <path
+              key={seg.id}
+              d={seg.path}
+              fill="none"
+              stroke={seg.color}
+              strokeWidth={ringWidth}
+              strokeLinecap="butt"
+            />
+          ))
+        )}
         {/* center label */}
         <text
           x={cx}

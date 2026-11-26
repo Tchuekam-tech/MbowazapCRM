@@ -831,7 +831,8 @@
         "fieldMap": {
           "name": "Nombre",
           "phone": "Teléfono",
-          "email": "Correo"
+          "email": "Correo",
+          "company": "Empresa"
         }
       },
       "scheduleSend": {
@@ -1836,6 +1837,7 @@
       "title": "Configuración del agente",
       "description": "Usa tu propia clave de OpenAI, Anthropic o Google Gemini. wacrm llama al proveedor directamente con tu clave: sin cargos de IA por usuario, y tus datos siguen siendo tuyos. Esto impulsa las respuestas redactadas con IA en la bandeja de entrada, el bot de respuesta automática y el Playground.",
       "adminOnlyConfig": "Solo los administradores y propietarios pueden cambiar la configuración de IA.",
+      "loading": "Cargando configuración de IA…",
       "loadFailed": "Error al cargar la configuración de IA",
       "providerAndKey": "Proveedor y clave",
       "encryptionNotice": "Tu clave se cifra en reposo (AES-256-GCM) y no se vuelve a mostrar después de guardarla.",

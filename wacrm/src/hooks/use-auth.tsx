@@ -311,11 +311,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const safetyTimer = setTimeout(() => {
       if (mounted) {
-        console.warn("[AuthProvider] getSession() timed out after 3s");
+        console.warn("[AuthProvider] getSession() timed out after 12s");
         setLoading(false);
         setProfileLoading(false);
       }
-    }, 3000);
+    }, 12000);
 
     const init = async () => {
       try {
