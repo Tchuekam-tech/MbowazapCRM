@@ -10,6 +10,8 @@ import {
   UserPlus,
   DollarSign,
   Send,
+  Globe,
+  ArrowUpRight,
 } from 'lucide-react'
 
 import {
