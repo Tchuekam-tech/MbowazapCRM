@@ -117,3 +117,21 @@ export async function loadMarketingAnalytics(
       .order('created_at', { ascending: false })
       .limit(2000),
   ]);
+
+  const links = (linksRes.data ?? []) as Array<{
+    utm_source: string | null;
+    clicks_count: number;
+    conversions_count: number;
+    attributed_revenue: number;
+    is_active: boolean;
+  }>;
+  const scores = (scoresRes.data ?? []) as Array<{ score: number; tier: string }>;
+  const sequences = (sequencesRes.data ?? []) as Array<{ status: string; replied_count: number }>;
+  const campaigns = (campaignsRes.data ?? []) as Array<{ status: string }>;
+  const coupons = (couponsRes.data ?? []) as Array<{
+    uses_count: number;
+    attributed_revenue: number;
+    is_active: boolean;
+  }>;
+  const wonDeals = (wonDealsRes.data ?? []) as Array<{ value: number | null }>;
+  const contacts = (contactsRes.data ?? []) as Array<{ utm_source: string | null }>;
