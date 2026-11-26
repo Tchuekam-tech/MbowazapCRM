@@ -338,3 +338,14 @@ export function AbCampaignsTab({
               <select
                 value={segmentId}
                 onChange={(e) => setSegmentId(e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs text-foreground"
+              >
+                <option value="">All Contacts (up to 200)</option>
+                {segments.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.cached_count})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
