@@ -67,6 +67,7 @@ export default function DashboardPage() {
 
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
+  const [presence, setPresence] = useState<DigitalPresenceReport | null>(null)
 
   const loadAll = useCallback(() => {
     const db = createClient()
