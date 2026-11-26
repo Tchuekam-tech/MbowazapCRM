@@ -245,3 +245,10 @@ function MarketingStudioInner() {
             </TabsTrigger>
             <TabsTrigger value="campaigns" className="gap-1.5 text-xs">
               <FlaskConical className="h-3.5 w-3.5" />
+              {t('tabs.campaigns')}
+            </TabsTrigger>
+            <TabsTrigger value="roi" className="gap-1.5 text-xs">
+              <TrendingUp className="h-3.5 w-3.5" />
+              {t('tabs.roi')}
+            </TabsTrigger>
+          </TabsList>
