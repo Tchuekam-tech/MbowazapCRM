@@ -215,3 +215,43 @@ export async function POST(request: NextRequest) {
           sentHoldout,
         });
       }
+
+      // Launch A/B test pass
+      let contactIds: string[] = [];
+      if (campaign.segment_id) {
+        const { data: seg } = await ctx.supabase
+          .from('marketing_segments')
+          .select('rules')
+          .eq('id', campaign.segment_id)
+          .eq('account_id', ctx.accountId)
+          .maybeSingle();
+        if (seg) {
+          const evalRes = await evaluateAccountSegment(
+            ctx.supabase,
+            ctx.accountId,
+            (seg.rules as SegmentRules) || {}
+          );
+          contactIds = evalRes.contactIds;
+        }
+      } else {
+        const { data: allContacts } = await ctx.supabase
+          .from('contacts')
+          .select('id')
+          .eq('account_id', ctx.accountId)
+          .limit(200);
+        contactIds = (allContacts ?? []).map((c) => c.id as string);
+      }
+
+      if (contactIds.length === 0) {
+        return NextResponse.json(
+          { error: 'No contacts match the target audience' },
+          { status: 400 }
+        );
+      }
+
+      // Deterministic Fisher-Yates shuffle for unbiased A/B split
+      const shuffled = [...contactIds.slice(0, 200)];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
+      }
