@@ -155,3 +155,26 @@ export async function POST(request: NextRequest) {
           return false;
         }
       };
+
+      if (body.action === 'promote_winner') {
+        const requestedWinner = body.winner === 'A' || body.winner === 'B' ? body.winner : null;
+        const autoVerdict = evaluateAbWinner(variantA, variantB, campaign.winner_metric);
+        const winnerKey = requestedWinner ?? autoVerdict.winner ?? 'A';
+        const winnerVariant = winnerKey === 'A' ? variantA : variantB;
+
+        const { data: holdoutRows } = await ctx.supabase
+          .from('ab_campaign_recipients')
+          .select('id, contact_id, contact:contacts(id, phone, wa_lid, name, company, email)')
+          .eq('campaign_id', campaignId)
+          .eq('variant_key', 'holdout')
+          .eq('status', 'pending');
+
+        let couponCode: string | null = null;
+        if (winnerVariant.coupon_id) {
+          const { data: cp } = await ctx.supabase
+            .from('promo_coupons')
+            .select('code')
+            .eq('id', winnerVariant.coupon_id)
+            .maybeSingle();
+          couponCode = cp?.code ?? null;
+        }
