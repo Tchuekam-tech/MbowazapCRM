@@ -297,6 +297,20 @@ function createBridgeHandler(overrides = {}) {
             return { protocol: PROTOCOL_VERSION, time: d.now() };
         },
 
+        async metrics() {
+            return typeof d.getRuntimeMetrics === 'function'
+                ? d.getRuntimeMetrics()
+                : {
+                    uptimeSeconds: Math.round(process.uptime()),
+                    memoryMb: { rss: 0, heapUsed: 0, heapTotal: 0 },
+                    eventLoopLagMs: { mean: 0, p95: 0, max: 0 },
+                    activeSockets: 0,
+                    connectedSockets: 0,
+                    outboxPendingBatches: 0,
+                    storeStats: { messages: 0, contacts: 0, chats: 0 },
+                };
+        },
+
         async cancelPairing(body) {
             const cmd = parsePairRequest(body);
             withPairing.cancel(cmd.method === 'code' ? cmd.phone : TEMP_QR_SESSION, cmd.pairingRef);
