@@ -274,3 +274,13 @@ function MarketingStudioInner() {
               onRefresh={loadAll}
             />
           </TabsContent>
+
+          <TabsContent value="leads">
+            <LeadSegmentsTab
+              leads={leads}
+              segments={segments}
+              tags={tags}
+              canEdit={canEdit}
+              onRefresh={loadAll}
+            />
+          </TabsContent>
