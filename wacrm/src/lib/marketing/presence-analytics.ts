@@ -296,3 +296,48 @@ export function computeDigitalPresenceReport(
 /**
  * Loads the complete cached Digital Presence report in one parallel DB pass.
  */
+export async function loadDigitalPresenceReport(
+  db: SupabaseClient,
+  accountId: string
+): Promise<DigitalPresenceReport> {
+  return serverCache.getOrLoad(
+    `marketing:presence:${accountId}`,
+    15_000,
+    async () => {
+      const [intRes, chRes, postRes, linksRes, contactsRes, dealsRes] =
+        await Promise.all([
+          db
+            .from('buffer_integrations')
+            .select(
+              'id, account_id, buffer_account_id, buffer_account_email, buffer_account_name, organization_id, organization_name, organizations_json, status, insights_available, last_synced_at, last_error, ai_audit_summary, ai_audit_at'
+            )
+            .eq('account_id', accountId)
+            .maybeSingle(),
+          db
+            .from('buffer_channels')
+            .select('*')
+            .eq('account_id', accountId)
+            .order('total_engagements', { ascending: false }),
+          db
+            .from('buffer_posts')
+            .select('*')
+            .eq('account_id', accountId)
+            .order('sent_at', { ascending: false })
+            .limit(100),
+          db
+            .from('growth_links')
+            .select(
+              'slug, utm_source, clicks_count, conversions_count, attributed_revenue, is_active'
+            )
+            .eq('account_id', accountId),
+          db
+            .from('contacts')
+            .select('utm_source')
+            .eq('account_id', accountId)
+            .not('utm_source', 'is', null),
+          db
+            .from('deals')
+            .select('value')
+            .eq('account_id', accountId)
+            .eq('status', 'won'),
+        ]);
