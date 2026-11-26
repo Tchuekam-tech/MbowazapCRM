@@ -566,3 +566,27 @@ export async function aiDeepAnalyzeContact(
     .eq('contact_id', contactId)
     .eq('account_id', accountId)
     .maybeSingle();
+
+  const { data: conv } = await db
+    .from('conversations')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('contact_id', contactId)
+    .order('last_message_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: msgs } = conv
+    ? await db
+        .from('messages')
+        .select('sender_type, content_text')
+        .eq('conversation_id', conv.id)
+        .order('created_at', { ascending: false })
+        .limit(15)
+    : { data: [] };
+
+  const transcript = ((msgs ?? []) as Array<{ sender_type: string; content_text: string | null }>)
+    .reverse()
+    .filter((m) => m.content_text)
+    .map((m) => `${m.sender_type === 'customer' ? 'Customer' : 'Business'}: ${m.content_text}`)
+    .join('\n');
