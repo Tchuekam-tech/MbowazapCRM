@@ -491,3 +491,18 @@ export function LeadSegmentsTab({
             </Button>
           </div>
         </form>
+
+        {/* Saved Segments */}
+        <div className="space-y-2">
+          <h3 className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Saved Smart Segments ({segments.length})
+          </h3>
+          {segments.map((seg) => (
+            <div
+              key={seg.id}
+              className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3"
+            >
+              <div>
+                <p className="text-sm font-medium text-foreground">{seg.name}</p>
+                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Users className="h-3 w-3" />
