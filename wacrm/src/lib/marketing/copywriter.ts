@@ -118,3 +118,44 @@ function buildFallbackAbCopy(req: CopywriterRequest): GeneratedAbCopy {
     : '';
   const offer = req.offer.trim() || 'our latest offer';
   const lang = (req.language || 'English').toLowerCase();
+
+  let aBody: string;
+  let bBody: string;
+
+  if (lang.startsWith('fr')) {
+    const cFr = req.couponCode
+      ? `\n\nUtilisez le code *${req.couponCode}* en répondant pour en profiter.`
+      : '';
+    aBody = `Bonjour {{first_name}} 👋\n\nPetite question rapide : vous cherchez encore à avancer sur ${offer} ?\n\nNous ouvrons quelques places prioritaires cette semaine.${cFr}\n\nRépondez *OUI* et je vous envoie les détails en 30 secondes.`;
+    bBody = `Bonjour {{first_name}} ✨\n\nOffre spéciale (${req.goal}) : ${offer} est disponible dès aujourd'hui.${cFr}\n\nLes créneaux partent vite — répondez simplement à ce message pour réserver le vôtre.`;
+  } else if (lang.startsWith('es')) {
+    const cEs = req.couponCode
+      ? `\n\nUsa el código *${req.couponCode}* al responder para activarlo.`
+      : '';
+    aBody = `Hola {{first_name}} 👋\n\nPregunta rápida: ¿sigues interesado en ${offer}?\n\nAbrimos acceso prioritario esta semana.${cEs}\n\nResponde *SÍ* y te comparto los detalles ahora mismo.`;
+    bBody = `Hola {{first_name}} ✨\n\nAcceso exclusivo (${req.goal}): ${offer} ya está disponible.${cEs}\n\nCupos limitados — responde a este mensaje para reservar el tuyo.`;
+  } else if (lang.startsWith('pt')) {
+    const cPt = req.couponCode
+      ? `\n\nUse o código *${req.couponCode}* ao responder para garantir.`
+      : '';
+    aBody = `Olá {{first_name}} 👋\n\nPergunta rápida: você ainda quer aproveitar ${offer}?\n\nLiberamos vagas prioritárias esta semana.${cPt}\n\nResponda *SIM* e envio os detalhes agora.`;
+    bBody = `Olá {{first_name}} ✨\n\nCondição especial (${req.goal}): ${offer} está disponível hoje.${cPt}\n\nVagas limitadas — responda esta mensagem para reservar.`;
+  } else {
+    aBody = `Hi {{first_name}} 👋\n\nQuick question — are you still looking into ${offer}?\n\nWe just opened priority access this week.${couponLine}\n\nReply *YES* and I'll send the quick breakdown right away.`;
+    bBody = `Hi {{first_name}} ✨\n\n${req.goal}: ${offer} is live right now.${couponLine}\n\nSpots are limited — just reply to this message and we'll get you set up in under 2 minutes.`;
+  }
+
+  return {
+    variantA: {
+      label: 'Conversational Hook',
+      body: aBody,
+      compliance: lintWhatsAppCopy(aBody),
+    },
+    variantB: {
+      label: 'Direct Value & Urgency',
+      body: bBody,
+      compliance: lintWhatsAppCopy(bBody),
+    },
+    usedAi: false,
+  };
+}
