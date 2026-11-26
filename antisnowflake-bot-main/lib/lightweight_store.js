@@ -17,10 +17,21 @@ try {
     // Use default if settings not available
 }
 
+function pruneMapCap(obj, maxKeys) {
+    const keys = Object.keys(obj)
+    if (keys.length <= maxKeys) return
+    const dropCount = keys.length - maxKeys
+    for (let i = 0; i < dropCount; i++) {
+        delete obj[keys[i]]
+    }
+}
+
 const store = {
     messages: {},
     contacts: {},
     chats: {},
+    _dirty: false,
+    _writing: false,
 
     readFromFile(filePath = STORE_FILE) {
         try {
@@ -29,9 +40,10 @@ const store = {
                 this.contacts = data.contacts || {}
                 this.chats = data.chats || {}
                 this.messages = data.messages || {}
-                
-                // Clean up any existing data to match new format
+
+                // Clean up any existing data to match bounded format
                 this.cleanupData()
+                this._dirty = false
             }
         } catch (e) {
             console.warn('Failed to read store file:', e.message)
