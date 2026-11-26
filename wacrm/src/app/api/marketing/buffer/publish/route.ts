@@ -1,0 +1,31 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { requireRole, toErrorResponse } from '@/lib/auth/account';
+import { decrypt } from '@/lib/whatsapp/encryption';
+import { mapWithConcurrency } from '@/lib/server/concurrency';
+import { BufferApiError, createBufferClient } from '@/lib/marketing/buffer-client';
+import { syncBufferForAccount } from '@/lib/marketing/buffer-sync';
+import { loadDigitalPresenceReport } from '@/lib/marketing/presence-analytics';
+
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
+/**
+ * Cross-channel publish / queue endpoint:
+ * Schedules or publishes a social post across one or more connected
+ * Buffer channels directly from MboWazapCRM (with optional /go/<slug>
+ * Growth Link CTA automatically embedded!).
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const ctx = await requireRole('agent');
+    const body = await request.json();
+
+    const channelIds = Array.isArray(body.channel_ids)
+      ? body.channel_ids.filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
+      : [];
+    const text = typeof body.text === 'string' ? body.text.trim() : '';
+    const mode =
+      body.mode === 'shareNow' || body.mode === 'customScheduled'
+        ? body.mode
+        : 'addToQueue';
+    const dueAt = typeof body.due_at === 'string' ? body.due_at : undefined;
