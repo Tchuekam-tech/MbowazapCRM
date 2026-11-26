@@ -197,3 +197,45 @@ export async function syncBufferForAccount(
         synced_at: nowIso,
       };
     });
+
+    const channelRows = channels.map((c) => {
+      const acc = stats.get(c.id);
+      const denom = acc ? Math.max(acc.impressions, acc.reach) : 0;
+      const engRate =
+        acc && denom > 0
+          ? Math.round((acc.engagements / denom) * 10000) / 100
+          : 0;
+      return {
+        account_id: accountId,
+        buffer_channel_id: c.id,
+        organization_id: orgId,
+        service: c.service,
+        name: c.name,
+        display_name: c.displayName,
+        avatar_url: c.avatar,
+        is_queue_paused: c.isQueuePaused,
+        sent_posts_count: acc?.sent ?? 0,
+        scheduled_posts_count: acc?.scheduled ?? 0,
+        total_impressions: acc?.impressions ?? 0,
+        total_reach: acc?.reach ?? 0,
+        total_engagements: acc?.engagements ?? 0,
+        total_clicks: acc?.clicks ?? 0,
+        engagement_rate: engRate,
+        last_post_at: acc?.lastPostAt ?? null,
+        synced_at: nowIso,
+      };
+    });
+
+    if (channelRows.length > 0) {
+      const { error: chErr } = await db
+        .from('buffer_channels')
+        .upsert(channelRows, { onConflict: 'account_id,buffer_channel_id' });
+      if (chErr) throw chErr;
+    }
+
+    if (postRows.length > 0) {
+      const { error: pErr } = await db
+        .from('buffer_posts')
+        .upsert(postRows, { onConflict: 'account_id,buffer_post_id' });
+      if (pErr) throw pErr;
+    }
