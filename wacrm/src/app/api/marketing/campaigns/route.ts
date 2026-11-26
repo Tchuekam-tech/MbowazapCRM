@@ -294,3 +294,34 @@ export async function POST(request: NextRequest) {
           status: 'pending' as const,
         };
       });
+
+      const { data: insertedRecips, error: recErr } = await ctx.supabase
+        .from('ab_campaign_recipients')
+        .upsert(planRows, { onConflict: 'campaign_id,contact_id', ignoreDuplicates: true })
+        .select('id, contact_id, variant_key');
+
+      if (recErr) return NextResponse.json({ error: recErr.message }, { status: 500 });
+
+      const testRecipients = (insertedRecips ?? []).filter(
+        (r) => r.variant_key === 'A' || r.variant_key === 'B'
+      );
+
+      const { data: contactRows } = await ctx.supabase
+        .from('contacts')
+        .select('id, phone, wa_lid, name, company, email')
+        .in(
+          'id',
+          testRecipients.map((r) => r.contact_id)
+        );
+      const contactById = new Map(
+        (contactRows ?? []).map((c) => [c.id as string, c])
+      );
+
+      const [cpA, cpB] = await Promise.all([
+        variantA.coupon_id
+          ? ctx.supabase.from('promo_coupons').select('code').eq('id', variantA.coupon_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        variantB.coupon_id
+          ? ctx.supabase.from('promo_coupons').select('code').eq('id', variantB.coupon_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
