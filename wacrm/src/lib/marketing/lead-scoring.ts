@@ -255,3 +255,35 @@ export function matchesSegmentRules(
     const hasExcluded = rules.excludeTagIds.some((tid) => contact.tagIds.includes(tid));
     if (hasExcluded) return false;
   }
+  if (typeof rules.activeWithinDays === 'number' && rules.activeWithinDays > 0) {
+    if (!contact.lastMessageAt) return false;
+    const cutoff = nowMs - rules.activeWithinDays * 86_400_000;
+    if (Date.parse(contact.lastMessageAt) < cutoff) return false;
+  }
+  if (typeof rules.inactiveDays === 'number' && rules.inactiveDays > 0) {
+    if (contact.lastMessageAt) {
+      const cutoff = nowMs - rules.inactiveDays * 86_400_000;
+      if (Date.parse(contact.lastMessageAt) > cutoff) return false;
+    }
+  }
+  if (rules.hasOpenDeal === true && contact.openDealsCount === 0) {
+    return false;
+  }
+  if (rules.hasOpenDeal === false && contact.openDealsCount > 0) {
+    return false;
+  }
+  if (typeof rules.minDealValue === 'number' && contact.openDealsValue < rules.minDealValue) {
+    return false;
+  }
+  if (rules.utmSource && rules.utmSource.trim()) {
+    if ((contact.utm_source ?? '').toLowerCase() !== rules.utmSource.trim().toLowerCase()) {
+      return false;
+    }
+  }
+  if (rules.utmCampaign && rules.utmCampaign.trim()) {
+    if ((contact.utm_campaign ?? '').toLowerCase() !== rules.utmCampaign.trim().toLowerCase()) {
+      return false;
+    }
+  }
+  return true;
+}
