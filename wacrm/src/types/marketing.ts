@@ -234,3 +234,14 @@ export interface MarketingAnalyticsSnapshot {
     hotLeadCount: number;
   };
 }
+
+// ============================================================
+// Buffer Omnichannel Digital Presence Types (Migration 051)
+// ============================================================
+
+export interface BufferOrganizationSummary {
+  id: string;
+  name: string;
+  ownerEmail?: string | null;
+}
+
