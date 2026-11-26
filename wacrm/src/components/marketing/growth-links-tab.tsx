@@ -370,3 +370,36 @@ export function GrowthLinksTab({
                     )}
                   </div>
                 </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-muted/50 p-2.5 text-center">
+                  <div>
+                    <p className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground">
+                      <MousePointerClick className="h-3 w-3" /> Clicks
+                    </p>
+                    <p className="text-sm font-semibold tabular-nums text-foreground">
+                      {link.clicks_count.toLocaleString()}
+                      <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                        ({link.unique_clicks_count} uniq)
+                      </span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground">
+                      <TrendingUp className="h-3 w-3" /> Leads
+                    </p>
+                    <p className="text-sm font-semibold tabular-nums text-foreground">
+                      {link.conversions_count.toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-muted-foreground">Lead Rate</p>
+                    <p className="text-sm font-semibold tabular-nums text-primary">
+                      {convRate}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
