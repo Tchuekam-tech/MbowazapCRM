@@ -60,3 +60,24 @@ CREATE TABLE IF NOT EXISTS growth_links (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_growth_links_account_created
+  ON growth_links (account_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_growth_links_account_ref
+  ON growth_links (account_id, ref_code)
+  WHERE ref_code IS NOT NULL;
+
+ALTER TABLE growth_links ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS set_updated_at ON growth_links;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON growth_links
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP POLICY IF EXISTS "growth_links_select" ON growth_links;
+CREATE POLICY "growth_links_select" ON growth_links
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "growth_links_insert" ON growth_links;
+CREATE POLICY "growth_links_insert" ON growth_links
+  FOR INSERT WITH CHECK (is_account_member(account_id, 'agent'));
+
