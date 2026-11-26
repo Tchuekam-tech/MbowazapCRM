@@ -221,3 +221,14 @@ export function LeadSegmentsTab({
           <Button
             size="sm"
             variant="outline"
+            disabled={!canEdit || recomputing}
+            onClick={handleRecomputeAll}
+          >
+            {recomputing ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Score All Contacts
+          </Button>
+        </div>
