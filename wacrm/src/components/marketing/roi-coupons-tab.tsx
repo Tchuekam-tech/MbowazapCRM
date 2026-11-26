@@ -129,3 +129,33 @@ export function RoiCouponsTab({
     }
   }
 
+  async function handleRedeem(coupon: PromoCoupon) {
+    const orderVal = Number(redeemValues[coupon.id] ?? 0);
+    if (!Number.isFinite(orderVal) || orderVal <= 0) {
+      toast.error('Enter an order value > 0 to log a redemption.');
+      return;
+    }
+    setRedeemingId(coupon.id);
+    try {
+      const res = await fetch('/api/marketing/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'redeem',
+          coupon_id: coupon.id,
+          order_value: orderVal,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(
+        `Redeemed ${coupon.code}! Attributed ${formatCurrency(data.netRevenue, coupon.currency)} net revenue.`
+      );
+      setRedeemValues((prev) => ({ ...prev, [coupon.id]: '' }));
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Redemption failed');
+    } finally {
+      setRedeemingId(null);
+    }
+  }
