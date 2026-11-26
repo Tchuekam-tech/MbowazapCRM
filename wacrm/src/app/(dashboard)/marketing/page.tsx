@@ -226,3 +226,13 @@ function MarketingStudioInner() {
         </div>
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList className="flex h-auto flex-wrap justify-start gap-1 bg-muted/60 p-1">
+            <TabsTrigger value="presence" className="gap-1.5 text-xs">
+              <Globe className="h-3.5 w-3.5" />
+              {t('tabs.presence')}
+            </TabsTrigger>
+            <TabsTrigger value="links" className="gap-1.5 text-xs">
+              <Link2 className="h-3.5 w-3.5" />
+              {t('tabs.links')}
+            </TabsTrigger>
+            <TabsTrigger value="leads" className="gap-1.5 text-xs">
