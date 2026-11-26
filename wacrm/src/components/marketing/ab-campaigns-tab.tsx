@@ -538,3 +538,23 @@ export function AbCampaignsTab({
                       ) : null
                     )}
                   </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {camp.status === 'draft' && (
+                      <Button
+                        size="sm"
+                        disabled={!canEdit || isBusy}
+                        onClick={() => handleLaunch(camp.id)}
+                      >
+                        {isBusy ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Send className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        Launch Split Test
+                      </Button>
+                    )}
+                    {camp.status === 'evaluating' && (
+                      <Button
+                        size="sm"
+                        disabled={!canEdit || isBusy}
