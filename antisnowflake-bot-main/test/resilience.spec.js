@@ -92,3 +92,14 @@ test('bridge GET /bridge/metrics returns signed runtime telemetry', async () => 
             body: '',
             secret,
             nowSeconds: Math.floor(Date.now() / 1000),
+        });
+        const res = await fetch(`http://127.0.0.1:${port}/bridge/metrics`, { headers });
+        assert.equal(res.status, 200);
+        const json = await res.json();
+        assert.equal(json.ok, true);
+        assert.equal(json.connectedSockets, 2);
+        assert.equal(json.eventLoopLagMs.p95, 2.1);
+    } finally {
+        server.close();
+    }
+});
