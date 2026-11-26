@@ -48,6 +48,7 @@ const SESSIONS_ROOT = path.join(__dirname, '../../data/sessions');
 
 const ROUTES = [
     { method: 'GET', pattern: /^\/bridge\/ping$/, name: 'ping' },
+    { method: 'GET', pattern: /^\/bridge\/metrics$/, name: 'metrics' },
     { method: 'POST', pattern: /^\/bridge\/pair$/, name: 'pair' },
     { method: 'POST', pattern: /^\/bridge\/pair\/cancel$/, name: 'cancelPairing' },
     { method: 'GET', pattern: /^\/bridge\/pairings\/([^/]+)$/, name: 'pairing', param: 'pairingRef' },
