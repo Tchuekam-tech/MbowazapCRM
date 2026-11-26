@@ -31,3 +31,35 @@ export interface SyncSummary {
   organizationId: string;
   organizationName: string | null;
 }
+
+/**
+ * Validates a new Buffer API key, encrypts it at rest, saves the
+ * integration row, and runs an immediate full channel & post sync.
+ */
+export async function connectBufferAccount(
+  db: SupabaseClient,
+  accountId: string,
+  userId: string,
+  rawApiKey: string,
+  opts: {
+    organizationId?: string;
+    fetchImpl?: BufferClientOptions['fetchImpl'];
+  } = {}
+): Promise<SyncSummary> {
+  const apiKey = rawApiKey.trim();
+  const client = createBufferClient({ apiKey, fetchImpl: opts.fetchImpl });
+  const accountInfo = await client.getAccount();
+
+  if (accountInfo.organizations.length === 0) {
+    throw new Error(
+      'No Buffer organization found on this API key. Connect at least one channel in Buffer first.'
+    );
+  }
+
+  const chosenOrg =
+    (opts.organizationId
+      ? accountInfo.organizations.find((o) => o.id === opts.organizationId)
+      : null) ?? accountInfo.organizations[0]!;
+
+  const encryptedKey = encrypt(apiKey);
+  const nowIso = new Date().toISOString();
