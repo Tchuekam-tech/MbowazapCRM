@@ -26,3 +26,16 @@ interface CacheEntry<T> {
   freshUntil: number;
   staleUntil: number;
 }
+
+export class FastTtlCache {
+  private readonly store = new Map<string, CacheEntry<unknown>>();
+  private readonly inflight = new Map<string, Promise<unknown>>();
+  private readonly maxEntries: number;
+  private hits = 0;
+  private misses = 0;
+  private coalesced = 0;
+  private staleHits = 0;
+
+  constructor(maxEntries = 1000) {
+    this.maxEntries = Math.max(16, maxEntries);
+  }
