@@ -44,3 +44,22 @@ describe('Buffer GraphQL Client', () => {
           },
         })
       );
+
+    const client = createBufferClient({ apiKey: 'buf_live_secret_123', fetchImpl });
+    const acct = await client.getAccount();
+    expect(acct.id).toBe('acc_1');
+    expect(acct.organizations).toHaveLength(1);
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe(BUFFER_GRAPHQL_ENDPOINT);
+    expect((init?.headers as Record<string, string>).Authorization).toBe(
+      'Bearer buf_live_secret_123'
+    );
+
+    const channels = await client.getChannels('org_1');
+    expect(channels).toHaveLength(2);
+    expect(channels[0]!.service).toBe('instagram');
+    expect(channels[1]!.service).toBe('twitter');
+    expect(channels[1]!.isQueuePaused).toBe(true);
+  });
+
