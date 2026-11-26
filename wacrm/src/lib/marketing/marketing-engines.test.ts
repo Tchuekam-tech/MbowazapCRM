@@ -67,3 +67,49 @@ describe('Feature 2: Behavioral Lead Scoring & Smart Segments', () => {
     expect(res.signals.length).toBeGreaterThanOrEqual(4);
   });
 
+  it('penalizes opted-out contacts to Cold and advises compliance', () => {
+    const res = computeLeadScore({
+      inboundMessageCount: 2,
+      outboundMessageCount: 2,
+      recentCustomerTexts: ['STOP'],
+      lastMessageAt: '2026-11-26T11:00:00Z',
+      openDealsCount: 0,
+      openDealsValue: 0,
+      wonDealsCount: 0,
+      tagNames: ['Opted Out'],
+      hasGrowthAttribution: false,
+      nowMs,
+    });
+    expect(res.tier).toBe('cold');
+    expect(res.intentLabel).toBe('Opted Out');
+    expect(res.nextBestAction.toLowerCase()).toContain('opt-out');
+  });
+
+  it('evaluates Smart Segment rules accurately including opt-out protection', () => {
+    const hotLead = {
+      id: 'c1',
+      utm_source: 'instagram',
+      utm_campaign: 'bf26',
+      tagIds: ['t1'],
+      tagNames: ['VIP'],
+      score: 84,
+      tier: 'hot' as const,
+      lastMessageAt: '2026-11-25T12:00:00Z',
+      openDealsCount: 1,
+      openDealsValue: 500,
+    };
+    expect(
+      matchesSegmentRules(
+        hotLead,
+        { tiers: ['hot'], minScore: 70, utmSource: 'instagram', activeWithinDays: 7 },
+        nowMs
+      )
+    ).toBe(true);
+    expect(
+      matchesSegmentRules(hotLead, { inactiveDays: 14 }, nowMs)
+    ).toBe(false);
+    expect(
+      matchesSegmentRules({ ...hotLead, tagNames: ['Opted Out'] }, { tiers: ['hot'] }, nowMs)
+    ).toBe(false);
+  });
+});
