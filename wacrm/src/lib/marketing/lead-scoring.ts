@@ -451,3 +451,35 @@ export async function recomputeAccountLeadScores(
  * Evaluates a Smart Segment against the account's contacts and returns
  * matching contact IDs + summary count.
  */
+export async function evaluateAccountSegment(
+  db: SupabaseClient,
+  accountId: string,
+  rules: SegmentRules
+): Promise<{ contactIds: string[]; totalContacts: number }> {
+  const [contactsRes, scoresRes, dealsRes, tagsRes] = await Promise.all([
+    db
+      .from('contacts')
+      .select('id, utm_source, utm_campaign')
+      .eq('account_id', accountId)
+      .limit(2000),
+    db
+      .from('contact_lead_scores')
+      .select('contact_id, score, tier, last_message_at')
+      .eq('account_id', accountId),
+    db
+      .from('deals')
+      .select('contact_id, status, value')
+      .eq('account_id', accountId)
+      .eq('status', 'open'),
+    db
+      .from('contact_tags')
+      .select('contact_id, tag_id, tags(name)')
+      .limit(5000),
+  ]);
+
+  const contacts = (contactsRes.data ?? []) as Array<{
+    id: string;
+    utm_source: string | null;
+    utm_campaign: string | null;
+  }>;
+  if (contacts.length === 0) return { contactIds: [], totalContacts: 0 };
