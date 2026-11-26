@@ -178,3 +178,21 @@ export function AbCampaignsTab({
       setBusyCampaignId(null);
     }
   }
+
+  async function handleDelete(id: string) {
+    try {
+      const res = await fetch(`/api/marketing/campaigns?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Experiment deleted');
+      onRefresh();
+    } catch {
+      toast.error('Failed to delete campaign');
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* AI Copywriter + A/B Builder */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
