@@ -244,3 +244,14 @@ export function AbCampaignsTab({
                 </select>
               </div>
             </div>
+
+            <div>
+              <Label className="text-xs">Product / Offer Details</Label>
+              <Textarea
+                value={offer}
+                onChange={(e) => setOffer(e.target.value)}
+                rows={3}
+                placeholder="e.g. 25% off our Business WhatsApp Automation pack for the next 48 hours + free setup call"
+                className="mt-1 text-xs"
+              />
+            </div>
