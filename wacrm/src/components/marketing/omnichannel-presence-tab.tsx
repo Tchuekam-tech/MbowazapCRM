@@ -204,3 +204,36 @@ export function OmnichannelPresenceTab({
     }!`;
     setPostText((prev) => `${prev}${snippet}`);
   }
+
+  async function handlePublish(e: React.FormEvent) {
+    e.preventDefault();
+    if (selectedChannels.length === 0 || !postText.trim()) {
+      toast.error('Select at least one social channel and write your post.');
+      return;
+    }
+    setPublishing(true);
+    try {
+      const res = await fetch('/api/marketing/buffer/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel_ids: selectedChannels,
+          text: postText.trim(),
+          mode: publishMode,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Publish failed');
+      toast.success(
+        publishMode === 'shareNow'
+          ? `Published immediately to ${data.succeeded} channel(s)!`
+          : `Queued to ${data.succeeded} Buffer channel(s)!`
+      );
+      setPostText('');
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Publishing failed');
+    } finally {
+      setPublishing(false);
+    }
+  }
