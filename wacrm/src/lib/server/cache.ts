@@ -11,3 +11,18 @@
 //     and container runtimes).
 // ============================================================
 
+export interface CacheStats {
+  size: number;
+  maxEntries: number;
+  hits: number;
+  misses: number;
+  coalesced: number;
+  staleHits: number;
+  hitRate: number;
+}
+
+interface CacheEntry<T> {
+  value: T;
+  freshUntil: number;
+  staleUntil: number;
+}
