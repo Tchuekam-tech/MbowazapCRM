@@ -133,3 +133,24 @@ export function AbCampaignsTab({
     }
   }
 
+  async function handleLaunch(campaignId: string) {
+    setBusyCampaignId(campaignId);
+    try {
+      const res = await fetch('/api/marketing/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'launch', campaign_id: campaignId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(
+        `Launched! Sent ${data.sentA} (A) & ${data.sentB} (B)${data.holdoutQueued ? `, ${data.holdoutQueued} reserved in holdout` : ''}.`
+      );
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Launch failed');
+    } finally {
+      setBusyCampaignId(null);
+    }
+  }
+
