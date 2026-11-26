@@ -463,3 +463,31 @@ export function LeadSegmentsTab({
               </select>
             </div>
           </div>
+
+          {previewCount !== null && (
+            <div className="flex items-center justify-between rounded-lg bg-primary/10 px-3 py-2 text-xs text-primary">
+              <span className="font-medium">Live Audience Match</span>
+              <span className="font-bold tabular-nums">{previewCount} contacts</span>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePreviewSegment}
+              className="flex-1"
+            >
+              <Eye className="mr-1.5 h-3.5 w-3.5" />
+              Preview Count
+            </Button>
+            <Button type="submit" disabled={!canEdit || savingSeg} className="flex-1">
+              {savingSeg ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Save Segment
+            </Button>
+          </div>
+        </form>
