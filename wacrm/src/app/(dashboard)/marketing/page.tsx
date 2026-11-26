@@ -160,3 +160,13 @@ function MarketingStudioInner() {
               />
               <span className="font-medium text-foreground">
                 DB {systemHealth.database.latencyMs}ms
+              </span>
+              {systemHealth.bot.reachable && systemHealth.bot.latencyMs !== null && (
+                <span className="text-muted-foreground">
+                  · Bot {systemHealth.bot.latencyMs}ms
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
