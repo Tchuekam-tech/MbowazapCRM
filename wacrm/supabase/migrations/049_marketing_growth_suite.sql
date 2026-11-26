@@ -100,3 +100,16 @@ CREATE TABLE IF NOT EXISTS growth_link_clicks (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_growth_link_clicks_link_created
+  ON growth_link_clicks (link_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_growth_link_clicks_visitor
+  ON growth_link_clicks (link_id, visitor_hash);
+
+ALTER TABLE growth_link_clicks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "growth_link_clicks_select" ON growth_link_clicks;
+CREATE POLICY "growth_link_clicks_select" ON growth_link_clicks
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+-- Atomic click recorder called from the public /go/[slug] redirect route via service_role.
