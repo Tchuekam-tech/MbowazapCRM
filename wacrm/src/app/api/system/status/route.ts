@@ -115,3 +115,11 @@ export async function GET() {
       },
       { staleWhileRevalidateMs: 10_000 }
     );
+
+    return NextResponse.json(snapshot, {
+      headers: { 'Cache-Control': 'private, no-store' },
+    });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
