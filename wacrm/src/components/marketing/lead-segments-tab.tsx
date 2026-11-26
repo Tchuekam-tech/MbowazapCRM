@@ -317,3 +317,23 @@ export function LeadSegmentsTab({
                       {lead.next_best_action}
                     </p>
                   )}
+
+                  {Array.isArray(lead.signals) && lead.signals.length > 0 && (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {lead.signals.slice(0, 4).map((sig, i) => (
+                        <span
+                          key={i}
+                          className="rounded-md bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
+                        >
+                          {sig.label} ({sig.points > 0 ? `+${sig.points}` : sig.points})
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
