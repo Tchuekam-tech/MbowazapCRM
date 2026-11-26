@@ -57,3 +57,7 @@ function MarketingStudioInner() {
   const [activeTab, setActiveTab] = useState(
     initialTab && VALID_TABS.has(initialTab) ? initialTab : 'links'
   );
+
+  const { defaultCurrency } = useAuth();
+  const canEdit = useCan('send-messages');
+  const canAdmin = useCan('edit-settings');
