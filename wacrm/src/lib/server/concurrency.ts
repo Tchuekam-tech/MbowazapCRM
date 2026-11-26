@@ -47,3 +47,20 @@ export async function withRetry<T>(
   const baseDelayMs = Math.max(10, opts.baseDelayMs ?? 150);
   const maxDelayMs = Math.max(baseDelayMs, opts.maxDelayMs ?? 2500);
   const shouldRetry = opts.shouldRetry ?? (() => true);
+
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fn(attempt);
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= maxAttempts || !shouldRetry(err, attempt)) {
+        throw err;
+      }
+      const exp = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt - 1));
+      const jitter = Math.floor(Math.random() * Math.min(200, exp * 0.3));
+      await new Promise((resolve) => setTimeout(resolve, exp + jitter));
+    }
+  }
+  throw lastErr;
+}
