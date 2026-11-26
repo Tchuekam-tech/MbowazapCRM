@@ -92,3 +92,26 @@ export async function GET() {
             : !dbErr
               ? 'degraded'
               : 'incident';
+
+        return {
+          status: overallHealth,
+          checkedAt: new Date().toISOString(),
+          crm: {
+            uptimeSeconds: Math.round(process.uptime()),
+            memoryMb: {
+              rss: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
+              heapUsed: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
+              heapTotal: Math.round((mem.heapTotal / 1024 / 1024) * 10) / 10,
+            },
+            cache: serverCache.stats(),
+          },
+          database: {
+            ok: !dbErr,
+            latencyMs: dbLatencyMs,
+            error: dbErr?.message ?? null,
+          },
+          bot,
+        };
+      },
+      { staleWhileRevalidateMs: 10_000 }
+    );
