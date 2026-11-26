@@ -113,3 +113,32 @@ CREATE POLICY "growth_link_clicks_select" ON growth_link_clicks
   FOR SELECT USING (is_account_member(account_id, 'viewer'));
 
 -- Atomic click recorder called from the public /go/[slug] redirect route via service_role.
+CREATE OR REPLACE FUNCTION record_growth_link_click(
+  p_link_id UUID,
+  p_account_id UUID,
+  p_visitor_hash TEXT,
+  p_referrer TEXT DEFAULT NULL,
+  p_user_agent TEXT DEFAULT NULL
+) RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_seen BOOLEAN;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM growth_link_clicks
+    WHERE link_id = p_link_id
+      AND visitor_hash = p_visitor_hash
+      AND created_at >= NOW() - INTERVAL '24 hours'
+  ) INTO v_seen;
+
+  INSERT INTO growth_link_clicks (link_id, account_id, visitor_hash, referrer, user_agent)
+  VALUES (p_link_id, p_account_id, p_visitor_hash, p_referrer, p_user_agent);
+
+  UPDATE growth_links
+  SET clicks_count = clicks_count + 1,
+      unique_clicks_count = unique_clicks_count + CASE WHEN v_seen THEN 0 ELSE 1 END,
+      updated_at = NOW()
+  WHERE id = p_link_id;
