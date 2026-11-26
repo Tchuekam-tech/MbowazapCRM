@@ -126,3 +126,11 @@ function createRuntimeMonitor({
 
         const rawUrl = env.WACRM_URL || env.WACRM_BASE_URL || env.WACRM_SERVICE_URL;
         const baseUrl = normalizeBaseUrl(rawUrl);
+
+        if (baseUrl && env.DISABLE_KEEPALIVE !== 'true' && !keepAliveTimer) {
+            const intervalMs = Math.max(30_000, Number(env.KEEPALIVE_INTERVAL_MS) || DEFAULT_KEEPALIVE_MS);
+            keepAliveTimer = setInterval(() => {
+                void pingWacrmHealth(baseUrl);
+            }, intervalMs);
+            if (typeof keepAliveTimer.unref === 'function') keepAliveTimer.unref();
+        }
