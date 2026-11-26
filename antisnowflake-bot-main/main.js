@@ -326,8 +326,30 @@ async function handleMessages(sock, messageUpdate, printLog) {
         if (type !== 'notify' && !(type === 'append' && message.key?.fromMe)) return;
 
         const msgId = message.key?.id;
-        chatId = message.key?.remoteJid || null;
-        if (!msgId || !chatId) return;
+        const rawChatId = message.key?.remoteJid || null;
+        if (!msgId || !rawChatId) return;
+
+        // Learn and prefer phone JID over @lid for 1:1 chats so replies deliver reliably
+        if (!rawChatId.endsWith('@g.us')) {
+            const selfPhone = bridgeState.contactKeyFromJid(sock?.user?.id || sock?.authState?.creds?.me?.id);
+            const selfLid = bridgeState.contactKeyFromJid(sock?.user?.lid || sock?.authState?.creds?.me?.lid);
+            if (!message.key.fromMe) {
+                const candidates = [
+                    rawChatId,
+                    message.key.senderPn,
+                    message.key.senderLid,
+                    message.key.remoteJidAlt,
+                ].filter(Boolean);
+                const phoneJid = candidates.find(j => String(j).endsWith('@s.whatsapp.net'));
+                const lidJid = candidates.find(j => String(j).endsWith('@lid'));
+                if (lidJid && phoneJid) {
+                    bridgeState.registerLidPhoneMapping(lidJid, phoneJid, { selfPhone, selfLid });
+                }
+            }
+            chatId = bridgeState.resolvePreferredJid(rawChatId);
+        } else {
+            chatId = rawChatId;
+        }
 
         // 1. Loop Prevention FIRST (before dedup & daily cap so bot's own messages never exhaust quotas)
         if (message.key.fromMe) {

@@ -17,6 +17,15 @@ try {
     // Use default if settings not available
 }
 
+function normalizeJid(jid) {
+    if (typeof jid !== 'string' || !jid) return jid;
+    const atIdx = jid.indexOf('@');
+    if (atIdx === -1) return jid;
+    const userPart = jid.slice(0, atIdx).split(':')[0];
+    const serverPart = jid.slice(atIdx + 1);
+    return `${userPart}@${serverPart}`;
+}
+
 function pruneMapCap(obj, maxKeys) {
     const keys = Object.keys(obj)
     if (keys.length <= maxKeys) return
@@ -121,7 +130,7 @@ const store = {
             let changed = false
             messages.forEach(msg => {
                 if (!msg.key?.remoteJid) return
-                const jid = msg.key.remoteJid
+                const jid = normalizeJid(msg.key.remoteJid)
                 this.messages[jid] = this.messages[jid] || []
 
                 this.messages[jid].push(msg)
@@ -137,13 +146,21 @@ const store = {
             }
         })
 
-        ev.on('contacts.update', (contacts) => {
+        const mergeContacts = (contacts) => {
+            if (!Array.isArray(contacts)) return
             let changed = false
             contacts.forEach(contact => {
-                if (contact.id) {
-                    this.contacts[contact.id] = {
-                        id: contact.id,
-                        name: contact.notify || contact.name || ''
+                if (contact?.id) {
+                    const id = normalizeJid(contact.id)
+                    const prev = this.contacts[id] || {}
+                    this.contacts[id] = {
+                        ...prev,
+                        id,
+                        name: contact.notify || contact.name || prev.name || '',
+                        ...(contact.lid ? { lid: contact.lid } : {}),
+                        ...(contact.jid ? { jid: contact.jid } : {}),
+                        ...(contact.phoneNumber ? { phoneNumber: contact.phoneNumber } : {}),
+                        ...(contact.notify ? { notify: contact.notify } : {}),
                     }
                     changed = true
                 }
@@ -152,7 +169,10 @@ const store = {
                 pruneMapCap(this.contacts, MAX_CONTACTS)
                 this._dirty = true
             }
-        })
+        }
+
+        ev.on('contacts.update', mergeContacts)
+        ev.on('contacts.upsert', mergeContacts)
 
         ev.on('chats.set', (chats) => {
             this.chats = {}
@@ -165,7 +185,22 @@ const store = {
     },
 
     async loadMessage(jid, id) {
-        return this.messages[jid]?.find(m => m.key.id === id) || null
+        if (!id) return null
+        if (jid) {
+            const direct = this.messages[jid]?.find(m => m.key?.id === id)
+            if (direct) return direct
+            const norm = normalizeJid(jid)
+            if (norm !== jid) {
+                const normalized = this.messages[norm]?.find(m => m.key?.id === id)
+                if (normalized) return normalized
+            }
+        }
+        for (const list of Object.values(this.messages)) {
+            if (!Array.isArray(list)) continue
+            const found = list.find(m => m.key?.id === id)
+            if (found) return found
+        }
+        return null
     },
 
     getStats() {

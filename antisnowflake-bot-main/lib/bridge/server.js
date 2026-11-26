@@ -460,7 +460,11 @@ function createBridgeHandler(overrides = {}) {
         async send(body) {
             const cmd = parseSendRequest(body);
             const sock = requireConnected(cmd.session);
-            const jid = recipientJid(cmd.to);
+            const rawJid = recipientJid(cmd.to);
+            const jid = d.state.resolvePreferredJid?.(rawJid) || rawJid;
+            if (jid.endsWith('@lid')) {
+                d.log?.warn?.(`[bridge] Sending to unresolved LID ${jid} (no phone mapping cached yet)`);
+            }
 
             // Optional realistic typing simulation right on the Baileys socket
             // before sending so contacts see "typing..." naturally.
@@ -477,10 +481,10 @@ function createBridgeHandler(overrides = {}) {
                         await sleepMs(slice);
                         remaining -= slice;
                         if (remaining > 0) {
-                            await withTimeout(Promise.resolve(sock.sendPresenceUpdate('composing', jid)), d.presenceTimeoutMs()).catch(() => {});
+                            await withTimeout(Promise.resolve(sock.sendPresenceUpdate('composing', jid)), d.presenceTimeoutMs()).catch(() => { });
                         }
                     }
-                    await withTimeout(Promise.resolve(sock.sendPresenceUpdate('paused', jid)), d.presenceTimeoutMs()).catch(() => {});
+                    await withTimeout(Promise.resolve(sock.sendPresenceUpdate('paused', jid)), d.presenceTimeoutMs()).catch(() => { });
                 } catch (_) {
                     // Presence is cosmetic; never block message delivery.
                 }
@@ -491,7 +495,10 @@ function createBridgeHandler(overrides = {}) {
             // resolves) is recognised as already stored by wacrm.
             const options = { messageId: d.generateMessageId(sock.user?.id) };
             if (cmd.quotedId) {
-                const quoted = await d.loadMessage(jid, cmd.quotedId);
+                let quoted = await d.loadMessage(jid, cmd.quotedId);
+                if (!quoted && jid !== rawJid) {
+                    quoted = await d.loadMessage(rawJid, cmd.quotedId);
+                }
                 if (quoted) options.quoted = quoted;
             }
             d.state.markCrmSent(options.messageId);
@@ -525,7 +532,8 @@ function createBridgeHandler(overrides = {}) {
         async presence(body) {
             const cmd = parsePresenceRequest(body);
             const sock = requireConnected(cmd.session);
-            const jid = recipientJid(cmd.to);
+            const rawJid = recipientJid(cmd.to);
+            const jid = d.state.resolvePreferredJid?.(rawJid) || rawJid;
             try {
                 await withTimeout(Promise.resolve(sock.sendPresenceUpdate(cmd.presence, jid)), d.presenceTimeoutMs());
             } catch (err) {
@@ -537,7 +545,8 @@ function createBridgeHandler(overrides = {}) {
         async react(body) {
             const cmd = parseReactRequest(body);
             const sock = requireConnected(cmd.session);
-            const jid = recipientJid(cmd.to);
+            const rawJid = recipientJid(cmd.to);
+            const jid = d.state.resolvePreferredJid?.(rawJid) || rawJid;
             const messageId = d.generateMessageId(sock.user?.id);
             d.state.markCrmSent(messageId);
             try {

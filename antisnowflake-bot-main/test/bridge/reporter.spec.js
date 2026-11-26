@@ -752,3 +752,124 @@ test('sendMessage pre-marks messageId so synchronous upsert echo does not trigge
     assert.equal(client.emitted[0].payload.origin, 'davila');
     assert.equal(state.isContactPaused(CUSTOMER_PHONE), false);
 });
+
+test('inbound @lid message with senderPn learns mapping and never confuses fromMe senderPn', async () => {
+    const client = mockWacrmClient();
+    const state = tempState();
+    const reporter = createReporter({ getClient: () => client, state });
+    const sock = {
+        user: { id: `${SESSION}:1@s.whatsapp.net`, lid: '888777666555@lid' },
+        ev: { on() {} },
+        sendMessage: async (jid) => ({ key: { id: 'OUT_1', remoteJid: jid, fromMe: true } }),
+    };
+    reporter.attachSocket(sock, SESSION);
+
+    await reporter.processMessage(SESSION, {
+        key: {
+            id: 'LID_IN_1',
+            remoteJid: `${CUSTOMER_LID}@lid`,
+            senderPn: `${CUSTOMER_PHONE}@s.whatsapp.net`,
+            fromMe: false,
+        },
+        message: { conversation: 'Hello from LID' },
+        pushName: 'Giantech',
+    });
+
+    assert.equal(state.getPhoneForLid(CUSTOMER_LID), CUSTOMER_PHONE);
+    assert.equal(state.getLidForPhone(CUSTOMER_PHONE), CUSTOMER_LID);
+    assert.equal(client.emitted.length, 1);
+    assert.deepEqual(client.emitted[0].payload.chat, {
+        lid: CUSTOMER_LID,
+        phone: CUSTOMER_PHONE,
+        pushName: 'Giantech',
+    });
+
+    // Subsequent fromMe echo on @lid whose senderPn is our own bot session must still enrich with customer phone
+    await reporter.processMessage(SESSION, {
+        key: {
+            id: 'LID_OUT_1',
+            remoteJid: `${CUSTOMER_LID}@lid`,
+            senderPn: `${SESSION}@s.whatsapp.net`,
+            fromMe: true,
+        },
+        message: { conversation: 'Manual phone reply' },
+    });
+
+    assert.equal(client.emitted.length, 2);
+    assert.equal(client.emitted[1].payload.chat.phone, CUSTOMER_PHONE);
+    assert.equal(client.emitted[1].payload.chat.lid, CUSTOMER_LID);
+});
+
+test('messaging-history.set chats and chats.phoneNumberShare register LID-PN mappings and emit contact.upsert', () => {
+    const client = mockWacrmClient();
+    const state = tempState();
+    const listeners = new Map();
+    const sock = {
+        user: { id: `${SESSION}:1@s.whatsapp.net`, lid: '888777666555@lid' },
+        ev: {
+            on(name, cb) {
+                if (!listeners.has(name)) listeners.set(name, []);
+                listeners.get(name).push(cb);
+            },
+        },
+        sendMessage: async () => ({}),
+    };
+    const reporter = createReporter({ getClient: () => client, state });
+    reporter.attachSocket(sock, SESSION);
+
+    for (const cb of listeners.get('messaging-history.set') || []) {
+        cb({
+            chats: [
+                {
+                    id: `${CUSTOMER_LID}@lid`,
+                    lidJid: `${CUSTOMER_LID}@lid`,
+                    pnJid: `${CUSTOMER_PHONE}@s.whatsapp.net`,
+                    name: 'CEO Giantech',
+                },
+            ],
+            contacts: [],
+            messages: [],
+        });
+    }
+
+    assert.equal(state.getPhoneForLid(CUSTOMER_LID), CUSTOMER_PHONE);
+    assert.ok(
+        client.emitted.some(
+            (e) =>
+                e.type === 'contact.upsert' &&
+                e.payload.chat.phone === CUSTOMER_PHONE &&
+                e.payload.chat.lid === CUSTOMER_LID &&
+                e.payload.name === 'CEO Giantech'
+        )
+    );
+
+    const shareLid = '222333444555666';
+    const sharePhone = '237644556677';
+    for (const cb of listeners.get('chats.phoneNumberShare') || []) {
+        cb({ lid: `${shareLid}@lid`, jid: `${sharePhone}@s.whatsapp.net` });
+    }
+
+    assert.equal(state.getPhoneForLid(shareLid), sharePhone);
+    assert.ok(
+        client.emitted.some(
+            (e) =>
+                e.type === 'contact.upsert' &&
+                e.payload.chat.phone === sharePhone &&
+                e.payload.chat.lid === shareLid
+        )
+    );
+});
+
+test('createBridgeState contact pauses are alias-aware across phone and LID', () => {
+    const state = tempState();
+    state.registerLidPhoneMapping(CUSTOMER_LID, CUSTOMER_PHONE);
+
+    const until = Date.now() + 60_000;
+    state.setContactPause(CUSTOMER_PHONE, until);
+    assert.equal(state.isContactPaused(CUSTOMER_PHONE), true);
+    assert.equal(state.isContactPaused(CUSTOMER_LID), true);
+
+    state.setContactPause(CUSTOMER_LID, null);
+    assert.equal(state.isContactPaused(CUSTOMER_PHONE), false);
+    assert.equal(state.isContactPaused(CUSTOMER_LID), false);
+});

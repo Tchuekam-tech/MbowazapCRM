@@ -285,3 +285,75 @@ test('main.js exports every symbol destructured by index.js and tracks bot-sent 
         global.botModeCache = prevMode;
     }
 });
+
+test('handleMessages learns LID->PN from senderPn and replies to phone JID', async () => {
+    resetAntiBanState();
+    const prevMode = global.botModeCache;
+    global.botModeCache = { isPublic: true };
+    const lidMapPath = path.join(__dirname, '../data/bridge/lid-map.json');
+    const existed = fs.existsSync(lidMapPath);
+    const prevMap = existed ? fs.readFileSync(lidMapPath, 'utf8') : null;
+    try {
+        const sock = makeMockSock();
+        const lid = '987654321098765';
+        const phone = '237640257412';
+        await handleMessages(sock, {
+            type: 'notify',
+            messages: [
+                {
+                    key: {
+                        id: 'LID_PING_1',
+                        remoteJid: `${lid}@lid`,
+                        senderPn: `${phone}@s.whatsapp.net`,
+                        fromMe: false,
+                    },
+                    pushName: 'Ceo Giantech',
+                    message: { conversation: '.ping' },
+                },
+            ],
+        });
+
+        const pingReply = sock.sent.find((s) => s.content?.text && s.content.text.includes('RESPONSE'));
+        assert.ok(pingReply, 'bot must reply to .ping from LID chat');
+        assert.equal(pingReply.jid, `${phone}@s.whatsapp.net`);
+    } finally {
+        global.botModeCache = prevMode;
+        if (existed) fs.writeFileSync(lidMapPath, prevMap, 'utf8');
+        else if (fs.existsSync(lidMapPath)) fs.unlinkSync(lidMapPath);
+    }
+});
+
+test('lightweight_store normalizes device suffixes and resolves cross-JID loadMessage lookups', async () => {
+    const store = require('../lib/lightweight_store');
+    const prevMessages = store.messages;
+    store.messages = {};
+    try {
+        const listeners = new Map();
+        const ev = {
+            on(name, fn) {
+                listeners.set(name, fn);
+            },
+        };
+        store.bind(ev);
+
+        listeners.get('messages.upsert')({
+            messages: [
+                {
+                    key: { id: 'CROSS_JID_MSG_1', remoteJid: '237640257412:15@s.whatsapp.net', fromMe: false },
+                    message: { conversation: 'hello sir' },
+                },
+            ],
+        });
+
+        const byNorm = await store.loadMessage('237640257412@s.whatsapp.net', 'CROSS_JID_MSG_1');
+        assert.equal(byNorm?.message?.conversation, 'hello sir');
+
+        const byDevice = await store.loadMessage('237640257412:15@s.whatsapp.net', 'CROSS_JID_MSG_1');
+        assert.equal(byDevice?.message?.conversation, 'hello sir');
+
+        const byCrossLid = await store.loadMessage('987654321098765@lid', 'CROSS_JID_MSG_1');
+        assert.equal(byCrossLid?.message?.conversation, 'hello sir');
+    } finally {
+        store.messages = prevMessages;
+    }
+});

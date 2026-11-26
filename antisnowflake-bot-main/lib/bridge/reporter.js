@@ -64,21 +64,21 @@ function isDirectChat(jid) {
 }
 
 /**
- * Extracts ChatRef (phone, lid, pushName) from remoteJid, participant, and pushName
+ * Extracts ChatRef (phone, lid, pushName) from remoteJid, participant, pushName, and optional alt JIDs
  */
-function extractChatRef(remoteJid, participant = null, pushName = null) {
+function extractChatRef(remoteJid, participant = null, pushName = null, extraJids = []) {
     const chat = {};
-    const jids = [remoteJid, participant].filter(Boolean);
+    const jids = [remoteJid, participant, ...(Array.isArray(extraJids) ? extraJids : [])].filter(Boolean);
 
     for (const jid of jids) {
         const parts = String(jid).split('@');
         if (parts.length !== 2) continue;
         const cleanUser = parts[0].split(':')[0].replace(/[^0-9]/g, '');
         const server = parts[1];
-        if (server === 's.whatsapp.net' && SESSION_PATTERN.test(cleanUser)) {
-            chat.phone = cleanUser;
+        if ((server === 's.whatsapp.net' || server === 'c.us') && SESSION_PATTERN.test(cleanUser)) {
+            if (!chat.phone) chat.phone = cleanUser;
         } else if (server === 'lid' && CONTACT_PATTERN.test(cleanUser)) {
-            chat.lid = cleanUser;
+            if (!chat.lid) chat.lid = cleanUser;
         }
     }
 
@@ -325,6 +325,68 @@ function createReporter({
     downloadMediaImpl = null,
 } = {}) {
     const davilaSentMap = new Map(); // msgId -> expiresAt
+    const selfIdentities = new Map(); // session -> { sock, selfPhone, selfLid }
+
+    function cleanSelfDigits(jid) {
+        const digits = String(jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        return digits || undefined;
+    }
+
+    function getSelfIdentity(session) {
+        const entry = selfIdentities.get(session);
+        const rawLid = entry?.sock?.user?.lid || entry?.sock?.authState?.creds?.me?.lid;
+        return {
+            selfPhone: entry?.selfPhone || session,
+            selfLid: cleanSelfDigits(rawLid) || entry?.selfLid,
+        };
+    }
+
+    function extraJidsForMessageKey(key) {
+        if (!key || !isDirectChat(key.remoteJid)) return [];
+        if (!key.fromMe) {
+            return [
+                key.remoteJidAlt,
+                key.senderPn,
+                key.senderLid,
+                key.participantPn,
+                key.participantLid,
+                key.participantAlt,
+            ].filter(Boolean);
+        }
+        // On fromMe stanzas, senderPn/senderLid identify our own account, never the customer.
+        return [key.remoteJidAlt, key.recipientPn, key.recipientLid].filter(Boolean);
+    }
+
+    function enrichChat(session, chat) {
+        if (!chat) return chat;
+        if (chat.lid && chat.phone) {
+            state.registerLidPhoneMapping?.(chat.lid, chat.phone, getSelfIdentity(session));
+        } else if (chat.lid && !chat.phone) {
+            const phone = state.getPhoneForLid?.(chat.lid);
+            if (phone) chat.phone = phone;
+        } else if (chat.phone && !chat.lid) {
+            const lid = state.getLidForPhone?.(chat.phone);
+            if (lid) chat.lid = lid;
+        }
+        return chat;
+    }
+
+    function phoneDigitsToJid(rawPhone) {
+        const digits = cleanSelfDigits(rawPhone);
+        return digits && SESSION_PATTERN.test(digits) ? `${digits}@s.whatsapp.net` : null;
+    }
+
+    function learnFromContactOrChat(session, obj) {
+        if (!obj || typeof obj !== 'object') return false;
+        const primary = obj.id || obj.jid || obj.pnJid || obj.lid || obj.lidJid;
+        if (primary && !isDirectChat(primary)) return false;
+        const extras = [obj.jid, obj.pnJid, obj.lid, obj.lidJid, phoneDigitsToJid(obj.phoneNumber)].filter(Boolean);
+        const chat = extractChatRef(primary, null, null, extras);
+        if (chat.lid && chat.phone) {
+            return Boolean(state.registerLidPhoneMapping?.(chat.lid, chat.phone, getSelfIdentity(session)));
+        }
+        return false;
+    }
 
     function getDownloader() {
         if (downloadMediaImpl) return downloadMediaImpl;
@@ -408,7 +470,10 @@ function createReporter({
 
         const inspected = inspectMessageContent(inner);
 
-        const chat = extractChatRef(remoteJid, mek.key.participant, mek.pushName);
+        const chat = enrichChat(
+            session,
+            extractChatRef(remoteJid, mek.key.participant, mek.pushName, extraJidsForMessageKey(mek.key))
+        );
         if (!chat.phone && !chat.lid) {
             // Cannot attribute conversation to a valid contact phone or LID
             return;
@@ -542,7 +607,16 @@ function createReporter({
         const mappedStatus = mapBaileysStatus(update.update.status);
         if (!mappedStatus) return;
 
-        const chat = extractChatRef(update.key.remoteJid, update.key.participant);
+        if (update.update.status === 0) {
+            log.warn(
+                `[wacrm-reporter] WhatsApp message ${messageId} failed delivery (remoteJid=${update.key.remoteJid}, stub=${JSON.stringify(update.update?.messageStubParameters || [])})`
+            );
+        }
+
+        const chat = enrichChat(
+            session,
+            extractChatRef(update.key.remoteJid, update.key.participant, null, extraJidsForMessageKey(update.key))
+        );
         if (!chat.phone && !chat.lid) return;
 
         const eventId = deterministicEventId(session, 'status', `${messageId}:${mappedStatus}`);
@@ -567,7 +641,10 @@ function createReporter({
         if (!isDirectChat(reactionUpdate.key.remoteJid)) return;
 
         const targetId = reactionUpdate.reaction?.key?.id || reactionUpdate.key.id;
-        const chat = extractChatRef(reactionUpdate.key.remoteJid, reactionUpdate.key.participant);
+        const chat = enrichChat(
+            session,
+            extractChatRef(reactionUpdate.key.remoteJid, reactionUpdate.key.participant, null, extraJidsForMessageKey(reactionUpdate.key))
+        );
         if (!chat.phone && !chat.lid) return;
 
         const emoji = reactionUpdate.reaction?.text ?? '';
@@ -657,11 +734,20 @@ function createReporter({
 
     function reportContactProfile(session, contact) {
         if (!contact || typeof contact !== 'object') return;
-        const jid = contact.id || contact.jid;
+        const primaryJid = contact.id || contact.jid || contact.pnJid;
+        if (primaryJid && !isDirectChat(primaryJid) && !contact.lid && !contact.lidJid) return;
+        if (typeof contact.id === 'string' && /@(g\.us|broadcast|newsletter)$/i.test(contact.id)) return;
         const name = firstText(contact.name, contact.verifiedName, contact.businessName, contact.notify);
-        const chat = extractChatRef(jid, null, name);
+        const extraJids = [
+            contact.jid,
+            contact.pnJid,
+            contact.lid,
+            contact.lidJid,
+            phoneDigitsToJid(contact.phoneNumber),
+        ].filter(Boolean);
+        const chat = enrichChat(session, extractChatRef(primaryJid, null, name, extraJids));
         if (!chat.phone && !chat.lid) return;
-        const identity = chat.phone || chat.lid;
+        const identity = [chat.phone, chat.lid].filter(Boolean).join('|');
         const eventId = deterministicEventId(session, 'contact.upsert', `${identity}:${name || ''}`);
         getClient()?.emit(session, 'contact.upsert', { chat, ...(name ? { name } : {}) }, eventId);
     }
@@ -720,6 +806,12 @@ function createReporter({
         if (!sock || !sock.ev) return;
         if (!SESSION_PATTERN.test(String(phoneNumber))) return;
 
+        selfIdentities.set(phoneNumber, {
+            sock,
+            selfPhone: phoneNumber,
+            selfLid: cleanSelfDigits(sock.user?.lid || sock.authState?.creds?.me?.lid),
+        });
+
         // Everything sent through this socket is automation — Davila, a
         // command reply, a system notice — whether or not the caller tagged
         // it `_origin: 'davila'`. Only fromMe messages that never came
@@ -743,7 +835,7 @@ function createReporter({
                             preId = generateMessageIDV2(sock.user.id);
                             sendOptions = { ...options, messageId: preId };
                         }
-                    } catch (_) {}
+                    } catch (_) { }
                 }
                 if (preId) markDavilaSent(preId);
                 const result = await originalSendMessage(jid, content, sendOptions);
@@ -773,7 +865,31 @@ function createReporter({
         // address-book snapshots needed to give existing conversations names.
         sock.ev.on('messaging-history.set', (history) => {
             try {
+                for (const chat of history?.chats || []) {
+                    learnFromContactOrChat(phoneNumber, chat);
+                }
+                for (const contact of history?.contacts || []) {
+                    learnFromContactOrChat(phoneNumber, contact);
+                }
+                for (const mek of history?.messages || []) {
+                    if (mek?.key && isDirectChat(mek.key.remoteJid) && !mek.key.fromMe) {
+                        const chat = extractChatRef(mek.key.remoteJid, mek.key.participant, mek.pushName, extraJidsForMessageKey(mek.key));
+                        if (chat.lid && chat.phone) {
+                            state.registerLidPhoneMapping?.(chat.lid, chat.phone, getSelfIdentity(phoneNumber));
+                        }
+                    }
+                }
                 reportContactProfiles(phoneNumber, history?.contacts);
+                for (const chat of history?.chats || []) {
+                    if (chat && isDirectChat(chat.id) && (chat.lidJid || chat.pnJid)) {
+                        reportContactProfile(phoneNumber, {
+                            id: chat.id,
+                            name: chat.name,
+                            lid: chat.lidJid,
+                            pnJid: chat.pnJid,
+                        });
+                    }
+                }
                 for (const mek of history?.messages || []) {
                     reportMessageSafe(phoneNumber, mek, true);
                 }
@@ -791,6 +907,37 @@ function createReporter({
         };
         sock.ev.on('contacts.upsert', reportContacts);
         sock.ev.on('contacts.update', reportContacts);
+
+        const reportChats = (chats) => {
+            try {
+                if (!Array.isArray(chats)) return;
+                for (const chat of chats) {
+                    if (learnFromContactOrChat(phoneNumber, chat)) {
+                        reportContactProfile(phoneNumber, {
+                            id: chat.id,
+                            name: chat.name,
+                            lid: chat.lidJid,
+                            pnJid: chat.pnJid,
+                        });
+                    }
+                }
+            } catch (err) {
+                log.error('[wacrm-reporter] chat sync listener error:', err.message);
+            }
+        };
+        sock.ev.on('chats.upsert', reportChats);
+        sock.ev.on('chats.update', reportChats);
+
+        sock.ev.on('chats.phoneNumberShare', (share) => {
+            try {
+                if (share?.lid && share?.jid) {
+                    state.registerLidPhoneMapping?.(share.lid, share.jid, getSelfIdentity(phoneNumber));
+                    reportContactProfile(phoneNumber, { id: share.jid, lid: share.lid });
+                }
+            } catch (err) {
+                log.error('[wacrm-reporter] phoneNumberShare listener error:', err.message);
+            }
+        });
 
         // Messages update: delivery and read receipts
         sock.ev.on('messages.update', (updates) => {

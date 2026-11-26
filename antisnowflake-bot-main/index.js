@@ -67,6 +67,7 @@ const { join } = require('path');
 
 // Import sessionManager
 const sessionManager = require('./lib/sessionManager');
+const bridgeState = require('./lib/bridge/state');
 const { readSecret: readBridgeSecret } = require('./lib/bridge/signature');
 
 // Import lightweight store
@@ -476,6 +477,8 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     const msgRetryCounterCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
+    const sentMessageCache = new Map();
+
     const XeonBotInc = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
@@ -501,19 +504,32 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
         retryRequestDelayMs: 500,
         defaultQueryTimeoutMs: 60_000,
         getMessage: async (key) => {
-            let jid = jidNormalizedUser(key.remoteJid);
-            let msg = await store.loadMessage(jid, key.id);
-            return msg?.message || proto.Message.fromObject({});
+            const id = key?.id;
+            if (!id) return undefined;
+            const cached = sentMessageCache.get(id);
+            if (cached) return cached;
+            const jid = jidNormalizedUser(key.remoteJid);
+            const msg = await store.loadMessage(jid, id);
+            return msg?.message || undefined;
         },
         shouldSyncHistoryMessage: () => true,
         msgRetryCounterCache,
     });
 
-    // Anti-Ban Send Wrapper (Sanitization + Global Token Bucket + Jittered Pacing)
+    // Anti-Ban Send Wrapper (LID->PN Resolution + Sanitization + Global Token Bucket + Jittered Pacing)
     if (!XeonBotInc._antiBanWrapped) {
         const originalSendMessage = XeonBotInc.sendMessage.bind(XeonBotInc);
         const lastSentMap = new Map();
         XeonBotInc.sendMessage = async (jid, rawContent, options = {}) => {
+            const targetJid = typeof jid === 'string' && jid.endsWith('@lid')
+                ? bridgeState.resolvePreferredJid(jid)
+                : jid;
+            if (targetJid !== jid) {
+                console.log(`[send] Resolved LID ${jid} -> ${targetJid}`);
+            } else if (typeof targetJid === 'string' && targetJid.endsWith('@lid')) {
+                console.warn(`[send] Sending to unresolved LID ${targetJid} (no phone mapping cached yet)`);
+            }
+
             // 1. Sanitize payload to strip deceptive newsletter & spoofed forward metadata
             const content = sanitizeOutgoingContent(rawContent);
 
@@ -525,11 +541,15 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
                 Object.keys(content).length === 1;
 
             if (isPureReaction) {
-                return originalSendMessage(jid, content, options);
+                const reactionContent =
+                    targetJid !== jid && content.react?.key?.remoteJid === jid
+                        ? { ...content, react: { ...content.react, key: { ...content.react.key, remoteJid: targetJid } } }
+                        : content;
+                return originalSendMessage(targetJid, reactionContent, options);
             }
 
             const ownerNumClean = (settings.ownerNumber || '237653683174').replace(/[^0-9]/g, '');
-            const targetClean = String(jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+            const targetClean = String(targetJid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
             // 2. Global Token Bucket Rate-Limit Check
             await acquireGlobalSendSlot();
@@ -537,7 +557,7 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             // 3. Per-chat human pacing with jitter (compute clock AFTER token bucket wait; skip for owner)
             if (targetClean !== ownerNumClean) {
                 const nowAfterBucket = Date.now();
-                const lastSent = lastSentMap.get(jid) || 0;
+                const lastSent = lastSentMap.get(targetJid) || 0;
                 const timeDiff = nowAfterBucket - lastSent;
                 const minInterval = 4000 + Math.floor(Math.random() * 2000); // 4.0s - 6.0s jittered pacing
                 if (timeDiff < minInterval) {
@@ -545,14 +565,42 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
                 }
             }
 
-            if (options?.messageId && typeof trackBotSentId === 'function') {
-                trackBotSentId(options.messageId);
+            let sendOptions = options;
+            if (
+                options?.quoted?.key?.remoteJid &&
+                typeof targetJid === 'string' &&
+                targetJid.endsWith('@s.whatsapp.net') &&
+                String(options.quoted.key.remoteJid).endsWith('@lid')
+            ) {
+                sendOptions = {
+                    ...options,
+                    quoted: {
+                        ...options.quoted,
+                        key: {
+                            ...options.quoted.key,
+                            remoteJid: targetJid,
+                        },
+                    },
+                };
             }
-            const result = await originalSendMessage(jid, content, options);
-            if (result?.key?.id && typeof trackBotSentId === 'function') {
-                trackBotSentId(result.key.id);
+
+            if (sendOptions?.messageId && typeof trackBotSentId === 'function') {
+                trackBotSentId(sendOptions.messageId);
             }
-            lastSentMap.set(jid, Date.now());
+            const result = await originalSendMessage(targetJid, content, sendOptions);
+            if (result?.key?.id) {
+                if (typeof trackBotSentId === 'function') {
+                    trackBotSentId(result.key.id);
+                }
+                if (result.message) {
+                    sentMessageCache.set(result.key.id, result.message);
+                    if (sentMessageCache.size > 500) {
+                        const oldestId = sentMessageCache.keys().next().value;
+                        if (oldestId !== undefined) sentMessageCache.delete(oldestId);
+                    }
+                }
+            }
+            lastSentMap.set(targetJid, Date.now());
             if (lastSentMap.size > 2000) {
                 const oldestKey = lastSentMap.keys().next().value;
                 if (oldestKey !== undefined) lastSentMap.delete(oldestKey);
@@ -560,6 +608,17 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             return result;
         };
         XeonBotInc._antiBanWrapped = true;
+    }
+
+    if (!XeonBotInc._lidPresenceWrapped && typeof XeonBotInc.sendPresenceUpdate === 'function') {
+        const originalSendPresenceUpdate = XeonBotInc.sendPresenceUpdate.bind(XeonBotInc);
+        XeonBotInc.sendPresenceUpdate = (presence, jid) => {
+            const targetJid = typeof jid === 'string' && jid.endsWith('@lid')
+                ? bridgeState.resolvePreferredJid(jid)
+                : jid;
+            return originalSendPresenceUpdate(presence, targetJid);
+        };
+        XeonBotInc._lidPresenceWrapped = true;
     }
 
     // Compatibility fallback for global tools
@@ -621,7 +680,16 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
     XeonBotInc.ev.on('contacts.update', update => {
         for (let contact of update) {
             let id = XeonBotInc.decodeJid(contact.id);
-            if (store && store.contacts) store.contacts[id] = { id, name: contact.notify };
+            if (store && store.contacts) {
+                store.contacts[id] = {
+                    ...(store.contacts[id] || {}),
+                    id,
+                    ...(contact.notify ? { name: contact.notify } : {}),
+                    ...(contact.lid ? { lid: contact.lid } : {}),
+                    ...(contact.jid ? { jid: contact.jid } : {}),
+                    ...(contact.phoneNumber ? { phoneNumber: contact.phoneNumber } : {}),
+                };
+            }
         }
     });
 
@@ -705,6 +773,21 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
             }
 
             if (typeof resetAntiBanState === 'function') resetAntiBanState();
+
+            // Seed LID <-> PN mappings from cached store contacts
+            try {
+                const selfPhone = numberFromJid(XeonBotInc.user?.id || XeonBotInc.authState?.creds?.me?.id) || phoneNumber;
+                const selfLid = numberFromJid(XeonBotInc.user?.lid || XeonBotInc.authState?.creds?.me?.lid);
+                for (const c of Object.values(store?.contacts || {})) {
+                    if (!c || typeof c !== 'object') continue;
+                    const candidates = [c.id, c.jid, c.pnJid, c.lid, c.lidJid, c.phoneNumber ? `${String(c.phoneNumber).replace(/[^0-9]/g, '')}@s.whatsapp.net` : null].filter(Boolean);
+                    const lidCandidate = candidates.find(x => String(x).endsWith('@lid'));
+                    const pnCandidate = candidates.find(x => String(x).endsWith('@s.whatsapp.net'));
+                    if (lidCandidate && pnCandidate) {
+                        bridgeState.registerLidPhoneMapping(lidCandidate, pnCandidate, { selfPhone, selfLid });
+                    }
+                }
+            } catch (_) {}
 
             // Report connection to wacrm
             try {

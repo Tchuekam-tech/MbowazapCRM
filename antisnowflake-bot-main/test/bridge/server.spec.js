@@ -635,3 +635,40 @@ test('QR pair returns 503 pairing_pending when temp_qr is already linked and fin
     assert.equal(res.status, 503);
     assert.equal(res.json.error.code, 'pairing_pending');
 });
+
+test('bridge send, presence, and react resolve @lid recipients to @s.whatsapp.net when mapped', async (t) => {
+    const { call, sockets, state } = await startBridge(t);
+    const sock = fakeSocket();
+    sockets.set(SESSION, sock);
+
+    const lid = '123456789012345';
+    state.registerLidPhoneMapping(lid, CUSTOMER);
+
+    const sendRes = await call('POST', '/bridge/send', {
+        session: SESSION,
+        to: { lid },
+        kind: 'text',
+        origin: 'ai',
+        text: 'Resolved reply',
+    });
+    assert.equal(sendRes.status, 200);
+    assert.equal(sock.sent[0].jid, `${CUSTOMER}@s.whatsapp.net`);
+
+    const presRes = await call('POST', '/bridge/presence', {
+        session: SESSION,
+        to: { lid },
+        presence: 'composing',
+    });
+    assert.equal(presRes.status, 200);
+    assert.equal(sock.presenceUpdates[0].jid, `${CUSTOMER}@s.whatsapp.net`);
+
+    const reactRes = await call('POST', '/bridge/react', {
+        session: SESSION,
+        to: { lid },
+        targetId: 'MSG_TARGET_1',
+        targetFromMe: false,
+        emoji: '👍',
+    });
+    assert.equal(reactRes.status, 200);
+    assert.equal(sock.sent[1].jid, `${CUSTOMER}@s.whatsapp.net`);
+});

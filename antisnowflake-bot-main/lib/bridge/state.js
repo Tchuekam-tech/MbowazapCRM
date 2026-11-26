@@ -53,6 +53,8 @@ function createBridgeState({
 } = {}) {
     const sessionsDir = path.join(baseDir, 'sessions');
     const pausesFile = path.join(baseDir, 'pauses.json');
+    const lidMapFile = path.join(baseDir, 'lid-map.json');
+    const MAX_LID_MAPPINGS = 20000;
 
     const crmSentIds = new Map(); // messageId -> expiresAt
     const pairingRefsFile = path.join(baseDir, 'pairing-refs.json');
@@ -60,6 +62,114 @@ function createBridgeState({
     const pairingStatuses = new Map(); // pairingRef -> { state, session, me, reason, updatedAt, expiresAt }
     const davilaCache = new Map(); // session -> boolean
     let pauses = null; // contact -> pausedUntil (ms); loaded lazily
+    let lidToPhone = null; // lidDigits -> phoneDigits; loaded lazily
+    let phoneToLid = null; // phoneDigits -> lidDigits; loaded lazily
+
+    function cleanDigits(value) {
+        return String(value || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    }
+
+    function loadLidMaps() {
+        if (!lidToPhone || !phoneToLid) {
+            const saved = readJson(lidMapFile, {});
+            lidToPhone = new Map();
+            phoneToLid = new Map();
+            if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+                for (const [lid, phone] of Object.entries(saved)) {
+                    if (CONTACT_PATTERN.test(lid) && SESSION_PATTERN.test(phone) && lid !== phone) {
+                        lidToPhone.set(lid, phone);
+                        phoneToLid.set(phone, lid);
+                    }
+                }
+            }
+        }
+        return { lidToPhone, phoneToLid };
+    }
+
+    function isNonDirectJid(value) {
+        return typeof value === 'string' && /@(g\.us|broadcast|newsletter)$/i.test(value);
+    }
+
+    function registerLidPhoneMapping(lidOrJid, phoneOrJid, { selfPhone, selfLid } = {}) {
+        if (!lidOrJid || !phoneOrJid) return false;
+        if (isNonDirectJid(lidOrJid) || isNonDirectJid(phoneOrJid)) return false;
+        if (typeof phoneOrJid === 'string' && phoneOrJid.endsWith('@lid')) return false;
+
+        const lid = cleanDigits(lidOrJid);
+        const phone = cleanDigits(phoneOrJid);
+        if (!CONTACT_PATTERN.test(lid) || !SESSION_PATTERN.test(phone)) return false;
+
+        const cleanSelfPhone = selfPhone ? cleanDigits(selfPhone) : '';
+        const cleanSelfLid = selfLid ? cleanDigits(selfLid) : '';
+        if (lid === phone) return false;
+        if (cleanSelfPhone && phone === cleanSelfPhone) return false;
+        if (cleanSelfLid && lid === cleanSelfLid) return false;
+
+        const maps = loadLidMaps();
+        if (maps.lidToPhone.get(lid) === phone && maps.phoneToLid.get(phone) === lid) {
+            return false;
+        }
+
+        const prevPhone = maps.lidToPhone.get(lid);
+        if (prevPhone && prevPhone !== phone) {
+            maps.phoneToLid.delete(prevPhone);
+        }
+        const prevLid = maps.phoneToLid.get(phone);
+        if (prevLid && prevLid !== lid) {
+            maps.lidToPhone.delete(prevLid);
+        }
+
+        // Refresh insertion order on update
+        maps.lidToPhone.delete(lid);
+        maps.lidToPhone.set(lid, phone);
+        maps.phoneToLid.set(phone, lid);
+
+        while (maps.lidToPhone.size > MAX_LID_MAPPINGS) {
+            const oldestLid = maps.lidToPhone.keys().next().value;
+            if (oldestLid === undefined) break;
+            const oldestPhone = maps.lidToPhone.get(oldestLid);
+            maps.lidToPhone.delete(oldestLid);
+            if (oldestPhone && maps.phoneToLid.get(oldestPhone) === oldestLid) {
+                maps.phoneToLid.delete(oldestPhone);
+            }
+        }
+
+        writeJsonAtomic(lidMapFile, Object.fromEntries(maps.lidToPhone));
+        return true;
+    }
+
+    function getPhoneForLid(lidOrJid) {
+        if (!lidOrJid || isNonDirectJid(lidOrJid)) return null;
+        const lid = cleanDigits(lidOrJid);
+        if (!lid) return null;
+        return loadLidMaps().lidToPhone.get(lid) || null;
+    }
+
+    function getLidForPhone(phoneOrJid) {
+        if (!phoneOrJid || isNonDirectJid(phoneOrJid)) return null;
+        const phone = cleanDigits(phoneOrJid);
+        if (!phone) return null;
+        return loadLidMaps().phoneToLid.get(phone) || null;
+    }
+
+    function resolvePreferredJid(jid) {
+        if (typeof jid === 'string' && jid.endsWith('@lid')) {
+            const phone = getPhoneForLid(jid);
+            if (phone) return `${phone}@s.whatsapp.net`;
+        }
+        return jid;
+    }
+
+    function contactAliases(contact) {
+        const key = String(contact || '').trim();
+        if (!key) return [];
+        const aliases = new Set([key]);
+        const phone = getPhoneForLid(key);
+        if (phone) aliases.add(phone);
+        const lid = getLidForPhone(key);
+        if (lid) aliases.add(lid);
+        return Array.from(aliases);
+    }
 
     function markCrmSent(messageId) {
         const t = now();
@@ -204,19 +314,23 @@ function createBridgeState({
     }
 
     function cancelActiveDavilaRun(contact, reason = 'human_takeover') {
-        const runs = activeDavilaRuns.get(contact);
-        if (!runs) return false;
-        activeDavilaRuns.delete(contact);
-        for (const handle of runs) {
-            handle.cancelled = true;
-            if (typeof handle.abort === 'function') {
-                try { handle.abort(new Error(`Cancelled: ${reason}`)); } catch (_) {}
-            }
-            if (typeof handle.stopPresence === 'function') {
-                try { handle.stopPresence(); } catch (_) {}
+        let cancelledAny = false;
+        for (const alias of contactAliases(contact)) {
+            const runs = activeDavilaRuns.get(alias);
+            if (!runs) continue;
+            activeDavilaRuns.delete(alias);
+            for (const handle of runs) {
+                cancelledAny = true;
+                handle.cancelled = true;
+                if (typeof handle.abort === 'function') {
+                    try { handle.abort(new Error(`Cancelled: ${reason}`)); } catch (_) {}
+                }
+                if (typeof handle.stopPresence === 'function') {
+                    try { handle.stopPresence(); } catch (_) {}
+                }
             }
         }
-        return true;
+        return cancelledAny;
     }
 
     function loadPauses() {
@@ -233,7 +347,9 @@ function createBridgeState({
             if (pausedUntil <= t) map.delete(key);
         }
         if (until === null || until <= t) {
-            map.delete(contact);
+            for (const alias of contactAliases(contact)) {
+                map.delete(alias);
+            }
         } else {
             map.set(contact, until);
             cancelActiveDavilaRun(contact, 'contact_paused');
@@ -242,8 +358,16 @@ function createBridgeState({
     }
 
     function getContactPause(contact) {
-        const until = loadPauses().get(contact);
-        return until !== undefined && until > now() ? until : null;
+        const map = loadPauses();
+        const t = now();
+        let maxUntil = null;
+        for (const alias of contactAliases(contact)) {
+            const until = map.get(alias);
+            if (until !== undefined && until > t && (maxUntil === null || until > maxUntil)) {
+                maxUntil = until;
+            }
+        }
+        return maxUntil;
     }
 
     function isContactPaused(contact) {
@@ -272,6 +396,10 @@ function createBridgeState({
         registerActiveDavilaRun,
         unregisterActiveDavilaRun,
         cancelActiveDavilaRun,
+        registerLidPhoneMapping,
+        getPhoneForLid,
+        getLidForPhone,
+        resolvePreferredJid,
     };
 }
 
