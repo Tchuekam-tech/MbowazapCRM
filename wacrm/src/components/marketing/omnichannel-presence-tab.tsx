@@ -53,3 +53,28 @@ const SERVICE_STYLE: Record<string, { label: string; badge: string }> = {
   pinterest: { label: 'Pinterest', badge: 'bg-red-500/15 text-red-400 border-red-500/30' },
   bluesky: { label: 'Bluesky', badge: 'bg-sky-500/15 text-sky-300 border-sky-500/30' },
 };
+
+function serviceMeta(service: string) {
+  return (
+    SERVICE_STYLE[service.toLowerCase()] ?? {
+      label: service.charAt(0).toUpperCase() + service.slice(1),
+      badge: 'bg-primary/10 text-primary border-primary/30',
+    }
+  );
+}
+
+export function OmnichannelPresenceTab({
+  report,
+  links,
+  coupons,
+  currency,
+  canEdit,
+  canAdmin,
+  onRefresh,
+  onJumpToLinks,
+}: OmnichannelPresenceTabProps) {
+  const [apiKey, setApiKey] = useState('');
+  const [connecting, setConnecting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [auditing, setAuditing] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
