@@ -510,3 +510,19 @@ export function RoiCouponsTab({
                   {systemHealth.status}
                 </span>
               </div>
+
+              {/* CRM Server */}
+              <div className="space-y-1 rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between font-medium text-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <Server className="h-3.5 w-3.5 text-primary" /> MboWazap CRM Server
+                  </span>
+                  <span className="text-emerald-400">
+                    Up {formatUptime(systemHealth.crm.uptimeSeconds)}
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  RAM: {systemHealth.crm.memoryMb.heapUsed} MB heap / {systemHealth.crm.memoryMb.rss} MB RSS · Cache hit rate: {systemHealth.crm.cache.hitRate}% ({systemHealth.crm.cache.coalesced} coalesced)
+                </p>
+              </div>
+
