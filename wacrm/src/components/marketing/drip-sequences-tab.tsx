@@ -241,3 +241,16 @@ export function DripSequencesTab({
             </select>
           </div>
         </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3">
+          <label className="flex items-center gap-2 text-xs text-foreground">
+            <Switch checked={stopOnReply} onCheckedChange={setStopOnReply} />
+            <MessageSquareReply className="h-3.5 w-3.5 text-primary" />
+            Stop automatically when contact replies
+          </label>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Moon className="h-3.5 w-3.5" />
+            Quiet:
+            <input
+              type="time"
+              value={quietStart}
