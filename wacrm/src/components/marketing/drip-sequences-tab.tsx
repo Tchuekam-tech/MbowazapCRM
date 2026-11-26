@@ -254,3 +254,16 @@ export function DripSequencesTab({
             <input
               type="time"
               value={quietStart}
+              onChange={(e) => setQuietStart(e.target.value)}
+              className="rounded border border-border bg-background px-1.5 py-0.5 text-xs text-foreground"
+            />
+            –
+            <input
+              type="time"
+              value={quietEnd}
+              onChange={(e) => setQuietEnd(e.target.value)}
+              className="rounded border border-border bg-background px-1.5 py-0.5 text-xs text-foreground"
+            />
+          </div>
+        </div>
+
