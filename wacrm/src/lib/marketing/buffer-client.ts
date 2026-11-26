@@ -320,3 +320,25 @@ export function createBufferClient(opts: BufferClientOptions) {
           }
         }
       `);
+
+      return (data.channels ?? [])
+        .filter((c) => Boolean(c?.id))
+        .map((c) => ({
+          id: String(c.id),
+          name: c.name?.trim() || c.displayName?.trim() || 'Social Channel',
+          displayName: c.displayName?.trim() || c.name?.trim() || null,
+          service: normalizeServiceName(c.service),
+          avatar: c.avatar ?? null,
+          isQueuePaused: Boolean(c.isQueuePaused),
+        }));
+    },
+
+    async getPosts(
+      organizationId: string,
+      opts: { first?: number; channelIds?: string[] } = {}
+    ): Promise<BufferPostsResult> {
+      const first = Math.max(1, Math.min(100, opts.first ?? 60));
+      const channelFilter =
+        opts.channelIds && opts.channelIds.length > 0
+          ? `, channelIds: [${opts.channelIds.map(gqlString).join(', ')}]`
+          : '';
