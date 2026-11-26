@@ -142,3 +142,43 @@ export async function processDueDripEnrollments(
     if (!seq || seq.status !== 'active') {
       continue;
     }
+
+    // Quiet hours check
+    if (
+      isWithinQuietHours(
+        now,
+        seq.quiet_hours_start || '21:00',
+        seq.quiet_hours_end || '08:00',
+        seq.timezone || 'UTC'
+      )
+    ) {
+      const nextTime = nextAllowedSendTime(
+        now,
+        seq.quiet_hours_start || '21:00',
+        seq.quiet_hours_end || '08:00',
+        seq.timezone || 'UTC'
+      );
+      await db
+        .from('drip_enrollments')
+        .update({ next_send_at: nextTime.toISOString() })
+        .eq('id', enrollment.id);
+      result.deferredQuietHours += 1;
+      continue;
+    }
+
+    // Check opt-out / exit tag conditions before sending
+    const { data: contactTags } = await db
+      .from('contact_tags')
+      .select('tag_id, tags(name)')
+      .eq('contact_id', enrollment.contact_id);
+
+    const tagRows = (contactTags ?? []) as unknown as Array<{
+      tag_id: string;
+      tags: { name: string } | { name: string }[] | null;
+    }>;
+    const shouldExit = tagRows.some((tr) => {
+      if (seq.stop_on_tag_id && tr.tag_id === seq.stop_on_tag_id) return true;
+      const tObj = Array.isArray(tr.tags) ? tr.tags[0] : tr.tags;
+      const name = (tObj?.name || '').toLowerCase();
+      return name.includes('opt-out') || name.includes('opted out') || name === 'stop';
+    });
