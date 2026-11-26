@@ -362,3 +362,38 @@ export async function processDueDripEnrollments(
       result.failed += 1;
     }
   }
+
+  return result;
+}
+
+/**
+ * Runs non-blocking marketing attribution & automation side-effects
+ * whenever a customer sends an inbound message:
+ *   1. Growth Link [Ref:XXXX] matching -> UTM attribution + auto-tag + conversion count
+ *   2. Stop-on-reply exit for active Drip Sequences
+ *   3. A/B Campaign reply attribution
+ *   4. Real-time Lead Score refresh
+ *
+ * Always swallows errors so it can NEVER interrupt core inbox ingestion.
+ */
+export async function handleMarketingInboundEffects(
+  db: SupabaseClient,
+  params: {
+    accountId: string;
+    contactId: string;
+    contentText: string | null;
+  }
+): Promise<void> {
+  const { accountId, contactId, contentText } = params;
+  const nowIso = new Date().toISOString();
+
+  // 1. Growth Link attribution via [Ref:CODE]
+  try {
+    const refCode = extractGrowthRefCode(contentText);
+    if (refCode) {
+      const { data: link } = await db
+        .from('growth_links')
+        .select('id, utm_source, utm_medium, utm_campaign, auto_tag_id, conversions_count')
+        .eq('account_id', accountId)
+        .eq('ref_code', refCode)
+        .maybeSingle();
