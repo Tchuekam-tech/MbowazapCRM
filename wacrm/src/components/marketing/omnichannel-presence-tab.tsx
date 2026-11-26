@@ -113,3 +113,20 @@ export function OmnichannelPresenceTab({
       setConnecting(false);
     }
   }
+
+  async function handleSyncNow() {
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/marketing/buffer/sync', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sync failed');
+      toast.success(
+        `Synced ${data.sync?.channelsSynced ?? 0} channel(s) & ${data.sync?.postsSynced ?? 0} post(s) from Buffer.`
+      );
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  }
