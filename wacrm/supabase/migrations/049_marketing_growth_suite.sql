@@ -391,3 +391,23 @@ CREATE POLICY "drip_enrollments_write" ON drip_enrollments
 
 -- ============================================================
 -- 4. AI COPYWRITER & A/B SPLIT-TEST CAMPAIGNS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ab_campaigns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  goal TEXT NOT NULL DEFAULT 'promotion',
+  segment_id UUID REFERENCES marketing_segments(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'running', 'evaluating', 'completed', 'failed')),
+  split_ratio INTEGER NOT NULL DEFAULT 50 CHECK (split_ratio >= 10 AND split_ratio <= 90),
+  holdout_percent INTEGER NOT NULL DEFAULT 0 CHECK (holdout_percent >= 0 AND holdout_percent <= 80),
+  winner_variant TEXT CHECK (winner_variant IN ('A', 'B')),
+  winner_metric TEXT NOT NULL DEFAULT 'reply_rate' CHECK (winner_metric IN ('reply_rate', 'read_rate', 'conversion_rate')),
+  scheduled_at TIMESTAMPTZ,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
