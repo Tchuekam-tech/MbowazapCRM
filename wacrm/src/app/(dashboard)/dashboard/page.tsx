@@ -12,8 +12,9 @@ import {
   Send,
   Globe,
   ArrowUpRight,
+  BrainCircuit,
 } from 'lucide-react'
-import type { DigitalPresenceReport } from '@/types'
+import type { DigitalPresenceReport, JarvisOverviewPayload } from '@/types'
 
 import {
   loadActivity,
@@ -33,6 +34,7 @@ import type {
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { SkeletonCard } from '@/components/dashboard/skeleton'
 import { QuickActions } from '@/components/dashboard/quick-actions'
+import { MobileHomeHero } from '@/components/dashboard/mobile-home-hero'
 import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
 import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
@@ -68,6 +70,7 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
   const [presence, setPresence] = useState<DigitalPresenceReport | null>(null)
+  const [jarvis, setJarvis] = useState<JarvisOverviewPayload | null>(null)
 
   const loadAll = useCallback(() => {
     const db = createClient()
@@ -81,7 +84,7 @@ export default function DashboardPage() {
       .finally(() => setMetricsLoading(false))
 
     void loadConversationsSeries(db, 30)
-      .then((s) => setSeries((prev) => ({ ...prev, 30: s })))
+      .then((s) => setSeries((prev) => ({ ...prev, 30: s, 7: s.slice(-7) })))
       .catch((err) => console.error('[dashboard] series failed:', err))
       .finally(() => setSeriesLoading(false))
 
@@ -106,6 +109,11 @@ export default function DashboardPage() {
     void fetch('/api/marketing/buffer')
       .then((r) => (r.ok ? r.json() : null))
       .then((p) => { if (p) setPresence(p as DigitalPresenceReport) })
+      .catch(() => {})
+
+    void fetch('/api/jarvis')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j) setJarvis(j as JarvisOverviewPayload) })
       .catch(() => {})
   }, [])
 
@@ -133,16 +141,25 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div>
+      {/* Desktop Header (on mobile, MobileHomeHero provides the greeting & command bar) */}
+      <div className="hidden lg:block">
         <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {t('description')}
         </p>
       </div>
 
-      {/* Metric cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Reference-inspired Sculptural Hero + Ask-Jarvis Bar + Mobile 7-Day Pulse & Showcase Carousel */}
+      <MobileHomeHero
+        metrics={metrics}
+        series7d={series[7] ?? series[30]?.slice(-7) ?? null}
+        jarvis={jarvis}
+        presence={presence}
+        currency={defaultCurrency}
+      />
+
+      {/* Metric cards — 2-column compact grid on mobile, 4-column on desktop */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {metricsLoading || !metrics ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
@@ -200,6 +217,58 @@ export default function DashboardPage() {
 
       {/* Quick actions */}
       <QuickActions />
+
+      {/* Autonomous 24/7 Jarvis AI Employee Strip */}
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-primary/25 bg-primary/5 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
+            <BrainCircuit className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-foreground">
+                {jarvis?.config.agent_name || 'Jarvis'} · 24/7 Autonomous AI Employee
+              </p>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  jarvis?.config.is_enabled
+                    ? 'bg-emerald-500/15 text-emerald-400'
+                    : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {jarvis?.config.is_enabled
+                  ? `ONLINE 24/7 · ${jarvis.config.autonomy_mode.toUpperCase()}`
+                  : 'READY TO ACTIVATE'}
+              </span>
+              {jarvis && (
+                <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                  Ecosystem Health {jarvis.ecosystem.healthScore}/100
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {jarvis
+                ? `${jarvis.todayStats.pendingApprovals} pending approvals · ${jarvis.ecosystem.knowledge.companyProfileCompleteness}% Company DNA · ${jarvis.ecosystem.knowledge.totalDocuments} KB sources · Human typing simulation ${jarvis.config.typing_simulation_enabled ? 'ON' : 'OFF'}`
+                : 'Connect your Company Bio, websites & docs and let Jarvis analyze and operate your ecosystem 24/7 with realistic WhatsApp typing.'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/jarvis?tab=knowledge"
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            Knowledge Hub
+          </Link>
+          <Link
+            href="/jarvis"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            Open Jarvis
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      </div>
 
       {/* Omnichannel Digital Presence Strip (Buffer + WhatsApp unified) */}
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-card px-5 py-4">

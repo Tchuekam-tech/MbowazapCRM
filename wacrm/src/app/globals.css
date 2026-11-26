@@ -220,11 +220,60 @@ html[data-theme="rose"] {
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply bg-background text-foreground;
+    overscroll-behavior-y: contain;
+    -webkit-font-smoothing: antialiased;
   }
   html {
     @apply font-sans;
+    scroll-behavior: smooth;
   }
+}
+
+/* ============================================================
+ * Mobile-Native Tactile & Safe-Area Utilities
+ * Inspired by floating capsule docks, soft elevated cards,
+ * and smooth snap-scroll carousels.
+ * ============================================================ */
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.tap-press {
+  transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+.tap-press:active {
+  transform: scale(0.97);
+}
+
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.pb-mobile-dock {
+  padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 1024px) {
+  .pb-mobile-dock {
+    padding-bottom: 1.5rem;
+  }
+}
+
+/* Sculptural dark wave texture for mobile hero & featured cards */
+.hero-wave-surface {
+  background-image:
+    radial-gradient(120% 90% at 90% 10%, color-mix(in oklch, var(--primary) 26%, transparent), transparent 60%),
+    radial-gradient(90% 80% at 10% 100%, color-mix(in oklch, var(--primary) 16%, transparent), transparent 55%);
 }

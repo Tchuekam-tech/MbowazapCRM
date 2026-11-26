@@ -226,28 +226,28 @@ function MarketingStudioInner() {
         </div>
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="flex h-auto flex-wrap justify-start gap-1 bg-muted/60 p-1">
-            <TabsTrigger value="presence" className="gap-1.5 text-xs">
+          <TabsList className="no-scrollbar flex h-auto w-full flex-nowrap justify-start gap-1 overflow-x-auto rounded-full border border-border/70 bg-muted/60 p-1 sm:w-fit">
+            <TabsTrigger value="presence" className="tap-press shrink-0 gap-1.5 rounded-full px-3.5 py-2 text-xs data-active:bg-foreground data-active:text-background">
               <Globe className="h-3.5 w-3.5" />
               {t('tabs.presence')}
             </TabsTrigger>
-            <TabsTrigger value="links" className="gap-1.5 text-xs">
+            <TabsTrigger value="links" className="tap-press shrink-0 gap-1.5 rounded-full px-3.5 py-2 text-xs data-active:bg-foreground data-active:text-background">
               <Link2 className="h-3.5 w-3.5" />
               {t('tabs.links')}
             </TabsTrigger>
-            <TabsTrigger value="leads" className="gap-1.5 text-xs">
+            <TabsTrigger value="leads" className="tap-press shrink-0 gap-1.5 rounded-full px-3.5 py-2 text-xs data-active:bg-foreground data-active:text-background">
               <Flame className="h-3.5 w-3.5" />
               {t('tabs.leads')}
             </TabsTrigger>
-            <TabsTrigger value="drips" className="gap-1.5 text-xs">
+            <TabsTrigger value="drips" className="tap-press shrink-0 gap-1.5 rounded-full px-3.5 py-2 text-xs data-active:bg-foreground data-active:text-background">
               <GitBranchPlus className="h-3.5 w-3.5" />
               {t('tabs.drips')}
             </TabsTrigger>
-            <TabsTrigger value="campaigns" className="gap-1.5 text-xs">
+            <TabsTrigger value="campaigns" className="tap-press shrink-0 gap-1.5 rounded-full px-3.5 py-2 text-xs data-active:bg-foreground data-active:text-background">
               <FlaskConical className="h-3.5 w-3.5" />
               {t('tabs.campaigns')}
             </TabsTrigger>
-            <TabsTrigger value="roi" className="gap-1.5 text-xs">
+            <TabsTrigger value="roi" className="tap-press shrink-0 gap-1.5 rounded-full px-3.5 py-2 text-xs data-active:bg-foreground data-active:text-background">
               <TrendingUp className="h-3.5 w-3.5" />
               {t('tabs.roi')}
             </TabsTrigger>

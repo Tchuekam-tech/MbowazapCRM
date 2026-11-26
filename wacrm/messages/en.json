@@ -40,7 +40,8 @@
     "menuProfile": "Profile",
     "menuSettings": "Settings",
     "menuSignOut": "Sign out",
-    "marketing": "Marketing Studio"
+    "marketing": "Marketing Studio",
+    "jarvis": "Jarvis 24/7 AI"
   },
   "Header": {
     "dashboard": "Dashboard",
@@ -60,7 +61,8 @@
     "menuProfile": "Profile",
     "menuSettings": "Settings",
     "menuSignOut": "Sign out",
-    "marketing": "Marketing Studio"
+    "marketing": "Marketing Studio",
+    "jarvis": "Jarvis 24/7 AI"
   },
   "ModeToggle": {
     "switchMode": "Switch to {mode} mode"
@@ -136,6 +138,14 @@
     },
     "emptyState": {
       "title": "Not enough data yet"
+    },
+    "mobileHero": {
+      "headline": "Your 24/7 WhatsApp growth command.",
+      "askPlaceholder": "Ask {name} anything…",
+      "askSubmit": "Ask Jarvis",
+      "weeklyPulse": "7-Day WhatsApp Pulse",
+      "liveWorkspaces": "Live Command Cards",
+      "exploreAll": "Explore all"
     }
   },
   "Inbox": {
@@ -2051,5 +2061,45 @@
       "roi": "ROI, Coupons & Health",
       "presence": "Omnichannel (Buffer)"
     }
+  },
+  "Jarvis": {
+    "title": "Autonomous 24/7 AI Employee",
+    "description": "Monitors your entire WhatsApp, pipeline, marketing, and social ecosystem 24/7, grounded in your Company DNA & Knowledge Base with human-like typing simulation.",
+    "tabs": {
+      "command": "Command Center",
+      "actions": "Action Queue",
+      "knowledge": "Knowledge Hub",
+      "autonomy": "Autonomy & Typing"
+    }
+  },
+  "MobileDock": {
+    "navLabel": "Primary mobile navigation",
+    "home": "Home",
+    "inbox": "Inbox",
+    "jarvis": "Jarvis",
+    "growth": "Growth",
+    "quickActions": "Open quick actions",
+    "closeActions": "Close quick actions",
+    "sheetTitle": "Quick Command",
+    "sheetSubtitle": "Jump anywhere or command Jarvis in one tap",
+    "sheetRunScan": "Run 360° Jarvis Brain Scan",
+    "sheetRunScanSub": "Analyze inbox, leads, pipeline & Buffer now",
+    "sheetAskJarvis": "Ask Jarvis",
+    "sheetAskJarvisSub": "24/7 AI Console",
+    "sheetKnowledge": "Knowledge Hub",
+    "sheetKnowledgeSub": "Bio, URLs & Docs",
+    "sheetContact": "New Contact",
+    "sheetContactSub": "Add WhatsApp lead",
+    "sheetDeal": "New Deal",
+    "sheetDealSub": "Sales pipeline",
+    "sheetGrowthLink": "Growth Link & QR",
+    "sheetGrowthLinkSub": "Trackable WA link",
+    "sheetOmnichannel": "Buffer Social",
+    "sheetOmnichannelSub": "Cross-channel post",
+    "sheetBroadcast": "Broadcast",
+    "sheetBroadcastSub": "Send campaign",
+    "sheetSettings": "Settings",
+    "sheetSettingsSub": "Workspace & WA",
+    "sheetAllMenu": "All Pages"
   }
 }

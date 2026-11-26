@@ -46,9 +46,13 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
   // dominating vertical real estate. User expands explicitly via the
   // footer control when they want deeper history.
   const [pageSize, setPageSize] = useState<PageSize>(5)
+  const [kindFilter, setKindFilter] = useState<'all' | 'message' | 'contact' | 'deal'>('all')
 
-  const totalLoaded = items?.length ?? 0
-  const visible = items?.slice(0, pageSize) ?? []
+  const filtered = (items ?? []).filter((it) =>
+    kindFilter === 'all' ? true : it.kind === kindFilter,
+  )
+  const totalLoaded = filtered.length
+  const visible = filtered.slice(0, pageSize)
   // A size option is "useful" if picking it would reveal rows the
   // smaller option doesn't already show. With PAGE_SIZES=[5,10,20,50]:
   // "10" is useful only once we've loaded ≥6 items, "20" once ≥11, etc.
@@ -56,25 +60,51 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
   const isSizeUseful = (size: PageSize, i: number) =>
     i === 0 || totalLoaded > PAGE_SIZES[i - 1]
 
+  const filterPills: Array<{ id: 'all' | 'message' | 'contact' | 'deal'; label: string }> = [
+    { id: 'all', label: 'All' },
+    { id: 'message', label: 'Messages' },
+    { id: 'contact', label: 'Leads' },
+    { id: 'deal', label: 'Deals' },
+  ]
+
   return (
-    <section className="rounded-xl border border-border bg-card">
-      <header className="flex items-center justify-between border-b border-border px-5 py-4">
+    <section className="rounded-[24px] border border-border bg-card shadow-xs">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3.5 sm:px-5 sm:py-4">
         <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
-        <Link
-          href="/inbox"
-          className="text-xs font-medium text-primary hover:text-primary/80"
-        >
-          {t('viewAll')}
-        </Link>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-full bg-muted p-0.5">
+            {filterPills.map((fp) => (
+              <button
+                key={fp.id}
+                type="button"
+                onClick={() => setKindFilter(fp.id)}
+                className={cn(
+                  'tap-press rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all',
+                  kindFilter === fp.id
+                    ? 'bg-foreground text-background shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {fp.label}
+              </button>
+            ))}
+          </div>
+          <Link
+            href="/inbox"
+            className="hidden text-xs font-medium text-primary hover:text-primary/80 sm:inline"
+          >
+            {t('viewAll')}
+          </Link>
+        </div>
       </header>
 
       {loading || !items ? (
         <div className="space-y-2 p-5">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full" />
+            <Skeleton key={i} className="h-10 w-full rounded-xl" />
           ))}
         </div>
-      ) : items.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="p-5">
           <EmptyState
             icon={Inbox}
@@ -84,19 +114,35 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
         </div>
       ) : (
         <>
-          <ul className="divide-y divide-border">
+          <ul className="relative px-4 py-2 sm:divide-y sm:divide-border sm:px-0 sm:py-0">
             {visible.map((it, i) => {
               const theme = KIND_THEME[it.kind]
               const Icon = theme.icon
-              // Alternating row background for scanability. bg-muted/40
-              // keeps the stripe visible in both light and dark modes
-              // (bg-card/40 vanishes against a white card surface in light).
-              const stripe = i % 2 === 0 ? 'bg-transparent' : 'bg-muted/40'
+              const isLast = i === visible.length - 1
+              // Alternating row background on desktop; clean timeline cards on mobile.
+              const stripe = i % 2 === 0 ? 'sm:bg-transparent' : 'sm:bg-muted/40'
               const row = (
-                <div className="flex items-center gap-3 px-5 py-2.5">
+                <div className="flex items-center gap-3 py-2.5 sm:px-5">
+                  {/* Vertical timeline rail node on mobile (Modern To-Dos reference) */}
+                  <div className="relative flex flex-col items-center sm:hidden">
+                    <span
+                      className={cn(
+                        'z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-4 ring-card',
+                        theme.badge,
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                    </span>
+                    {!isLast && (
+                      <span
+                        aria-hidden
+                        className="absolute top-8 h-7 w-[1.5px] bg-border"
+                      />
+                    )}
+                  </div>
                   <span
                     className={cn(
-                      'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full',
+                      'hidden h-7 w-7 flex-shrink-0 items-center justify-center rounded-full sm:flex',
                       theme.badge,
                     )}
                   >
@@ -111,7 +157,7 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
                 </div>
               )
               return (
-                <li key={it.id} className={cn(stripe, 'transition-colors hover:bg-muted/40')}>
+                <li key={it.id} className={cn(stripe, 'tap-press rounded-2xl transition-colors hover:bg-muted/40 sm:rounded-none')}>
                   {it.href ? (
                     <Link href={it.href} className="block">
                       {row}

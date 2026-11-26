@@ -40,7 +40,8 @@
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
     "menuSignOut": "Cerrar sesión",
-    "marketing": "Estudio de Marketing"
+    "marketing": "Estudio de Marketing",
+    "jarvis": "Jarvis IA 24/7"
   },
   "Header": {
     "dashboard": "Panel",
@@ -60,7 +61,8 @@
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
     "menuSignOut": "Cerrar sesión",
-    "marketing": "Estudio de Marketing"
+    "marketing": "Estudio de Marketing",
+    "jarvis": "Jarvis IA 24/7"
   },
   "ModeToggle": {
     "switchMode": "Cambiar al modo {mode}"
@@ -136,6 +138,14 @@
     },
     "emptyState": {
       "title": "Aún no hay datos suficientes"
+    },
+    "mobileHero": {
+      "headline": "Tu centro de crecimiento WhatsApp 24/7.",
+      "askPlaceholder": "Pregúntale lo que sea a {name}…",
+      "askSubmit": "Preguntar a Jarvis",
+      "weeklyPulse": "Pulso WhatsApp 7 Días",
+      "liveWorkspaces": "Tarjetas en Vivo",
+      "exploreAll": "Ver todo"
     }
   },
   "Inbox": {
@@ -2051,5 +2061,45 @@
       "roi": "ROI, Cupones y Salud",
       "presence": "Omnicanal (Buffer)"
     }
+  },
+  "Jarvis": {
+    "title": "Empleado IA Autónomo 24/7",
+    "description": "Analiza todo tu ecosistema de WhatsApp, ventas, marketing y redes sociales 24/7 con tu base de conocimiento y simulación realista de escritura.",
+    "tabs": {
+      "command": "Centro de Mando",
+      "actions": "Cola de Acciones",
+      "knowledge": "Base de Conocimiento",
+      "autonomy": "Autonomía y Escritura"
+    }
+  },
+  "MobileDock": {
+    "navLabel": "Navegación móvil principal",
+    "home": "Inicio",
+    "inbox": "Inbox",
+    "jarvis": "Jarvis",
+    "growth": "Growth",
+    "quickActions": "Abrir acciones rápidas",
+    "closeActions": "Cerrar acciones rápidas",
+    "sheetTitle": "Comando Rápido",
+    "sheetSubtitle": "Navega o dirige a Jarvis en un toque",
+    "sheetRunScan": "Ejecutar Escaneo 360° de Jarvis",
+    "sheetRunScanSub": "Analiza inbox, leads, ventas y Buffer ahora",
+    "sheetAskJarvis": "Hablar con Jarvis",
+    "sheetAskJarvisSub": "Consola IA 24/7",
+    "sheetKnowledge": "Base de Conocimiento",
+    "sheetKnowledgeSub": "Bio, URLs y Docs",
+    "sheetContact": "Nuevo Contacto",
+    "sheetContactSub": "Agregar lead WA",
+    "sheetDeal": "Nuevo Trato",
+    "sheetDealSub": "Pipeline de ventas",
+    "sheetGrowthLink": "Link y QR",
+    "sheetGrowthLinkSub": "Enlace WhatsApp",
+    "sheetOmnichannel": "Buffer Social",
+    "sheetOmnichannelSub": "Publicar en redes",
+    "sheetBroadcast": "Difusión",
+    "sheetBroadcastSub": "Enviar campaña",
+    "sheetSettings": "Ajustes",
+    "sheetSettingsSub": "Cuenta y WA",
+    "sheetAllMenu": "Todas las páginas"
   }
 }

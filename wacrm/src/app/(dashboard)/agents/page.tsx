@@ -56,16 +56,16 @@ export default function AgentsPage() {
           onValueChange={(v) => setTab(v as Tab)}
           className="mt-6"
         >
-          <TabsList>
-            <TabsTrigger value="playground">
-              <Sparkles className="mr-1.5 h-4 w-4" /> {t('tabPlayground')}
+          <TabsList className="no-scrollbar flex h-auto w-full flex-nowrap justify-start gap-1 overflow-x-auto rounded-full border border-border/70 bg-muted/60 p-1 sm:w-fit">
+            <TabsTrigger value="playground" className="tap-press shrink-0 rounded-full px-3.5 py-2 text-xs data-active:bg-foreground data-active:text-background">
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" /> {t('tabPlayground')}
             </TabsTrigger>
-            <TabsTrigger value="setup">
-              <Settings2 className="mr-1.5 h-4 w-4" /> {t('tabSetup')}
+            <TabsTrigger value="setup" className="tap-press shrink-0 rounded-full px-3.5 py-2 text-xs data-active:bg-foreground data-active:text-background">
+              <Settings2 className="mr-1.5 h-3.5 w-3.5" /> {t('tabSetup')}
             </TabsTrigger>
             {canViewUsage && (
-              <TabsTrigger value="usage">
-                <BarChart3 className="mr-1.5 h-4 w-4" /> {t('tabUsage')}
+              <TabsTrigger value="usage" className="tap-press shrink-0 rounded-full px-3.5 py-2 text-xs data-active:bg-foreground data-active:text-background">
+                <BarChart3 className="mr-1.5 h-3.5 w-3.5" /> {t('tabUsage')}
               </TabsTrigger>
             )}
           </TabsList>

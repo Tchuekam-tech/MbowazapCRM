@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, Menu, Settings as SettingsIcon, User } from "lucide-react";
+import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+import { Bell, LogOut, Menu, Settings as SettingsIcon, User } from "lucide-react";
 import {
   Avatar,
   AvatarFallback,
@@ -25,6 +26,7 @@ const pageTitles: Record<string, string> = {
   "/contacts": "contacts",
   "/pipelines": "pipelines",
   "/marketing": "marketing",
+  "/jarvis": "jarvis",
   "/broadcasts": "broadcasts",
   "/automations": "automations",
   "/flows": "flows",
@@ -52,7 +54,12 @@ export function Header({ onOpenSidebar }: HeaderProps) {
   const t = useTranslations("Header");
   const pathname = usePathname();
   const { profile, signOut } = useAuth();
+  const unreadNotifications = useUnreadNotifications();
   const titleKey = getPageTitleKey(pathname);
+  const firstName =
+    profile?.full_name?.trim().split(/\s+/)[0] ||
+    profile?.email?.split("@")[0] ||
+    "";
 
   const initial =
     profile?.full_name?.charAt(0)?.toUpperCase() ??
@@ -60,23 +67,44 @@ export function Header({ onOpenSidebar }: HeaderProps) {
     "U";
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 lg:px-6">
-      <div className="flex min-w-0 items-center gap-2">
-        {/* Hamburger — mobile only. 44×44 hit target per Apple HIG. */}
+    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/85 px-3.5 backdrop-blur-xl sm:px-4 lg:px-6">
+      <div className="flex min-w-0 items-center gap-2.5">
+        {/* Tactile circular menu pill — mobile only. 40×40 hit target. */}
         <button
           type="button"
           onClick={onOpenSidebar}
           aria-label={t("openMenu")}
-          className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+          className="tap-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/80 bg-card text-muted-foreground shadow-xs transition-colors hover:bg-muted hover:text-foreground lg:hidden"
         >
-          <Menu className="h-5 w-5" />
+          <Menu className="h-[18px] w-[18px]" />
         </button>
-        <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
-          {t(titleKey as string)}
-        </h1>
+        <div className="min-w-0">
+          {pathname === "/dashboard" && firstName ? (
+            <h1 className="truncate text-base font-bold tracking-tight text-foreground sm:text-lg lg:font-semibold">
+              <span className="lg:hidden">Hey, {firstName}</span>
+              <span className="hidden lg:inline">{t(titleKey as string)}</span>
+            </h1>
+          ) : (
+            <h1 className="truncate text-base font-bold tracking-tight text-foreground sm:text-lg lg:font-semibold">
+              {t(titleKey as string)}
+            </h1>
+          )}
+        </div>
       </div>
 
-      <div className="flex items-center gap-1 sm:gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        <Link
+          href="/notifications"
+          aria-label={t("notifications")}
+          className="tap-press relative flex h-9 w-9 items-center justify-center rounded-full border border-border/80 bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+        >
+          <Bell className="h-4 w-4" />
+          {unreadNotifications > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+              {unreadNotifications > 9 ? "9+" : unreadNotifications}
+            </span>
+          )}
+        </Link>
         <ModeToggle />
 
         <DropdownMenu>

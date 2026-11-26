@@ -22,16 +22,23 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "wacrm",
-    template: "%s — wacrm",
+    default: "MboWazap CRM",
+    template: "%s — MboWazap",
   },
-  description: "Self-hostable CRM template for WhatsApp.",
+  description: "Autonomous 24/7 WhatsApp CRM, Marketing Growth OS & Jarvis AI Employee.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "MboWazap",
+  },
   robots: {
     index: false,
     follow: false,
   },
   icons: {
     icon: [{ url: "/icon" }],
+    apple: [{ url: "/icon" }],
   },
   formatDetection: {
     email: false,
@@ -41,7 +48,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#020617",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0c0f17" },
+    { media: "(prefers-color-scheme: light)", color: "#fcfcfd" },
+  ],
   colorScheme: "dark light",
 };
 

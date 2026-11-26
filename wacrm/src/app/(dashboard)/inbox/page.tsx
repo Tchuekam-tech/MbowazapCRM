@@ -14,8 +14,9 @@ import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { toast } from "sonner";
-import { WifiOff } from "lucide-react";
+import { UserRound, WifiOff, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMobileChrome } from "@/components/layout/mobile-chrome-context";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
@@ -560,6 +561,9 @@ function InboxPageInner() {
     [activeConversation]
   );
 
+  const { setHideMobileDock } = useMobileChrome();
+  const [mobileContactDrawerOpen, setMobileContactDrawerOpen] = useState(false);
+
   // On mobile (<lg) we show a SINGLE pane — either the list or the
   // thread — rather than cramming both side-by-side. Selecting a
   // conversation slides the thread in; the thread's back button pops
@@ -567,8 +571,16 @@ function InboxPageInner() {
   // before, unchanged.
   const hasActiveConv = !!activeConversation;
 
+  // Hide the floating mobile bottom dock while a chat thread is open so
+  // the message composer sits flush above the iOS/Android keyboard.
+  useEffect(() => {
+    setHideMobileDock(hasActiveConv);
+    if (!hasActiveConv) setMobileContactDrawerOpen(false);
+    return () => setHideMobileDock(false);
+  }, [hasActiveConv, setHideMobileDock]);
+
   return (
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
+    <div className="relative -m-4 flex h-[calc(100dvh-3.5rem)] flex-col overflow-hidden sm:-m-6">
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (
@@ -635,14 +647,55 @@ function InboxPageInner() {
 
         {/* Right panel: Contact sidebar — desktop only, and only when the
             agent hasn't collapsed it via the thread-header toggle (#258).
-            On mobile it's always hidden (the `lg:block` below), so the
-            toggle — which is itself desktop-only — never affects it. */}
+            On mobile (<lg), surfaced via the slide-over Contact Drawer below. */}
         {contactPanelOpen && (
           <div className="hidden lg:block">
             <ContactSidebar contact={activeContact} />
           </div>
         )}
       </div>
+
+      {/* Mobile floating Lead/Contact Intelligence button when chatting */}
+      {hasActiveConv && activeContact && !mobileContactDrawerOpen && (
+        <button
+          type="button"
+          onClick={() => setMobileContactDrawerOpen(true)}
+          aria-label="Open contact details & lead score"
+          className="tap-press fixed right-3 top-[4.25rem] z-20 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/95 px-3 py-1.5 text-xs font-semibold text-foreground shadow-lg backdrop-blur-md lg:hidden"
+        >
+          <UserRound className="h-3.5 w-3.5 text-primary" />
+          Lead Info
+        </button>
+      )}
+
+      {/* Mobile slide-over Contact & Lead Score Drawer */}
+      {mobileContactDrawerOpen && activeContact && (
+        <div className="fixed inset-0 z-50 flex justify-end lg:hidden">
+          <button
+            type="button"
+            aria-label="Close contact details"
+            onClick={() => setMobileContactDrawerOpen(false)}
+            className="absolute inset-0 bg-background/70 backdrop-blur-sm"
+          />
+          <div className="relative z-10 flex h-full max-w-[90vw] flex-col bg-card shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <span className="text-sm font-semibold text-foreground">
+                Contact & Lead Intelligence
+              </span>
+              <button
+                type="button"
+                onClick={() => setMobileContactDrawerOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <ContactSidebar contact={activeContact} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
