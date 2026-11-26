@@ -137,3 +137,23 @@ export type AbCampaignStatus =
 
 export type AbWinnerMetric = 'reply_rate' | 'read_rate' | 'conversion_rate';
 
+export interface AbCampaignVariant {
+  id: string;
+  campaign_id: string;
+  account_id: string;
+  variant_key: 'A' | 'B';
+  label: string;
+  body_text: string;
+  template_name: string | null;
+  template_language: string | null;
+  media_url: string | null;
+  coupon_id: string | null;
+  compliance_score: number;
+  sent_count: number;
+  delivered_count: number;
+  read_count: number;
+  replied_count: number;
+  conversions_count: number;
+  revenue_attributed: number;
+}
+
