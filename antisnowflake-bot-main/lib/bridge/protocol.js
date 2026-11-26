@@ -160,16 +160,25 @@ function parseSendRequest(raw) {
     const origin = requireOneOf(body, 'origin', SEND_ORIGINS);
     const text = optionalString(body, 'text', { max: MAX_TEXT_LENGTH });
     const quotedId = optionalString(body, 'quotedId', { pattern: MESSAGE_ID_PATTERN });
+    let simulateTypingMs;
+    if (body.simulateTypingMs !== undefined && body.simulateTypingMs !== null) {
+        if (!Number.isInteger(body.simulateTypingMs) || body.simulateTypingMs < 0 || body.simulateTypingMs > 15000) {
+            throw invalid('simulateTypingMs must be an integer between 0 and 15000');
+        }
+        simulateTypingMs = body.simulateTypingMs;
+    }
+
+    const typingExtra = simulateTypingMs !== undefined ? { simulateTypingMs } : {};
 
     if (kind === 'text') {
         if (!text || !text.trim()) throw invalid('text is required for kind "text"');
-        return { session, to, kind, origin, text, quotedId };
+        return { session, to, kind, origin, text, quotedId, ...typingExtra };
     }
 
     const mediaUrl = parseHttpUrl(requireString(body, 'mediaUrl', { max: 2048 }), 'mediaUrl');
     const mimeType = optionalString(body, 'mimeType', { pattern: MIME_PATTERN, max: 255 });
     const filename = optionalString(body, 'filename', { max: 255 });
-    return { session, to, kind, origin, text, quotedId, mediaUrl, mimeType, filename };
+    return { session, to, kind, origin, text, quotedId, ...typingExtra, mediaUrl, mimeType, filename };
 }
 
 function parseReactRequest(raw) {

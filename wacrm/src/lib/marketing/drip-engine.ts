@@ -18,6 +18,10 @@ import { findOrCreateConversation } from '@/lib/whatsapp/inbound/conversations';
 import { renderPersonalizedCopy } from './copywriter';
 import { extractGrowthRefCode } from './qr-svg';
 import { recomputeAccountLeadScores } from './lead-scoring';
+import {
+  loadAccountTypingConfig,
+  simulateHumanTyping,
+} from '@/lib/ai/typing-simulator';
 
 function parseHHMM(hhmm: string, fallbackMinutes: number): number {
   const m = /^(\d{1,2}):(\d{2})$/.exec((hhmm || '').trim());
@@ -262,6 +266,16 @@ export async function processDueDripEnrollments(
         contact,
         couponRes.data?.code ?? null
       );
+
+      // Simulate realistic human typing before delivering drip message
+      const typingCfg = await loadAccountTypingConfig(db, enrollment.account_id);
+      await simulateHumanTyping({
+        transport,
+        to: target.target,
+        conversationId,
+        text: rendered,
+        config: typingCfg,
+      });
 
       let waMessageId = '';
       if (currentStep.message_type === 'template' && currentStep.template_name) {

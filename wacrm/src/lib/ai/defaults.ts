@@ -55,10 +55,18 @@ export function buildSystemPrompt(args: {
   mode: 'draft' | 'auto_reply'
   /** Knowledge-base excerpts retrieved for the current question. */
   knowledge?: string[]
+  /** Structured tenant Company Bio / Brand DNA summary from Jarvis Knowledge Hub. */
+  companyProfile?: string | null
+  /** Optional autonomous employee persona name/role. */
+  agentPersona?: { name?: string; role?: string } | null
 }): string {
-  const { userPrompt, mode, knowledge } = args
+  const { userPrompt, mode, knowledge, companyProfile, agentPersona } = args
+  const personaIntro = agentPersona?.name
+    ? `You are ${agentPersona.name}, ${agentPersona.role || 'a 24/7 AI customer & growth assistant'} for a business that uses a WhatsApp CRM. `
+    : 'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. '
+
   const parts: string[] = [
-    'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
+    personaIntro +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
       'Write the next reply the business should send to the customer.',
     'Guidelines: reply in the same language the customer is writing in; keep it concise and friendly, suitable for WhatsApp; ' +
@@ -71,6 +79,10 @@ export function buildSystemPrompt(args: {
     parts.push(
       `You are replying automatically with no human in the loop. If you cannot confidently and safely help — the customer explicitly asks for a human, is upset or complaining, or the request needs information you do not have — reply with exactly ${HANDOFF_SENTINEL} and nothing else. A human agent will then take over. Prefer handing off over guessing.`,
     )
+  }
+
+  if (companyProfile && companyProfile.trim()) {
+    parts.push(`Company identity & official business profile:\n${companyProfile.trim()}`)
   }
 
   if (userPrompt && userPrompt.trim()) {

@@ -85,7 +85,7 @@ function productionDeps() {
             let outboxPendingBatches = 0;
             try {
                 outboxPendingBatches = getWacrmClient().pendingBatches();
-            } catch (_) {}
+            } catch (_) { }
             return {
                 uptimeSeconds: rt.uptimeSeconds,
                 memoryMb: rt.memoryMb,
@@ -461,6 +461,31 @@ function createBridgeHandler(overrides = {}) {
             const cmd = parseSendRequest(body);
             const sock = requireConnected(cmd.session);
             const jid = recipientJid(cmd.to);
+
+            // Optional realistic typing simulation right on the Baileys socket
+            // before sending so contacts see "typing..." naturally.
+            if (cmd.simulateTypingMs && cmd.simulateTypingMs > 0 && typeof sock.sendPresenceUpdate === 'function') {
+                const sleepMs = (ms) => new Promise((r) => {
+                    const t = setTimeout(r, ms);
+                    if (typeof t.unref === 'function') t.unref();
+                });
+                try {
+                    await withTimeout(Promise.resolve(sock.sendPresenceUpdate('composing', jid)), d.presenceTimeoutMs());
+                    let remaining = cmd.simulateTypingMs;
+                    while (remaining > 0) {
+                        const slice = Math.min(remaining, 7000);
+                        await sleepMs(slice);
+                        remaining -= slice;
+                        if (remaining > 0) {
+                            await withTimeout(Promise.resolve(sock.sendPresenceUpdate('composing', jid)), d.presenceTimeoutMs()).catch(() => {});
+                        }
+                    }
+                    await withTimeout(Promise.resolve(sock.sendPresenceUpdate('paused', jid)), d.presenceTimeoutMs()).catch(() => {});
+                } catch (_) {
+                    // Presence is cosmetic; never block message delivery.
+                }
+            }
+
             // The id is chosen up front and remembered BEFORE sending, so the
             // echo on messages.upsert (which can fire before sendMessage
             // resolves) is recognised as already stored by wacrm.

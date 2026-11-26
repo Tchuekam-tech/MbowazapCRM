@@ -183,6 +183,8 @@ export interface SendRequest {
   filename?: string;
   /** WhatsApp id of the message being replied to. */
   quotedId?: string;
+  /** Optional realistic typing simulation duration (ms, 0-15000) before dispatch. */
+  simulateTypingMs?: number;
 }
 
 export interface SendResult {

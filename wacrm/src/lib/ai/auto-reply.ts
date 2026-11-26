@@ -22,6 +22,11 @@ import {
 } from './reply-control'
 import { logReplyControl } from './reply-control-log'
 import { withTypingIndicator } from './typing-controller'
+import {
+  loadAccountTypingConfig,
+  simulateHumanTyping,
+} from './typing-simulator'
+import { loadCompanyProfilePromptContext } from '@/lib/jarvis/knowledge-ingestor'
 import { loadTransport, type WhatsAppTransport } from '@/lib/whatsapp/transport'
 import type { AiUsage } from './types'
 
@@ -172,6 +177,7 @@ export async function dispatchInboundToAiReply(
     let text: string | null = null
     let handoff = false
     let usage: AiUsage | null = null
+    const generationStartedAt = Date.now()
 
     try {
       logReplyControl('ai_generation_started', {
@@ -188,13 +194,16 @@ export async function dispatchInboundToAiReply(
         inboundMessageId,
         signal: abortController.signal,
         fn: async () => {
-          // Ground the reply in the account's knowledge base (best-effort).
-          const knowledge = await retrieveKnowledge(
-            db,
-            accountId,
-            config,
-            latestUserMessage(messages),
-          )
+          // Ground the reply in the account's Company DNA + Knowledge Base (best-effort).
+          const [knowledge, profileCtx] = await Promise.all([
+            retrieveKnowledge(
+              db,
+              accountId,
+              config,
+              latestUserMessage(messages),
+            ),
+            loadCompanyProfilePromptContext(db, accountId),
+          ])
 
           if (abortController.signal.aborted) {
             throw abortController.signal.reason || new Error('Aborted')
@@ -204,6 +213,8 @@ export async function dispatchInboundToAiReply(
             userPrompt: config.systemPrompt,
             mode: 'auto_reply',
             knowledge,
+            companyProfile: profileCtx.companyPrompt,
+            agentPersona: profileCtx.agentPersona,
           })
 
           return generateReply({
@@ -223,6 +234,23 @@ export async function dispatchInboundToAiReply(
         accountId,
         version: baselineVersion,
       })
+
+      // Realistic human typing pacing: if the LLM answered faster than a human
+      // would type a message of this length, keep showing "typing…" naturally
+      // for the remaining cadence before delivering the reply.
+      if (!handoff && text && recipient && transport && !abortController.signal.aborted) {
+        const typingCfg = await loadAccountTypingConfig(db, accountId)
+        await simulateHumanTyping({
+          transport,
+          to: recipient,
+          conversationId,
+          text,
+          config: typingCfg,
+          inboundMessageId,
+          alreadyElapsedMs: Date.now() - generationStartedAt,
+          signal: abortController.signal,
+        })
+      }
     } catch (err) {
       if (abortController.signal.aborted) {
         logReplyControl('ai_generation_discarded', {

@@ -12,6 +12,10 @@ import {
 } from '@/lib/whatsapp/phone-utils'
 import { supabaseAdmin } from './admin-client'
 import { assertAutomationAllowed } from '@/lib/ai/reply-control'
+import {
+  loadAccountTypingConfig,
+  simulateHumanTyping,
+} from '@/lib/ai/typing-simulator'
 
 // ------------------------------------------------------------
 // Flows-side Meta sender (interactive variants).
@@ -70,6 +74,10 @@ interface SendTextEngineArgs {
   aiGenerated?: boolean
   /** Expected automation version for concurrency & invalidation control. */
   expectedVersion?: number
+  /** When true, emits realistic human "typing…" presence proportional to
+   *  message length right before sending. Callers that already simulated
+   *  typing during generation (like auto-reply) leave this false. */
+  simulateTyping?: boolean
 }
 
 /**
@@ -121,6 +129,17 @@ export async function engineSendText(
     )
   }
   const sanitized = sendTarget.target
+
+  if (args.simulateTyping) {
+    const typingCfg = await loadAccountTypingConfig(db, args.accountId)
+    await simulateHumanTyping({
+      transport,
+      to: sanitized,
+      conversationId: args.conversationId,
+      text: args.text,
+      config: typingCfg,
+    })
+  }
 
   const attempt = async (target: string): Promise<string> => {
     const r = await transport.sendText({
@@ -194,6 +213,10 @@ interface SendMediaEngineArgs {
   filename?: string
   /** Expected automation version for concurrency & invalidation control. */
   expectedVersion?: number
+  /** When true, emits realistic human "typing…" presence proportional to
+   *  message length right before sending. Callers that already simulated
+   *  typing during generation (like auto-reply) leave this false. */
+  simulateTyping?: boolean
 }
 
 /**
@@ -242,6 +265,17 @@ export async function engineSendMedia(
     )
   }
   const sanitized = sendTarget.target
+
+  if (args.simulateTyping) {
+    const typingCfg = await loadAccountTypingConfig(db, args.accountId)
+    await simulateHumanTyping({
+      transport,
+      to: sanitized,
+      conversationId: args.conversationId,
+      text: args.caption || `[${args.kind}]`,
+      config: typingCfg,
+    })
+  }
 
   const attempt = async (target: string): Promise<string> => {
     const r = await transport.sendMedia({
@@ -320,6 +354,10 @@ interface SendInteractiveButtonsEngineArgs {
   footerText?: string
   /** Expected automation version for concurrency & invalidation control. */
   expectedVersion?: number
+  /** When true, emits realistic human "typing…" presence proportional to
+   *  message length right before sending. Callers that already simulated
+   *  typing during generation (like auto-reply) leave this false. */
+  simulateTyping?: boolean
 }
 
 interface SendInteractiveListEngineArgs {
@@ -334,6 +372,10 @@ interface SendInteractiveListEngineArgs {
   footerText?: string
   /** Expected automation version for concurrency & invalidation control. */
   expectedVersion?: number
+  /** When true, emits realistic human "typing…" presence proportional to
+   *  message length right before sending. Callers that already simulated
+   *  typing during generation (like auto-reply) leave this false. */
+  simulateTyping?: boolean
 }
 
 /**

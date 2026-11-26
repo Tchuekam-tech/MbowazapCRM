@@ -103,3 +103,67 @@ test('bridge GET /bridge/metrics returns signed runtime telemetry', async () => 
         server.close();
     }
 });
+
+test('bridge POST /bridge/send simulates composing -> paused typing presence when simulateTypingMs is set', async () => {
+    const secret = 'mbowazap-typing-test-secret-0123456789';
+    const events = [];
+    const fakeSock = {
+        user: { id: '237653683174@s.whatsapp.net' },
+        sendPresenceUpdate: async (presence, jid) => {
+            events.push(`presence:${presence}:${jid}`);
+        },
+        sendMessage: async (jid, content) => {
+            events.push(`send:${jid}:${content.text}`);
+            return { key: { id: 'MSG-TYPING-1' }, messageTimestamp: 1700000000 };
+        },
+    };
+    const handler = createBridgeHandler({
+        getSecret: () => secret,
+        getSocket: () => fakeSock,
+        isLinked: () => true,
+        isSocketOpen: () => true,
+        generateMessageId: () => 'MSG-TYPING-1',
+        state: {
+            markCrmSent: () => {},
+            getContactPause: () => null,
+            setContactPause: () => {},
+            isDavilaEnabled: () => true,
+        },
+    });
+
+    const server = http.createServer(handler);
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address();
+    try {
+        const body = JSON.stringify({
+            session: '237653683174',
+            to: { phone: '237699999999' },
+            kind: 'text',
+            origin: 'ai',
+            text: 'Hello from Jarvis!',
+            simulateTypingMs: 30,
+        });
+        const headers = signRequest({
+            method: 'POST',
+            pathAndQuery: '/bridge/send',
+            body,
+            secret,
+            nowSeconds: Math.floor(Date.now() / 1000),
+        });
+        const res = await fetch(`http://127.0.0.1:${port}/bridge/send`, {
+            method: 'POST',
+            headers: { ...headers, 'content-type': 'application/json' },
+            body,
+        });
+        assert.equal(res.status, 200);
+        const json = await res.json();
+        assert.equal(json.ok, true);
+        assert.deepEqual(events, [
+            'presence:composing:237699999999@s.whatsapp.net',
+            'presence:paused:237699999999@s.whatsapp.net',
+            'send:237699999999@s.whatsapp.net:Hello from Jarvis!',
+        ]);
+    } finally {
+        server.close();
+    }
+});
