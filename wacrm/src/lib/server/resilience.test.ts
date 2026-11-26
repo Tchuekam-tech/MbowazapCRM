@@ -110,3 +110,13 @@ describe('MboWazap bridge circuit breaker & metrics', () => {
       message: expect.stringContaining('circuit breaker open'),
     });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+    // After cooldown expires, half-open probe fires again
+    nowMs += 11_000;
+    fetchImpl.mockImplementationOnce(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            uptimeSeconds: 42,
+            memoryMb: { rss: 80, heapUsed: 40, heapTotal: 60 },
