@@ -412,3 +412,13 @@ export function DripSequencesTab({
                     </Button>
                     {canEdit && (
                       <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDelete(seq.id)}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
