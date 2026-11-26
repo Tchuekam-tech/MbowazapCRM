@@ -76,3 +76,45 @@ export function lintWhatsAppCopy(text: string): ComplianceReport {
   return { score: clamped, grade, warnings };
 }
 
+export function renderPersonalizedCopy(
+  template: string,
+  contact: {
+    name?: string | null;
+    phone?: string | null;
+    company?: string | null;
+    email?: string | null;
+  },
+  couponCode?: string | null
+): string {
+  const fullName = (contact.name || '').trim() || 'there';
+  const firstName = fullName.split(/\s+/)[0] || fullName;
+  return template
+    .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
+    .replace(/\{\{\s*name\s*\}\}/gi, fullName)
+    .replace(/\{\{\s*company\s*\}\}/gi, (contact.company || '').trim() || 'your business')
+    .replace(/\{\{\s*phone\s*\}\}/gi, contact.phone || '')
+    .replace(/\{\{\s*email\s*\}\}/gi, contact.email || '')
+    .replace(/\{\{\s*coupon\s*\}\}/gi, couponCode || '');
+}
+
+export interface CopywriterRequest {
+  goal: string;
+  offer: string;
+  audience?: string;
+  tone?: string;
+  language?: string;
+  couponCode?: string | null;
+}
+
+export interface GeneratedAbCopy {
+  variantA: { label: string; body: string; compliance: ComplianceReport };
+  variantB: { label: string; body: string; compliance: ComplianceReport };
+  usedAi: boolean;
+}
+
+function buildFallbackAbCopy(req: CopywriterRequest): GeneratedAbCopy {
+  const couponLine = req.couponCode
+    ? `\n\nUse code *${req.couponCode}* when replying to lock it in.`
+    : '';
+  const offer = req.offer.trim() || 'our latest offer';
+  const lang = (req.language || 'English').toLowerCase();
