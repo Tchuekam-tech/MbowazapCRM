@@ -102,6 +102,11 @@ export default function DashboardPage() {
       .then((a) => setActivity(a))
       .catch((err) => console.error('[dashboard] activity failed:', err))
       .finally(() => setActivityLoading(false))
+
+    void fetch('/api/marketing/buffer')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((p) => { if (p) setPresence(p as DigitalPresenceReport) })
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
