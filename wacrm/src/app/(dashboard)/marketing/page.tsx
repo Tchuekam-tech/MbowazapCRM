@@ -170,3 +170,11 @@ function MarketingStudioInner() {
           )}
         </div>
       </div>
+
+      {/* Top Marketing KPI Strip */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground">{t('kpiLinks')}</p>
+          <p className="mt-1 text-xl font-bold tabular-nums text-foreground">
+            {analytics?.funnel.clicks.toLocaleString() ?? 0}
+          </p>
