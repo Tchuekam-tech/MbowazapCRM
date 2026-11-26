@@ -331,3 +331,27 @@ export function GrowthLinksTab({
                       </a>
                     </div>
                   </div>
+
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={link.is_active}
+                      disabled={!canEdit}
+                      onCheckedChange={() => handleToggle(link)}
+                      aria-label={`Toggle ${link.name}`}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleCopy(link)}
+                    >
+                      {copiedId === link.id ? (
+                        <Check className="h-3.5 w-3.5 text-primary" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setQrLink(link)}
+                    >
