@@ -236,3 +236,12 @@ function MarketingStudioInner() {
               {t('tabs.links')}
             </TabsTrigger>
             <TabsTrigger value="leads" className="gap-1.5 text-xs">
+              <Flame className="h-3.5 w-3.5" />
+              {t('tabs.leads')}
+            </TabsTrigger>
+            <TabsTrigger value="drips" className="gap-1.5 text-xs">
+              <GitBranchPlus className="h-3.5 w-3.5" />
+              {t('tabs.drips')}
+            </TabsTrigger>
+            <TabsTrigger value="campaigns" className="gap-1.5 text-xs">
+              <FlaskConical className="h-3.5 w-3.5" />
