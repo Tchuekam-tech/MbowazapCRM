@@ -39,3 +39,19 @@ export class FastTtlCache {
   constructor(maxEntries = 1000) {
     this.maxEntries = Math.max(16, maxEntries);
   }
+
+  get<T>(key: string, now = Date.now()): T | undefined {
+    const entry = this.store.get(key);
+    if (!entry) return undefined;
+    if (entry.freshUntil > now) {
+      // LRU bump
+      this.store.delete(key);
+      this.store.set(key, entry);
+      this.hits += 1;
+      return entry.value as T;
+    }
+    if (entry.staleUntil <= now) {
+      this.store.delete(key);
+    }
+    return undefined;
+  }
