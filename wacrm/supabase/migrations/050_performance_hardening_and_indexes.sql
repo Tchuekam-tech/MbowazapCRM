@@ -46,3 +46,27 @@ CREATE INDEX IF NOT EXISTS idx_automation_pending_due_fast
   WHERE status = 'pending';
 
 -- 2. Fast single-roundtrip Dashboard Metrics RPC (RLS-respecting SECURITY INVOKER)
+CREATE OR REPLACE FUNCTION get_dashboard_metrics_fast(
+  p_today_start TIMESTAMPTZ,
+  p_yesterday_start TIMESTAMPTZ
+) RETURNS JSONB
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+AS $$
+  SELECT jsonb_build_object(
+    'open_conv_cur', (SELECT COUNT(*) FROM conversations WHERE status = 'open'),
+    'new_conv_today', (SELECT COUNT(*) FROM conversations WHERE status = 'open' AND created_at >= p_today_start),
+    'new_conv_yesterday', (SELECT COUNT(*) FROM conversations WHERE status = 'open' AND created_at >= p_yesterday_start AND created_at < p_today_start),
+    'new_contacts_today', (SELECT COUNT(*) FROM contacts WHERE created_at >= p_today_start),
+    'new_contacts_yesterday', (SELECT COUNT(*) FROM contacts WHERE created_at >= p_yesterday_start AND created_at < p_today_start),
+    'open_deals_value', COALESCE((SELECT SUM(COALESCE(value, 0)) FROM deals WHERE status = 'open'), 0),
+    'open_deals_count', (SELECT COUNT(*) FROM deals WHERE status = 'open'),
+    'messages_today', (SELECT COUNT(*) FROM messages WHERE sender_type = 'agent' AND created_at >= p_today_start),
+    'messages_yesterday', (SELECT COUNT(*) FROM messages WHERE sender_type = 'agent' AND created_at >= p_yesterday_start AND created_at < p_today_start)
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION get_dashboard_metrics_fast(TIMESTAMPTZ, TIMESTAMPTZ) TO authenticated;
+
+-- 3. Fast server-side daily message volume aggregation RPC (avoids pulling 10k+ raw rows to client)
