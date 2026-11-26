@@ -211,3 +211,36 @@ export function AbCampaignsTab({
               </p>
             </div>
           </div>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <Label className="text-xs">Campaign Goal</Label>
+                <select
+                  value={goal}
+                  onChange={(e) => setGoal(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs text-foreground"
+                >
+                  <option>Flash Promotion</option>
+                  <option>Product Launch</option>
+                  <option>Win-Back Dormant Leads</option>
+                  <option>VIP Exclusive Offer</option>
+                  <option>Abandoned Checkout</option>
+                  <option>Event / Webinar Invite</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">Language</Label>
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs text-foreground"
+                >
+                  <option>English</option>
+                  <option>French</option>
+                  <option>Spanish</option>
+                  <option>Portuguese</option>
+                  <option>Korean</option>
+                </select>
+              </div>
+            </div>
