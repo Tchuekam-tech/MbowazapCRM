@@ -120,3 +120,17 @@ describe('MboWazap bridge circuit breaker & metrics', () => {
             ok: true,
             uptimeSeconds: 42,
             memoryMb: { rss: 80, heapUsed: 40, heapTotal: 60 },
+            eventLoopLagMs: { mean: 1.2, p95: 3.4, max: 6.1 },
+            activeSockets: 1,
+            connectedSockets: 1,
+            outboxPendingBatches: 0,
+            storeStats: { messages: 12, contacts: 5, chats: 2 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+    );
+    const metrics = await client.metrics();
+    expect(metrics.connectedSockets).toBe(1);
+    expect(metrics.eventLoopLagMs.p95).toBe(3.4);
+  });
+});
