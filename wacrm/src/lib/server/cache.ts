@@ -97,3 +97,14 @@ export class FastTtlCache {
       this.hits += 1;
       return existing.value as T;
     }
+
+    // Serve stale value instantly while refreshing in the background.
+    if (existing && existing.staleUntil > now) {
+      this.staleHits += 1;
+      if (!this.inflight.has(key)) {
+        const refresh = loader()
+          .then((val) => {
+            this.set(key, val, ttlMs, swrMs, nowFn());
+            return val;
+          })
+          .catch(() => existing.value)
