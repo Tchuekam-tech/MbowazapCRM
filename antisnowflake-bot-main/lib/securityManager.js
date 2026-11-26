@@ -199,3 +199,202 @@ function getWarmupDailyLimit() {
     if (daysActive <= 14) return { daysActive, limit: 70 };
     return { daysActive, limit: 200 }; // Standard mature limit
 }
+
+// Helper to check if a sender is the owner
+function isOwner(senderId, activeSettings) {
+    const ownerNum = String((activeSettings && activeSettings.ownerNumber) || '237653683174');
+    const cleanedOwner = ownerNum.replace(/[^0-9]/g, '');
+    const cleanedSender = extractDigitsFromJid(senderId);
+    return !!cleanedSender && cleanedSender === cleanedOwner;
+}
+
+function getOrInitContactState(senderId, now) {
+    if (!state.has(senderId)) {
+        if (state.size >= 2000) {
+            const oldestKey = state.keys().next().value;
+            if (oldestKey !== undefined) state.delete(oldestKey);
+        }
+        state.set(senderId, {
+            hourlyCount: 0,
+            hourStart: now,
+            unansweredCount: 0,
+            blacklisted: false
+        });
+    }
+    return state.get(senderId);
+}
+
+/**
+ * Comprehensive incoming message security gate
+ */
+async function processSecurityCheck(sock, senderId, senderName, activeSettings, incomingText = '') {
+    const now = Date.now();
+
+    // Owner Bypass Check
+    if (isOwner(senderId, activeSettings)) {
+        return { allowed: true };
+    }
+
+    // Check if contact already opted out
+    if (isContactOptedOut(senderId)) {
+        console.log(chalk.yellow(`[AntiSpam] Silently ignoring message from opted-out contact ${senderId.split('@')[0]}`));
+        return { allowed: false, reason: 'ALREADY_OPTED_OUT' };
+    }
+
+    // Check for explicit Opt-Out (STOP)
+    if (isStopRequested(incomingText)) {
+        registerOptOut(senderId);
+        console.log(chalk.bold(chalk.red(`[AntiSpam] 🛑 Contact ${senderId.split('@')[0]} requested STOP. Opted out permanently.`)));
+        
+        try {
+            const bridgeState = require('./bridge/state');
+            const { getReporter, extractChatRef } = require('./bridge/reporter');
+            const session = bridgeState.sessionKeyForSocket(sock);
+            if (session) {
+                const chatRef = extractChatRef(senderId);
+                getReporter().reportContactOptedOut(session, chatRef);
+            }
+        } catch (_) {}
+
+        try {
+            await sock.sendMessage(senderId, {
+                text: "✅ Votre demande d'arrêt a bien été prise en compte. Vous ne recevrez plus aucun message automatique de notre part. Bonne continuation !"
+            });
+        } catch (_) {}
+
+        // Notify owner
+        try {
+            const ownerNum = (activeSettings.ownerNumber || '237653683174').replace(/[^0-9]/g, '') + '@s.whatsapp.net';
+            await sock.sendMessage(ownerNum, {
+                text: `ℹ️ *Notification Opt-Out*\n\nLe contact @${senderId.split('@')[0]} a envoyé *STOP* et a été désinscrit automatiquement pour protéger le numéro des signalements.`,
+                mentions: [senderId]
+            });
+        } catch (_) {}
+
+        return { allowed: false, reason: 'OPT_OUT_REQUESTED' };
+    }
+
+    // Check for Human Agent Request
+    if (isHumanRequested(incomingText)) {
+        console.log(chalk.bold(chalk.cyan(`[AntiSpam] 👤 Contact ${senderId.split('@')[0]} requested a human agent.`)));
+        
+        try {
+            const bridgeState = require('./bridge/state');
+            const { getReporter, extractChatRef } = require('./bridge/reporter');
+            const session = bridgeState.sessionKeyForSocket(sock);
+            if (session) {
+                const chatRef = extractChatRef(senderId);
+                getReporter().reportAiPaused(session, chatRef, Date.now() + 10 * 60 * 1000);
+            }
+        } catch (_) {}
+
+        try {
+            await sock.sendMessage(senderId, {
+                text: "Bien reçu ! Je mets en pause mes réponses automatiques dans cette conversation. Un conseiller humain de l'équipe Tchuek-Tech prendra le relais sous peu. Merci de votre patience !"
+            });
+        } catch (_) {}
+
+        // Notify owner and pause AI in memory
+        try {
+            const ownerNum = (activeSettings.ownerNumber || '237653683174').replace(/[^0-9]/g, '') + '@s.whatsapp.net';
+            await sock.sendMessage(ownerNum, {
+                text: `🚨 *DEMANDE DE CONSEILLER HUMAIN*\n\nLe prospect @${senderId.split('@')[0]} (${senderName}) a demandé à parler à une personne.\n\n_⏸️ L'IA a été mise en pause pour vous laisser la main._`,
+                mentions: [senderId]
+            });
+        } catch (_) {}
+
+        return { allowed: false, reason: 'HUMAN_TAKEOVER_REQUESTED', pauseAi: true };
+    }
+
+    // Warmup Ramp Check
+    const todayKey = new Date().toISOString().split('T')[0];
+    const { daysActive, limit: warmupLimit } = getWarmupDailyLimit();
+    const todayCount = (warmupState.dailyCounts[todayKey] || 0);
+
+    if (todayCount >= warmupLimit) {
+        console.log(chalk.red(`[Warmup Ramp] ⚠️ Daily safety ceiling reached (${todayCount}/${warmupLimit} on Day ${daysActive}). Protecting account from suspension.`));
+        return { allowed: false, reason: 'WARMUP_DAILY_CAP_REACHED' };
+    }
+
+    // Initialize in-memory state if not present
+    const contactState = getOrInitContactState(senderId, now);
+
+    // Rule 2 Check & Reset: If prospect messages us, lift any unanswered blacklist
+    if (contactState.blacklisted) {
+        contactState.blacklisted = false;
+        contactState.unansweredCount = 0;
+        console.log(chalk.bold(chalk.blue(`[AntiSpam] Unblacklisted ${senderId.split('@')[0]} — contact replied`)));
+    } else {
+        contactState.unansweredCount = 0;
+    }
+
+    // Reset hourly count if 1-hour window expired
+    if (now - contactState.hourStart > 3600000) {
+        contactState.hourlyCount = 0;
+        contactState.hourStart = now;
+    }
+
+    // Rule 1 Enforcement: Hourly Cap per contact
+    if (contactState.hourlyCount >= 20) {
+        const silentUntil = new Date(contactState.hourStart + 3600000).toLocaleTimeString('fr-FR', { timeZone: 'Africa/Douala' });
+        console.log(chalk.bold(chalk.yellow(`[AntiSpam] Cap reached for ${senderId.split('@')[0]} — silent until ${silentUntil}`)));
+        return { allowed: false, reason: 'HOURLY_LIMIT_EXCEEDED' };
+    }
+
+    return { allowed: true };
+}
+
+/**
+ * Tracks that a bot response was successfully sent to the contact.
+ */
+async function recordBotResponse(sock, senderId, senderName, activeSettings) {
+    if (isOwner(senderId, activeSettings)) {
+        return;
+    }
+
+    // Increment warmup daily count
+    const todayKey = new Date().toISOString().split('T')[0];
+    warmupState.dailyCounts[todayKey] = (warmupState.dailyCounts[todayKey] || 0) + 1;
+    saveWarmupState(warmupState);
+
+    const contactState = getOrInitContactState(senderId, Date.now());
+
+    if (Date.now() - contactState.hourStart > 3600000) {
+        contactState.hourlyCount = 0;
+        contactState.hourStart = Date.now();
+    }
+
+    contactState.hourlyCount++;
+    contactState.unansweredCount++;
+
+    // Blacklist prospect permanently if they ignore 2 consecutive bot messages
+    if (contactState.unansweredCount >= 2) {
+        contactState.blacklisted = true;
+        console.log(chalk.bold(chalk.red(`[AntiSpam] Blacklisted ${senderId.split('@')[0]} — 2 unanswered messages`)));
+
+        try {
+            let ownerJid = activeSettings.ownerNumber || '237653683174';
+            if (!ownerJid.endsWith('@s.whatsapp.net')) {
+                ownerJid = ownerJid.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
+            }
+
+            const alertText = `🚨 *TCHUEK-TECH SECURITY ALERT* 🚨\n\n*Prospect mis en sourdine (Lead froid)*\n👤 *Nom*: ${senderName}\n📱 *Numéro*: @${senderId.split('@')[0]}\n🕒 *Heure*: ${new Date().toLocaleString('fr-FR', { timeZone: 'Africa/Douala' })}\n\n*Raison*: 2 messages du bot restés sans réponse. Le bot n'enverra plus de relance automatique pour éviter les signalements. Vous pouvez reprendre la main manuellement.`;
+
+            await sock.sendMessage(ownerJid, { 
+                text: alertText, 
+                mentions: [senderId] 
+            });
+        } catch (alertErr) {
+            console.error('[AntiSpam] Failed to dispatch owner alert:', alertErr.message);
+        }
+    }
+}
+
+module.exports = {
+    processSecurityCheck,
+    recordBotResponse,
+    acquireGlobalSendSlot,
+    isContactOptedOut,
+    isStopRequested,
+    isHumanRequested
+};
