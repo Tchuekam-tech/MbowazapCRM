@@ -29,3 +29,39 @@ export async function POST(request: NextRequest) {
         ? body.mode
         : 'addToQueue';
     const dueAt = typeof body.due_at === 'string' ? body.due_at : undefined;
+
+    if (channelIds.length === 0 || !text) {
+      return NextResponse.json(
+        { error: 'Select at least one Buffer channel and enter post text.' },
+        { status: 400 }
+      );
+    }
+
+    const { data: integration } = await ctx.supabase
+      .from('buffer_integrations')
+      .select('api_key_encrypted')
+      .eq('account_id', ctx.accountId)
+      .maybeSingle();
+
+    if (!integration?.api_key_encrypted) {
+      return NextResponse.json(
+        { error: 'Connect your Buffer API key first.' },
+        { status: 400 }
+      );
+    }
+
+    const apiKey = decrypt(integration.api_key_encrypted as string);
+    const client = createBufferClient({ apiKey });
+
+    const results = await mapWithConcurrency(channelIds.slice(0, 10), 3, async (channelId: string) => {
+      try {
+        const created = await client.createPost({ channelId, text, mode, dueAt });
+        return { channelId, ok: true as const, postId: created.id };
+      } catch (err) {
+        return {
+          channelId,
+          ok: false as const,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    });
