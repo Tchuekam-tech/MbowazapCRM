@@ -78,3 +78,32 @@ export async function POST(request: NextRequest) {
           contactIds = evalRes.contactIds;
         }
       }
+
+      if (contactIds.length === 0) {
+        return NextResponse.json(
+          { error: 'No matching contacts found to enroll' },
+          { status: 400 }
+        );
+      }
+
+      const sortedSteps = Array.isArray(seq.steps)
+        ? [...seq.steps].sort((a, b) => a.step_order - b.step_order)
+        : [];
+      const firstStep = sortedSteps[0];
+      const delayMin = Number(firstStep?.delay_minutes ?? 0);
+      const rawFirst = new Date(Date.now() + delayMin * 60_000);
+      const nextSend = nextAllowedSendTime(
+        rawFirst,
+        seq.quiet_hours_start || '21:00',
+        seq.quiet_hours_end || '08:00',
+        seq.timezone || 'UTC'
+      );
+
+      const rows = contactIds.slice(0, 500).map((cid) => ({
+        sequence_id: sequenceId,
+        account_id: ctx.accountId,
+        contact_id: cid,
+        current_step_order: firstStep?.step_order ?? 1,
+        status: 'active',
+        next_send_at: nextSend.toISOString(),
+      }));
