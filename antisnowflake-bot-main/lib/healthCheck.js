@@ -442,3 +442,151 @@ function startHealthCheckServer(port = process.env.PORT || 8080, host = process.
                 res.end(JSON.stringify(result.status === 500 ? { error: result.error } : { qr: null, error: result.error }));
                 return;
             }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                qr: result.qr,
+                instructions: [
+                    '1. Open WhatsApp on your phone',
+                    '2. Go to Settings → Linked Devices',
+                    '3. Tap "Link a Device"',
+                    '4. Scan this QR code immediately — it expires in 25 seconds',
+                    '5. Wait for the connection to establish'
+                ]
+            }));
+            return;
+        }
+
+        // ──────────────────────────────────────────────
+        // Route: /tally-webhook → Tally submission webhook
+        // ──────────────────────────────────────────────
+        if (pathname === '/tally-webhook' && req.method === 'POST') {
+            let payload;
+            try {
+                payload = await readJsonBody(req, 1024 * 1024);
+            } catch (err) {
+                res.writeHead(err.statusCode || 400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+                return;
+            }
+            try {
+                console.log('[Tally Webhook] Received webhook call:', JSON.stringify(payload));
+
+                let phone = null;
+                if (payload && (typeof payload.phone === 'string' || typeof payload.phone === 'number')) {
+                    phone = String(payload.phone);
+                } else if (payload?.data && Array.isArray(payload.data.fields)) {
+                    for (const field of payload.data.fields) {
+                        if (field.type === 'INPUT_PHONE_NUMBER' || field.type === 'PHONE_NUMBER' ||
+                            (field.value && typeof field.value === 'string' && /^(?:\+?237)?\s*6\d{8}$/.test(field.value.replace(/\s/g, '')))) {
+                            phone = String(field.value);
+                            break;
+                        }
+                    }
+                }
+
+                if (!phone && payload && typeof payload === 'object') {
+                    const findPhone = (obj) => {
+                        for (const k in obj) {
+                            if (typeof obj[k] === 'string' && /^(?:\+?237)?\s*6\d{8}$/.test(obj[k].replace(/\s/g, ''))) {
+                                return obj[k];
+                            } else if (typeof obj[k] === 'object' && obj[k] !== null) {
+                                const found = findPhone(obj[k]);
+                                if (found) return found;
+                            }
+                        }
+                        return null;
+                    };
+                    phone = findPhone(payload);
+                }
+
+                if (!phone) {
+                    console.warn('[Tally Webhook] Failed to find phone number in payload');
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Phone number not found in payload' }));
+                    return;
+                }
+
+                let cleanPhone = String(phone).replace(/[^0-9]/g, '');
+                if (cleanPhone.length === 9 && cleanPhone.startsWith('6')) {
+                    cleanPhone = '237' + cleanPhone;
+                }
+
+                const jid = `${cleanPhone}@s.whatsapp.net`;
+                console.log(`[Tally Webhook] Looking up target socket for client: ${jid}`);
+
+                const targetSock = sessionManager.findSocketForClient(cleanPhone);
+                if (!targetSock) {
+                    console.warn(`[Tally Webhook] No active socket mapping found for client: ${cleanPhone}`);
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'No active WhatsApp session linked to this customer.' }));
+                    return;
+                }
+
+                const success = await flows.handleTallyWebhook(targetSock, jid);
+
+                if (success) {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true, message: `Session updated for ${jid}` }));
+                } else {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'No active matching session state' }));
+                }
+            } catch (err) {
+                console.error('[Tally Webhook] Error processing request:', err.message);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+            return;
+        }
+
+        // 404 for anything else
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Not Found' }));
+        } catch (err) {
+            console.error('[HealthCheck] Unhandled request error:', err?.message || err);
+            if (!res.headersSent) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Internal server error' }));
+            }
+        }
+    });
+
+    const bindHost = (targetHost, allowFallback) => {
+        const onError = (err) => {
+            if (
+                allowFallback &&
+                targetHost === '::' &&
+                (err?.code === 'EAFNOSUPPORT' || err?.code === 'EADDRNOTAVAIL' || err?.code === 'EINVAL')
+            ) {
+                console.warn(`[HealthCheck] IPv6 bind on :: unavailable (${err.code}); falling back to 0.0.0.0`);
+                bindHost('0.0.0.0', false);
+                return;
+            }
+            throw err;
+        };
+        server.once('error', onError);
+        server.listen(port, targetHost, () => {
+            server.removeListener('error', onError);
+            const addr = server.address();
+            const actualPort = typeof addr === 'object' && addr ? addr.port : port;
+            console.log(`[HealthCheck] 🚀 Multi-Tenant Server running on ${targetHost}:${actualPort}`);
+        });
+    };
+
+    // Reverse-proxy keep-alive hardening (Railway / Render / Vercel / Cloudflare):
+    // keeping Node's keepAliveTimeout > upstream proxy idle timeout (60s) eliminates
+    // sporadic 502 Bad Gateway race errors under concurrent load.
+    server.keepAliveTimeout = 65_000;
+    server.headersTimeout = 66_000;
+    server.requestTimeout = 30_000;
+
+    bindHost(host, true);
+
+    return server;
+}
+
+module.exports = {
+    updateActiveTime,
+    startHealthCheckServer
+};
