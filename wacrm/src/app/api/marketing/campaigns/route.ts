@@ -443,3 +443,33 @@ export async function POST(request: NextRequest) {
         },
       ])
       .select();
+
+    if (vErr) return NextResponse.json({ error: vErr.message }, { status: 500 });
+
+    return NextResponse.json(
+      { campaign: { ...created, variants: savedVariants ?? [] } },
+      { status: 201 }
+    );
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const ctx = await requireRole('agent');
+    const id = request.nextUrl.searchParams.get('id');
+    if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+
+    const { error } = await ctx.supabase
+      .from('ab_campaigns')
+      .delete()
+      .eq('id', id)
+      .eq('account_id', ctx.accountId);
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ deleted: true });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
