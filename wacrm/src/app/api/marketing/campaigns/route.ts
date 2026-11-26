@@ -325,3 +325,45 @@ export async function POST(request: NextRequest) {
           ? ctx.supabase.from('promo_coupons').select('code').eq('id', variantB.coupon_id).maybeSingle()
           : Promise.resolve({ data: null }),
       ]);
+
+      await ctx.supabase
+        .from('ab_campaigns')
+        .update({ status: 'running', started_at: new Date().toISOString() })
+        .eq('id', campaignId);
+
+      let sentA = 0;
+      let sentB = 0;
+      await mapWithConcurrency(testRecipients, concurrency, async (rec) => {
+        const contact = contactById.get(rec.contact_id);
+        if (!contact) return;
+        const isA = rec.variant_key === 'A';
+        const ok = await deliverOne(
+          contact,
+          isA ? variantA : variantB,
+          rec.id,
+          isA ? cpA.data?.code ?? null : cpB.data?.code ?? null
+        );
+        if (ok) {
+          if (isA) sentA += 1;
+          else sentB += 1;
+        }
+      });
+
+      const hasHoldout = shuffled.length > testCount;
+      await Promise.all([
+        ctx.supabase
+          .from('ab_campaign_variants')
+          .update({ sent_count: variantA.sent_count + sentA })
+          .eq('id', variantA.id),
+        ctx.supabase
+          .from('ab_campaign_variants')
+          .update({ sent_count: variantB.sent_count + sentB })
+          .eq('id', variantB.id),
+        ctx.supabase
+          .from('ab_campaigns')
+          .update({
+            status: hasHoldout ? 'evaluating' : 'completed',
+            completed_at: hasHoldout ? null : new Date().toISOString(),
+          })
+          .eq('id', campaignId),
+      ]);
