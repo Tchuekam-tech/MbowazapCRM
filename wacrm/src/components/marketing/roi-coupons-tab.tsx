@@ -200,3 +200,38 @@ export function RoiCouponsTab({
             </span>
           )}
         </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            { label: 'Link Clicks', value: funnel.clicks.toLocaleString() },
+            { label: 'Total Leads', value: funnel.leads.toLocaleString() },
+            { label: 'Engaged Replies', value: funnel.replied.toLocaleString() },
+            { label: 'Hot Leads (70+)', value: funnel.hotLeads.toLocaleString() },
+            { label: 'Coupon Uses', value: funnel.redemptions.toLocaleString() },
+            {
+              label: 'Attributed Revenue',
+              value: formatCurrency(funnel.wonRevenue, currency),
+              highlight: true,
+            },
+          ].map((stage) => (
+            <div
+              key={stage.label}
+              className={`rounded-lg border p-3 ${
+                stage.highlight
+                  ? 'border-primary/40 bg-primary/10'
+                  : 'border-border bg-muted/30'
+              }`}
+            >
+              <p className="text-[11px] text-muted-foreground">{stage.label}</p>
+              <p
+                className={`mt-1 text-lg font-bold tabular-nums ${
+                  stage.highlight ? 'text-primary' : 'text-foreground'
+                }`}
+              >
+                {stage.value}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
