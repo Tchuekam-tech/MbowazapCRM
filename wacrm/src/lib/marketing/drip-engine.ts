@@ -477,3 +477,35 @@ export async function handleMarketingInboundEffects(
       .order('sent_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    if (abRecip) {
+      await db
+        .from('ab_campaign_recipients')
+        .update({ status: 'replied', replied_at: nowIso })
+        .eq('id', abRecip.id);
+
+      if (abRecip.variant_id) {
+        const { data: variant } = await db
+          .from('ab_campaign_variants')
+          .select('id, replied_count')
+          .eq('id', abRecip.variant_id)
+          .maybeSingle();
+        if (variant) {
+          await db
+            .from('ab_campaign_variants')
+            .update({ replied_count: Number(variant.replied_count ?? 0) + 1 })
+            .eq('id', variant.id);
+        }
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  // 4. Refresh contact's live behavioral lead score
+  try {
+    await recomputeAccountLeadScores(db, accountId, { contactId, limit: 1 });
+  } catch {
+    // Non-fatal
+  }
+}
