@@ -548,3 +548,18 @@ export function OmnichannelPresenceTab({
           ))}
         </div>
       </div>
+
+      {/* AI Digital Presence Audit Panel */}
+      {report.audit && (
+        <div className="space-y-4 rounded-xl border border-primary/30 bg-primary/5 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">
+                {report.audit.headline}
+              </h3>
+            </div>
+            <span className="text-[11px] text-muted-foreground">
+              {report.audit.usedAi ? 'AI Strategist' : 'Omnichannel Diagnostic'} ·{' '}
+              {new Date(report.audit.generatedAt).toLocaleString()}
+            </span>
