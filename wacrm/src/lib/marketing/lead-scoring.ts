@@ -307,3 +307,25 @@ export async function recomputeAccountLeadScores(
   if (opts.contactId) {
     contactQuery = contactQuery.eq('id', opts.contactId);
   }
+
+  const { data: contacts, error: cErr } = await contactQuery;
+  if (cErr || !contacts || contacts.length === 0) return 0;
+
+  const contactIds = contacts.map((c) => c.id as string);
+
+  const [convRes, dealsRes, tagsRes] = await Promise.all([
+    db
+      .from('conversations')
+      .select('id, contact_id, last_message_at')
+      .eq('account_id', accountId)
+      .in('contact_id', contactIds),
+    db
+      .from('deals')
+      .select('contact_id, status, value')
+      .eq('account_id', accountId)
+      .in('contact_id', contactIds),
+    db
+      .from('contact_tags')
+      .select('contact_id, tags(name)')
+      .in('contact_id', contactIds),
+  ]);
