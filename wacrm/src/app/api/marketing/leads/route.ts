@@ -50,3 +50,32 @@ export async function GET(request: NextRequest) {
       .eq('account_id', ctx.accountId)
       .order('score', { ascending: false })
       .limit(100);
+
+    if (tier && ['hot', 'warm', 'cold'].includes(tier)) {
+      query = query.eq('tier', tier);
+    }
+
+    const { data, error } = await query;
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    const leads = (data ?? []).map((row: Record<string, unknown>) => ({
+      ...row,
+      contact: Array.isArray(row.contact) ? row.contact[0] : row.contact,
+    }));
+
+    return NextResponse.json({ leads });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
+/**
+ * POST /api/marketing/leads
+ * - `{ action: 'recompute' }` recomputes scores across contacts
+ * - `{ action: 'analyze', contact_id }` runs AI deep intent analysis on one lead
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const ctx = await requireRole('agent');
+    const body = await request.json().catch(() => ({}));
+    const action = typeof body.action === 'string' ? body.action : 'recompute';
