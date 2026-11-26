@@ -106,3 +106,18 @@ export function GrowthLinksTab({
       setCreating(false);
     }
   }
+
+  async function handleToggle(link: GrowthLink) {
+    try {
+      const res = await fetch('/api/marketing/links', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: link.id, is_active: !link.is_active }),
+      });
+      if (!res.ok) throw new Error();
+      onRefresh();
+    } catch {
+      toast.error('Could not update link state');
+    }
+  }
+
