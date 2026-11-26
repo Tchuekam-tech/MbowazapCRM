@@ -191,3 +191,38 @@ export function createBufferClient(opts: BufferClientOptions) {
         `Could not connect to Buffer API: ${err instanceof Error ? err.message : String(err)}`
       );
     }
+
+    if (res.status === 401 || res.status === 403) {
+      throw new BufferApiError(
+        'unauthorized',
+        'Buffer rejected this API key. Check Settings → API in your Buffer account.',
+        res.status
+      );
+    }
+    if (res.status === 429) {
+      throw new BufferApiError(
+        'rate_limited',
+        'Buffer API rate limit reached. Please retry in a minute.',
+        429
+      );
+    }
+
+    let payload: { data?: T; errors?: Array<{ message?: string }> } | null = null;
+    try {
+      payload = (await res.json()) as {
+        data?: T;
+        errors?: Array<{ message?: string }>;
+      };
+    } catch {
+      throw new BufferApiError(
+        'invalid_response',
+        `Buffer returned HTTP ${res.status} without JSON.`,
+        res.status
+      );
+    }
+
+    if (!res.ok) {
+      const msg =
+        payload?.errors?.[0]?.message || `Buffer API error (HTTP ${res.status})`;
+      throw new BufferApiError('graphql_error', msg, res.status);
+    }
