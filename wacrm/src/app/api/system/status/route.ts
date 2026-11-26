@@ -54,3 +54,16 @@ export async function GET() {
             bot = {
               configured: true,
               reachable: true,
+              latencyMs: Math.round(performance.now() - botStart),
+              metrics,
+              error: null,
+            };
+          } catch (err) {
+            // Fallback to /bridge/ping if running against an older bot build
+            try {
+              await client.ping();
+              bot = {
+                configured: true,
+                reachable: true,
+                latencyMs: Math.round(performance.now() - botStart),
+                metrics: null,
