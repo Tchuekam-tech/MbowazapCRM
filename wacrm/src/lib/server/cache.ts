@@ -160,3 +160,20 @@ export class FastTtlCache {
     this.coalesced = 0;
     this.staleHits = 0;
   }
+
+  stats(): CacheStats {
+    const total = this.hits + this.misses + this.staleHits;
+    return {
+      size: this.store.size,
+      maxEntries: this.maxEntries,
+      hits: this.hits,
+      misses: this.misses,
+      coalesced: this.coalesced,
+      staleHits: this.staleHits,
+      hitRate: total > 0 ? Math.round(((this.hits + this.staleHits) / total) * 1000) / 10 : 0,
+    };
+  }
+}
+
+/** Shared server-process cache for hot tenant & gateway reads. */
+export const serverCache = new FastTtlCache(2000);
