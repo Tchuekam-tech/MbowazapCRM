@@ -308,3 +308,22 @@ CREATE TABLE IF NOT EXISTS coupon_redemptions (
   discount_applied NUMERIC(12, 2) NOT NULL DEFAULT 0,
   redeemed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon
+  ON coupon_redemptions (coupon_id, redeemed_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_account
+  ON coupon_redemptions (account_id, redeemed_at DESC);
+
+ALTER TABLE coupon_redemptions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "coupon_redemptions_select" ON coupon_redemptions;
+CREATE POLICY "coupon_redemptions_select" ON coupon_redemptions
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "coupon_redemptions_write" ON coupon_redemptions;
+CREATE POLICY "coupon_redemptions_write" ON coupon_redemptions
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
+
+-- Drip steps & enrollments
