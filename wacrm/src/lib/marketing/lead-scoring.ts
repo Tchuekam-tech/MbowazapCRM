@@ -544,3 +544,25 @@ export async function evaluateAccountSegment(
     );
     if (ok) matched.push(c.id);
   }
+
+  return { contactIds: matched, totalContacts: contacts.length };
+}
+
+/**
+ * Optional 1-click AI deep analysis on a contact's recent chat history.
+ * Uses the account's configured LLM (Gemini / OpenAI / Anthropic) and
+ * persists `ai_summary` + `next_best_action` onto `contact_lead_scores`.
+ */
+export async function aiDeepAnalyzeContact(
+  db: SupabaseClient,
+  accountId: string,
+  contactId: string
+): Promise<{ aiSummary: string; nextBestAction: string; usedAi: boolean }> {
+  await recomputeAccountLeadScores(db, accountId, { contactId, limit: 1 });
+
+  const { data: scoreRow } = await db
+    .from('contact_lead_scores')
+    .select('*')
+    .eq('contact_id', contactId)
+    .eq('account_id', accountId)
+    .maybeSingle();
