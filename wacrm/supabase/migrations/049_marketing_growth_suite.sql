@@ -453,3 +453,23 @@ CREATE TABLE IF NOT EXISTS ab_campaign_variants (
 ALTER TABLE ab_campaign_variants ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "ab_campaign_variants_select" ON ab_campaign_variants;
+CREATE POLICY "ab_campaign_variants_select" ON ab_campaign_variants
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "ab_campaign_variants_write" ON ab_campaign_variants;
+CREATE POLICY "ab_campaign_variants_write" ON ab_campaign_variants
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
+
+CREATE TABLE IF NOT EXISTS ab_campaign_recipients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID NOT NULL REFERENCES ab_campaigns(id) ON DELETE CASCADE,
+  variant_id UUID REFERENCES ab_campaign_variants(id) ON DELETE SET NULL,
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  variant_key TEXT NOT NULL CHECK (variant_key IN ('A', 'B', 'holdout')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'delivered', 'read', 'replied', 'failed')),
+  whatsapp_message_id TEXT,
+  error_message TEXT,
+  sent_at TIMESTAMPTZ,
+  replied_at TIMESTAMPTZ,
