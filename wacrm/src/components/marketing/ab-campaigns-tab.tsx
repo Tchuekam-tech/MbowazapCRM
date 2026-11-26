@@ -518,3 +518,23 @@ export function AbCampaignsTab({
                             camp.verdict?.winner === v.variant_key
                               ? 'border-primary/50 bg-primary/5'
                               : 'border-border bg-muted/30'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-semibold">
+                            <span>Variant {v.variant_key}</span>
+                            <span className="text-primary">
+                              {v.sent_count > 0
+                                ? `${Math.round((v.replied_count / v.sent_count) * 100)}% reply`
+                                : '0%'}
+                            </span>
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
+                            {v.body_text}
+                          </p>
+                          <p className="mt-1.5 text-[10px] text-muted-foreground">
+                            Sent {v.sent_count} · Replies {v.replied_count} · Safe {v.compliance_score}%
+                          </p>
+                        </div>
+                      ) : null
+                    )}
+                  </div>
