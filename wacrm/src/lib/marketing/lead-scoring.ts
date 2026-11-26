@@ -135,3 +135,23 @@ export function computeLeadScore(input: LeadScoreInput): ComputedLeadScore {
       }
     }
   }
+
+  // 4. Pipeline & Deal Value (up to +20)
+  if (input.wonDealsCount > 0) {
+    score += 16;
+    signals.push({
+      label: `Existing customer (${input.wonDealsCount} won deal${input.wonDealsCount > 1 ? 's' : ''})`,
+      points: 16,
+      category: 'deal',
+    });
+    if (primaryIntent === 'General Inquiry') primaryIntent = 'Repeat / VIP Customer';
+  } else if (input.openDealsCount > 0) {
+    const dealPts = input.openDealsValue >= 500 ? 18 : 12;
+    score += dealPts;
+    signals.push({
+      label: `Active pipeline deal (${input.openDealsCount})`,
+      points: dealPts,
+      category: 'deal',
+    });
+    if (primaryIntent === 'General Inquiry') primaryIntent = 'Active Opportunity';
+  }
