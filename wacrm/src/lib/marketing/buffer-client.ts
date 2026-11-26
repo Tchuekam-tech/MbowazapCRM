@@ -342,3 +342,57 @@ export function createBufferClient(opts: BufferClientOptions) {
         opts.channelIds && opts.channelIds.length > 0
           ? `, channelIds: [${opts.channelIds.map(gqlString).join(', ')}]`
           : '';
+
+      const buildQuery = (includeMetrics: boolean) => `
+        query GetOrganizationPosts {
+          posts(
+            first: ${first}
+            input: {
+              organizationId: ${gqlString(organizationId)}
+              filter: { status: [sent, scheduled]${channelFilter} }
+            }
+          ) {
+            edges {
+              node {
+                id
+                text
+                status
+                dueAt
+                sentAt
+                channelId
+                ${
+                  includeMetrics
+                    ? `metrics {
+                  type
+                  name
+                  value
+                  unit
+                }`
+                    : ''
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      type RawPostsResp = {
+        posts?: {
+          edges?: Array<{
+            node?: {
+              id?: string;
+              text?: string | null;
+              status?: string | null;
+              dueAt?: string | null;
+              sentAt?: string | null;
+              channelId?: string | null;
+              metrics?: Array<{
+                type?: string | null;
+                name?: string | null;
+                value?: number | null;
+                unit?: string | null;
+              }> | null;
+            };
+          }>;
+        };
+      };
