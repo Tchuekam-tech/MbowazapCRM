@@ -252,3 +252,16 @@ function MarketingStudioInner() {
               {t('tabs.roi')}
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="presence">
+            <OmnichannelPresenceTab
+              report={presence}
+              links={links}
+              coupons={coupons}
+              currency={defaultCurrency}
+              canEdit={canEdit}
+              canAdmin={canAdmin}
+              onRefresh={loadAll}
+              onJumpToLinks={() => setActiveTab('links')}
+            />
+          </TabsContent>
