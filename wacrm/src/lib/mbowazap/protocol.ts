@@ -103,6 +103,7 @@ export function isPendingPairingCode(code: string): boolean {
 /** Endpoints the bot serves. Path params must be pre-validated digits/UUIDs. */
 export const BOT_PATHS = {
   ping: '/bridge/ping',
+  metrics: '/bridge/metrics',
   pair: '/bridge/pair',
   pairing: (pairingRef: string) => `/bridge/pairings/${pairingRef}`,
   cancelPairing: '/bridge/pair/cancel',
