@@ -418,3 +418,24 @@ export function GrowthLinksTab({
               className="rounded-xl border border-border bg-white p-3 shadow-sm"
               dangerouslySetInnerHTML={{ __html: qrSvg }}
             />
+            {qrLink && (
+              <p className="break-all text-center font-mono text-xs text-muted-foreground">
+                {origin}/go/{qrLink.slug}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => qrLink && handleCopy(qrLink)}>
+              <Copy className="mr-1.5 h-4 w-4" />
+              Copy Link
+            </Button>
+            <Button onClick={handleDownloadQr}>
+              <Download className="mr-1.5 h-4 w-4" />
+              Download SVG
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
