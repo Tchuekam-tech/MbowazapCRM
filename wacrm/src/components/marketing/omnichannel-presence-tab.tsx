@@ -343,3 +343,20 @@ export function OmnichannelPresenceTab({
               </div>
             ))}
           </div>
+
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {['Instagram', 'LinkedIn', 'Facebook', 'X / Twitter', 'TikTok', 'YouTube', 'Threads', 'Pinterest', 'Bluesky'].map(
+              (net) => (
+                <span
+                  key={net}
+                  className="rounded-full border border-border bg-muted px-2.5 py-0.5 text-[11px] text-muted-foreground"
+                >
+                  {net}
+                </span>
+              )
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
