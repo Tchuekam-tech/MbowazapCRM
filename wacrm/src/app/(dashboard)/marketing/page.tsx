@@ -219,3 +219,10 @@ function MarketingStudioInner() {
           </p>
         </div>
       </div>
+
+      {loading ? (
+        <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-card">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      ) : (
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
