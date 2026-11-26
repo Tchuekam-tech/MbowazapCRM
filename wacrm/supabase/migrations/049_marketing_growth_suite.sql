@@ -204,3 +204,18 @@ CREATE INDEX IF NOT EXISTS idx_marketing_segments_account
 ALTER TABLE marketing_segments ENABLE ROW LEVEL SECURITY;
 
 DROP TRIGGER IF EXISTS set_updated_at ON marketing_segments;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON marketing_segments
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP POLICY IF EXISTS "marketing_segments_select" ON marketing_segments;
+CREATE POLICY "marketing_segments_select" ON marketing_segments
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "marketing_segments_write" ON marketing_segments;
+CREATE POLICY "marketing_segments_write" ON marketing_segments
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
+
+-- ============================================================
+-- 3. MULTI-STEP DRIP & WIN-BACK SEQUENCES
+-- ============================================================
