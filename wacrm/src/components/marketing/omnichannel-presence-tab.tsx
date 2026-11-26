@@ -845,3 +845,29 @@ export function OmnichannelPresenceTab({
                           )}
                         </div>
                         <span className="text-[10px] text-muted-foreground">
+                          {(post.sent_at || post.due_at)
+                            ? new Date(post.sent_at || post.due_at!).toLocaleDateString()
+                            : ''}
+                        </span>
+                      </div>
+                      <p className="mt-1.5 line-clamp-2 text-xs text-foreground">
+                        {post.text_content || '(Media post)'}
+                      </p>
+                      {!isScheduled && (
+                        <p className="mt-1.5 text-[11px] text-muted-foreground">
+                          {post.impressions.toLocaleString()} impressions ·{' '}
+                          {post.reactions} likes · {post.comments} comments ·{' '}
+                          {post.shares} shares · {post.clicks} clicks
+                        </p>
+                      )}
+                    </div>
+                  );
+                }
+              )
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
