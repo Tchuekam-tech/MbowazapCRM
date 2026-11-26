@@ -106,3 +106,24 @@ export interface DripSequenceStep {
   template_language?: string | null;
   coupon_id?: string | null;
 }
+
+export interface DripSequence {
+  id: string;
+  account_id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  status: DripSequenceStatus;
+  segment_id: string | null;
+  stop_on_reply: boolean;
+  stop_on_tag_id: string | null;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+  timezone: string;
+  enrolled_count: number;
+  completed_count: number;
+  replied_count: number;
+  created_at: string;
+  updated_at: string;
+  steps?: DripSequenceStep[];
+}
