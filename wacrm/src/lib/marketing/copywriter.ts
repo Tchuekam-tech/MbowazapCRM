@@ -159,3 +159,38 @@ function buildFallbackAbCopy(req: CopywriterRequest): GeneratedAbCopy {
     usedAi: false,
   };
 }
+
+/**
+ * Generates two A/B split-test WhatsApp variants using the account's configured
+ * AI model (Gemini / OpenAI / Anthropic), with instant high-converting fallback
+ * templates when no AI provider key is configured.
+ */
+export async function generateAbCopyVariants(
+  db: SupabaseClient,
+  accountId: string,
+  req: CopywriterRequest
+): Promise<GeneratedAbCopy> {
+  const config = await loadAiConfig(db, accountId, { requireActive: false }).catch(() => null);
+  if (!config) {
+    return buildFallbackAbCopy(req);
+  }
+
+  try {
+    const prompt = [
+      `Goal: ${req.goal}`,
+      `Offer / Product: ${req.offer}`,
+      req.audience ? `Target Audience: ${req.audience}` : null,
+      `Tone: ${req.tone || 'Friendly & Persuasive'}`,
+      `Language: ${req.language || 'English'}`,
+      req.couponCode ? `Include promo code: ${req.couponCode}` : null,
+      'Include {{first_name}} placeholder naturally. Keep each variant under 380 characters, formatted cleanly for WhatsApp (short paragraphs, light *bold* emphasis, clear reply CTA). Avoid spammy ALL CAPS.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const res = await generateReply({
+      config,
+      systemPrompt:
+        'You are a world-class WhatsApp direct-response marketing copywriter. Return ONLY valid JSON (no markdown code fences) with shape: {"variantA":{"label":"...","body":"..."},"variantB":{"label":"...","body":"..."}}. Variant A uses a conversational curiosity hook; Variant B uses direct value + urgency.',
+      messages: [{ role: 'user', content: prompt }],
+    });
