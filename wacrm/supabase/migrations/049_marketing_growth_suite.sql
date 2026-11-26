@@ -81,3 +81,22 @@ DROP POLICY IF EXISTS "growth_links_insert" ON growth_links;
 CREATE POLICY "growth_links_insert" ON growth_links
   FOR INSERT WITH CHECK (is_account_member(account_id, 'agent'));
 
+DROP POLICY IF EXISTS "growth_links_update" ON growth_links;
+CREATE POLICY "growth_links_update" ON growth_links
+  FOR UPDATE USING (is_account_member(account_id, 'agent'));
+
+DROP POLICY IF EXISTS "growth_links_delete" ON growth_links;
+CREATE POLICY "growth_links_delete" ON growth_links
+  FOR DELETE USING (is_account_member(account_id, 'agent'));
+
+CREATE TABLE IF NOT EXISTS growth_link_clicks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  link_id UUID NOT NULL REFERENCES growth_links(id) ON DELETE CASCADE,
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  visitor_hash TEXT NOT NULL,
+  referrer TEXT,
+  user_agent TEXT,
+  converted_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
