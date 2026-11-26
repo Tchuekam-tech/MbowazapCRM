@@ -640,3 +640,21 @@ export function OmnichannelPresenceTab({
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-foreground">
                         {meta.label.charAt(0)}
                       </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{ch.name}</p>
+                      <span
+                        className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${meta.badge}`}
+                      >
+                        {meta.label}
+                      </span>
+                    </div>
+                  </div>
+                  {ch.healthStatus === 'thriving' ? (
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                  ) : ch.healthStatus === 'paused' ? (
+                    <PauseCircle className="h-4 w-4 shrink-0 text-red-400" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                  )}
+                </div>
