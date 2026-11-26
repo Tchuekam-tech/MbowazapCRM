@@ -184,3 +184,23 @@ DROP POLICY IF EXISTS "contact_lead_scores_write" ON contact_lead_scores;
 CREATE POLICY "contact_lead_scores_write" ON contact_lead_scores
   FOR ALL USING (is_account_member(account_id, 'agent'))
   WITH CHECK (is_account_member(account_id, 'agent'));
+
+CREATE TABLE IF NOT EXISTS marketing_segments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  rules JSONB NOT NULL DEFAULT '{}'::jsonb,
+  cached_count INTEGER NOT NULL DEFAULT 0,
+  last_evaluated_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_segments_account
+  ON marketing_segments (account_id, created_at DESC);
+
+ALTER TABLE marketing_segments ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS set_updated_at ON marketing_segments;
