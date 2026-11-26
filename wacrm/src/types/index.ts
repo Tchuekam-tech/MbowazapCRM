@@ -731,3 +731,4 @@ export interface QuickReply {
 }
 
 export * from './marketing';
+export * from './jarvis';

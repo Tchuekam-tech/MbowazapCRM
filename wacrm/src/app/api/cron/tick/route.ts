@@ -5,6 +5,8 @@ import { GET as runFlowsCron } from '@/app/api/flows/cron/route';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { processDueDripEnrollments } from '@/lib/marketing/drip-engine';
 import { syncStaleBufferIntegrations } from '@/lib/marketing/buffer-sync';
+import { processScheduledJarvisCycles } from '@/lib/jarvis/autonomous-engine';
+import { syncStaleWebsiteSources } from '@/lib/jarvis/knowledge-ingestor';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -33,17 +35,24 @@ export async function GET(request: Request) {
 
   const startedAt = performance.now();
 
-  const [automations, flows, drips, bufferSync] = await Promise.all([
+  const adminDb = supabaseAdmin();
+  const [automations, flows, drips, bufferSync, jarvisCycles, websiteKbSync] = await Promise.all([
     runAutomationsCron(request)
       .then((r) => r.json())
       .catch((err) => ({ error: err instanceof Error ? err.message : String(err) })),
     runFlowsCron(request)
       .then((r) => r.json())
       .catch((err) => ({ error: err instanceof Error ? err.message : String(err) })),
-    processDueDripEnrollments(supabaseAdmin(), 40).catch((err) => ({
+    processDueDripEnrollments(adminDb, 40).catch((err) => ({
       error: err instanceof Error ? err.message : String(err),
     })),
-    syncStaleBufferIntegrations(supabaseAdmin(), 10).catch((err) => ({
+    syncStaleBufferIntegrations(adminDb, 10).catch((err) => ({
+      error: err instanceof Error ? err.message : String(err),
+    })),
+    processScheduledJarvisCycles(adminDb, 8).catch((err) => ({
+      error: err instanceof Error ? err.message : String(err),
+    })),
+    syncStaleWebsiteSources(adminDb, 6).catch((err) => ({
       error: err instanceof Error ? err.message : String(err),
     })),
   ]);
@@ -55,5 +64,7 @@ export async function GET(request: Request) {
     flows,
     drips,
     bufferSync,
+    jarvisCycles,
+    websiteKbSync,
   });
 }

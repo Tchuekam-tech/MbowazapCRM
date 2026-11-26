@@ -38,6 +38,7 @@ Apply the latest migrations in Supabase SQL Editor:
 - `wacrm/supabase/migrations/049_marketing_growth_suite.sql` (enables Growth Links, Lead Intelligence, Smart Segments, Drip Sequences, A/B Campaigns, and Promo Coupons)
 - `wacrm/supabase/migrations/050_performance_hardening_and_indexes.sql` (adds composite performance indexes and fast single-roundtrip dashboard RPCs)
 - `wacrm/supabase/migrations/051_buffer_omnichannel.sql` (adds encrypted Buffer API integration, synced social channels/posts, and Omnichannel Digital Presence Analytics)
+- `wacrm/supabase/migrations/052_autonomous_jarvis_and_knowledge_hub.sql` (adds 24/7 Autonomous Jarvis Employee, Company DNA profile, multi-source Knowledge Hub with website crawler & doc uploads, and human typing simulation controls)
 
 ## 3. Always-Up & Ultra-Fast Server Hardening
 

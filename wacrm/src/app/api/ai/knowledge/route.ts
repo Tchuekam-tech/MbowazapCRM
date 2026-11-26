@@ -7,6 +7,7 @@ import {
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadEmbeddingsKey } from '@/lib/ai/config'
 import { ingestDocument } from '@/lib/ai/knowledge'
+import { chunkText } from '@/lib/ai/chunk'
 import { AiError } from '@/lib/ai/types'
 
 /**
@@ -19,7 +20,9 @@ export async function GET() {
     const { supabase, accountId } = await getCurrentAccount()
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, updated_at')
+      .select(
+        'id, title, source_type, source_url, file_name, mime_type, file_size_bytes, sync_status, last_synced_at, last_sync_error, auto_sync_hours, chunk_count, char_count, updated_at',
+      )
       .eq('account_id', accountId)
       .order('updated_at', { ascending: false })
     if (error) {
@@ -57,9 +60,28 @@ export async function POST(request: Request) {
       )
     }
 
+    const sourceType =
+      typeof body?.source_type === 'string' &&
+      ['company_bio', 'website', 'document', 'faq', 'product_catalog', 'policy', 'manual'].includes(
+        body.source_type,
+      )
+        ? body.source_type
+        : 'manual'
+    const chunkCount = chunkText(content).length
+
     const { data: doc, error } = await supabase
       .from('ai_knowledge_documents')
-      .insert({ account_id: accountId, created_by: userId, title, content })
+      .insert({
+        account_id: accountId,
+        created_by: userId,
+        title,
+        content,
+        source_type: sourceType,
+        sync_status: 'synced',
+        last_synced_at: new Date().toISOString(),
+        chunk_count: chunkCount,
+        char_count: content.length,
+      })
       .select('id')
       .single()
     if (error || !doc) {
