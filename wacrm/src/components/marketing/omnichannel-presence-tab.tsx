@@ -150,3 +150,35 @@ export function OmnichannelPresenceTab({
     }
   }
 
+  async function handleRunAudit() {
+    setAuditing(true);
+    try {
+      const res = await fetch('/api/marketing/buffer/audit', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Audit failed');
+      toast.success(
+        data.audit?.usedAi
+          ? 'AI Digital Presence Audit complete!'
+          : 'Omnichannel Digital Presence Audit updated!'
+      );
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Audit failed');
+    } finally {
+      setAuditing(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    try {
+      const res = await fetch('/api/marketing/buffer', { method: 'DELETE' });
+      if (!res.ok) throw new Error('Disconnect failed');
+      toast.success('Buffer disconnected and cached social data removed.');
+      onRefresh();
+    } catch {
+      toast.error('Could not disconnect Buffer');
+    } finally {
+      setDisconnecting(false);
+    }
+  }
