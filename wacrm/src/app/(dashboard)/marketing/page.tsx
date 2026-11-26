@@ -35,3 +35,17 @@ import { DripSequencesTab } from '@/components/marketing/drip-sequences-tab';
 import { AbCampaignsTab } from '@/components/marketing/ab-campaigns-tab';
 import {
   RoiCouponsTab,
+  type SystemHealthSnapshot,
+} from '@/components/marketing/roi-coupons-tab';
+import { OmnichannelPresenceTab } from '@/components/marketing/omnichannel-presence-tab';
+import { formatCurrency } from '@/lib/currency';
+
+const VALID_TABS = new Set(['links', 'leads', 'drips', 'campaigns', 'roi', 'presence']);
+
+export default function MarketingStudioPage() {
+  return (
+    <Suspense fallback={null}>
+      <MarketingStudioInner />
+    </Suspense>
+  );
+}
