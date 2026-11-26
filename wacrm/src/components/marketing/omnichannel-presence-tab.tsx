@@ -434,3 +434,36 @@ export function OmnichannelPresenceTab({
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
             ) : (
               <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            AI Full Presence Audit
+          </Button>
+          {canAdmin && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disconnecting}
+              onClick={handleDisconnect}
+              className="text-muted-foreground hover:text-destructive"
+              title="Disconnect Buffer"
+            >
+              <Unplug className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Digital Presence Score + 4 Pillars + Totals */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="space-y-4 rounded-xl border border-border bg-card p-5 lg:col-span-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Unified Digital Presence Score
+              </p>
+              <p className="mt-1 text-3xl font-extrabold tabular-nums text-primary">
+                {report.presenceScore}
+                <span className="text-sm font-normal text-muted-foreground"> / 100</span>
+              </p>
+            </div>
+            <BarChart3 className="h-8 w-8 text-primary/60" />
+          </div>
