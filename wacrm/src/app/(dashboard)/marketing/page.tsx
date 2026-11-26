@@ -304,3 +304,11 @@ function MarketingStudioInner() {
               onRefresh={loadAll}
             />
           </TabsContent>
+
+          <TabsContent value="roi">
+            <RoiCouponsTab
+              analytics={analytics}
+              coupons={coupons}
+              systemHealth={systemHealth}
+              currency={defaultCurrency}
+              canEdit={canEdit}
