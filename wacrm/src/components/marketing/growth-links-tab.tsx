@@ -292,3 +292,24 @@ export function GrowthLinksTab({
         ) : (
           links.map((link) => {
             const convRate =
+              link.clicks_count > 0
+                ? Math.round((link.conversions_count / link.clicks_count) * 100)
+                : 0;
+            const shortUrl = `${origin}/go/${link.slug}`;
+            return (
+              <div
+                key={link.id}
+                className="rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/40"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="truncate text-sm font-semibold text-foreground">
+                        {link.name}
+                      </h3>
+                      {link.utm_source && (
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase text-primary">
+                          {link.utm_source}
+                        </span>
+                      )}
+                      {link.ref_code && (
