@@ -177,3 +177,12 @@ function createRuntimeMonitor({
         stop,
         checkMemory,
         pingWacrmHealth,
+        tickWacrmCron,
+        getEventLoopLagMs,
+        getMemoryMb,
+        getSnapshot,
+    };
+}
+
+let sharedMonitor = null;
+
