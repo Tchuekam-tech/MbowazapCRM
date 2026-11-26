@@ -341,3 +341,31 @@ export function encodeQrMatrix(text: string): boolean[][] {
 
   return modules;
 }
+
+/**
+ * Generates a crisp, scannable, self-contained SVG QR code string
+ * with a quiet zone of 4 modules.
+ */
+export function renderQrSvg(
+  text: string,
+  opts: { fg?: string; bg?: string; sizePx?: number } = {}
+): string {
+  const matrix = encodeQrMatrix(text);
+  const quiet = 4;
+  const dim = matrix.length + quiet * 2;
+  const fg = opts.fg ?? '#0f172a';
+  const bg = opts.bg ?? '#ffffff';
+  const sizePx = opts.sizePx ?? 240;
+
+  let path = '';
+  for (let r = 0; r < matrix.length; r++) {
+    const row = matrix[r]!;
+    for (let c = 0; c < row.length; c++) {
+      if (row[c]) {
+        path += `M${c + quiet},${r + quiet}h1v1h-1z`;
+      }
+    }
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${dim} ${dim}" width="${sizePx}" height="${sizePx}" shape-rendering="crispEdges"><rect width="${dim}" height="${dim}" fill="${bg}"/><path d="${path}" fill="${fg}"/></svg>`;
+}
