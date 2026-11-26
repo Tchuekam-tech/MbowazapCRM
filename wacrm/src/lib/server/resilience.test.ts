@@ -95,3 +95,18 @@ describe('MboWazap bridge circuit breaker & metrics', () => {
       now: () => nowMs,
       circuitBreaker: { failureThreshold: 2, cooldownMs: 10_000 },
     });
+
+    await expect(client.getSession('237600000001')).rejects.toMatchObject({
+      code: 'network_error',
+    });
+    await expect(client.getSession('237600000001')).rejects.toMatchObject({
+      code: 'network_error',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+    // 3rd call must fast-fail WITHOUT invoking fetchImpl
+    await expect(client.getSession('237600000001')).rejects.toMatchObject({
+      code: 'network_error',
+      message: expect.stringContaining('circuit breaker open'),
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
