@@ -330,3 +330,18 @@ export interface DigitalPresenceRecommendation {
   actionType: 'create_growth_link' | 'publish_post' | 'resume_queue' | 'launch_ab_test';
 }
 
+export interface DigitalPresenceAudit {
+  headline: string;
+  executiveSummary: string;
+  strengths: string[];
+  blindSpots: string[];
+  actionPlan: Array<{
+    title: string;
+    channel: string;
+    impact: 'high' | 'medium';
+    step: string;
+  }>;
+  usedAi: boolean;
+  generatedAt: string;
+}
+
