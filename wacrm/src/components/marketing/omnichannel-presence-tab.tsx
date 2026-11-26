@@ -800,3 +800,14 @@ export function OmnichannelPresenceTab({
             </Button>
           </div>
         </form>
+
+        {/* Top Performing Posts & Upcoming Queue */}
+        <div className="space-y-4 rounded-xl border border-border bg-card p-5 lg:col-span-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">
+              Top Social Posts & Scheduled Queue
+            </h3>
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="h-3.5 w-3.5" /> {report.upcomingQueue.length} upcoming
+            </span>
+          </div>
