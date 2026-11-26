@@ -26,3 +26,40 @@ export type BufferErrorCode =
   | 'timeout'
   | 'invalid_response';
 
+export class BufferApiError extends Error {
+  readonly code: BufferErrorCode;
+  readonly httpStatus: number | null;
+  constructor(
+    code: BufferErrorCode,
+    message: string,
+    httpStatus: number | null = null
+  ) {
+    super(message);
+    this.name = 'BufferApiError';
+    this.code = code;
+    this.httpStatus = httpStatus;
+  }
+}
+
+export interface BufferAccountInfo {
+  id: string;
+  email: string | null;
+  name: string | null;
+  organizations: BufferOrganizationSummary[];
+}
+
+export interface BufferChannelPayload {
+  id: string;
+  name: string;
+  displayName: string | null;
+  service: string;
+  avatar: string | null;
+  isQueuePaused: boolean;
+}
+
+export interface BufferPostMetricItem {
+  type: string;
+  name: string | null;
+  value: number;
+  unit: string | null;
+}
