@@ -64,3 +64,42 @@ export async function POST(request: NextRequest) {
             : undefined,
       }
     );
+
+    const report = await loadDigitalPresenceReport(ctx.supabase, ctx.accountId);
+    return NextResponse.json({ ok: true, sync, report }, { status: 201 });
+  } catch (err) {
+    if (err instanceof BufferApiError) {
+      const status =
+        err.code === 'unauthorized'
+          ? 400
+          : err.code === 'rate_limited'
+            ? 429
+            : err.code === 'timeout'
+              ? 504
+              : 502;
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status }
+      );
+    }
+    if (err instanceof Error && /No Buffer organization/i.test(err.message)) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    return toErrorResponse(err);
+  }
+}
+
+export async function DELETE() {
+  try {
+    const ctx = await requireRole('admin');
+    await Promise.all([
+      ctx.supabase.from('buffer_posts').delete().eq('account_id', ctx.accountId),
+      ctx.supabase.from('buffer_channels').delete().eq('account_id', ctx.accountId),
+      ctx.supabase.from('buffer_integrations').delete().eq('account_id', ctx.accountId),
+    ]);
+    serverCache.invalidatePrefix(`marketing:presence:${ctx.accountId}`);
+    return NextResponse.json({ ok: true, disconnected: true });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
