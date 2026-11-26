@@ -590,3 +590,34 @@ export async function aiDeepAnalyzeContact(
     .filter((m) => m.content_text)
     .map((m) => `${m.sender_type === 'customer' ? 'Customer' : 'Business'}: ${m.content_text}`)
     .join('\n');
+
+  const config = await loadAiConfig(db, accountId, { requireActive: false }).catch(() => null);
+  if (config && transcript) {
+    try {
+      const res = await generateReply({
+        config,
+        systemPrompt:
+          'You are an elite WhatsApp sales & marketing strategist. Analyze the conversation transcript and respond strictly in compact JSON with keys "summary" (max 2 sentences on buyer intent & objections) and "next_best_action" (1 concrete WhatsApp message angle to convert them). No markdown fences.',
+        messages: [{ role: 'user', content: transcript }],
+      });
+      const cleaned = res.text.replace(/^```json\s*|\s*```$/g, '').trim();
+      const parsed = JSON.parse(cleaned) as { summary?: string; next_best_action?: string };
+      if (parsed.summary && parsed.next_best_action) {
+        await db
+          .from('contact_lead_scores')
+          .update({
+            ai_summary: parsed.summary.slice(0, 600),
+            next_best_action: parsed.next_best_action.slice(0, 400),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('contact_id', contactId);
+        return {
+          aiSummary: parsed.summary.slice(0, 600),
+          nextBestAction: parsed.next_best_action.slice(0, 400),
+          usedAi: true,
+        };
+      }
+    } catch {
+      // Fallback to deterministic insight below
+    }
+  }
