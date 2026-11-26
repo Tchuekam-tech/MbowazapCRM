@@ -12,3 +12,14 @@ describe('FastTtlCache', () => {
       await new Promise((r) => setTimeout(r, 15));
       return { ok: true, n: calls };
     };
+
+    const [a, b, c] = await Promise.all([
+      cache.getOrLoad('k1', 5000, loader),
+      cache.getOrLoad('k1', 5000, loader),
+      cache.getOrLoad('k1', 5000, loader),
+    ]);
+
+    expect(calls).toBe(1);
+    expect(a).toEqual(b);
+    expect(b).toEqual(c);
+    expect(cache.stats().coalesced).toBe(2);
