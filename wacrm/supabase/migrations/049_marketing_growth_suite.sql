@@ -37,3 +37,26 @@ ALTER TABLE contacts
 -- ============================================================
 -- 1. GROWTH LINKS & QR ATTRIBUTION
 -- ============================================================
+CREATE TABLE IF NOT EXISTS growth_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  destination_phone TEXT NOT NULL,
+  prefill_message TEXT NOT NULL DEFAULT '',
+  ref_code TEXT,
+  utm_source TEXT,
+  utm_medium TEXT,
+  utm_campaign TEXT,
+  utm_content TEXT,
+  auto_tag_id UUID REFERENCES tags(id) ON DELETE SET NULL,
+  clicks_count INTEGER NOT NULL DEFAULT 0,
+  unique_clicks_count INTEGER NOT NULL DEFAULT 0,
+  conversions_count INTEGER NOT NULL DEFAULT 0,
+  attributed_revenue NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
