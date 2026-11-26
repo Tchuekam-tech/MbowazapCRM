@@ -98,3 +98,38 @@ export function computeDigitalPresenceReport(
     const row = ensureWa(svc);
     row.leads = Math.max(row.leads, row.leads + 1);
   }
+
+  // Compute per-channel bridge metrics
+  const channelMetrics: ChannelBridgeMetric[] = channels.map((ch) => {
+    const svc = canonicalSocialService(ch.service);
+    const wa = waByService.get(svc);
+    const hasBridge = Boolean(wa?.hasLink);
+
+    let healthStatus: ChannelBridgeMetric['healthStatus'] = 'thriving';
+    if (ch.is_queue_paused) {
+      healthStatus = 'paused';
+    } else if (!hasBridge && (ch.sent_posts_count > 0 || ch.total_engagements > 0)) {
+      healthStatus = 'needs_bridge';
+    } else if (ch.scheduled_posts_count === 0) {
+      healthStatus = 'low_queue';
+    }
+
+    return {
+      channelId: ch.buffer_channel_id,
+      service: svc,
+      name: ch.display_name || ch.name,
+      avatarUrl: ch.avatar_url,
+      isQueuePaused: ch.is_queue_paused,
+      sentPosts: Number(ch.sent_posts_count ?? 0),
+      scheduledPosts: Number(ch.scheduled_posts_count ?? 0),
+      impressions: Number(ch.total_impressions ?? 0),
+      reach: Number(ch.total_reach ?? 0),
+      engagements: Number(ch.total_engagements ?? 0),
+      engagementRate: Number(ch.engagement_rate ?? 0),
+      whatsappLinkClicks: wa?.clicks ?? 0,
+      whatsappLeads: wa?.leads ?? 0,
+      whatsappRevenue: wa?.revenue ?? 0,
+      hasGrowthLinkBridge: hasBridge,
+      healthStatus,
+    };
+  });
