@@ -40,3 +40,11 @@ test('runtimeResilience exposes memory & event loop lag and pings WACRM keepaliv
     }
 });
 
+test('lightweight_store writeToFileAsync skips clean writes and writes atomically when dirty', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mbowazap-store-'));
+    const file = path.join(tmpDir, 'store.json');
+    try {
+        store.messages = {};
+        store.contacts = {};
+        store.chats = {};
+        store._dirty = false;
