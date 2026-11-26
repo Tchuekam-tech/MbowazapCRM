@@ -38,3 +38,23 @@ interface GrowthLinksTabProps {
   onRefresh: () => void;
 }
 
+export function GrowthLinksTab({
+  links,
+  tags,
+  canEdit,
+  onRefresh,
+}: GrowthLinksTabProps) {
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [phone, setPhone] = useState('');
+  const [prefill, setPrefill] = useState('Hi! I saw your offer and would like to know more.');
+  const [utmSource, setUtmSource] = useState('instagram');
+  const [utmCampaign, setUtmCampaign] = useState('');
+  const [autoTagId, setAutoTagId] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [qrLink, setQrLink] = useState<GrowthLink | null>(null);
+
+  const origin =
+    typeof window !== 'undefined' ? window.location.origin : '';
