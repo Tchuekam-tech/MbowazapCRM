@@ -317,3 +317,27 @@ export function encodeQrMatrix(text: string): boolean[][] {
     }
     upward = !upward;
   }
+
+  // 5. Apply mask pattern 0 ((r + c) % 2 === 0) and write format bits
+  const mask = 0;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (!isFunc[r]![c] && (r + c) % 2 === 0) {
+        modules[r]![c] = !modules[r]![c];
+      }
+    }
+  }
+
+  const fb = formatBits(mask);
+  for (let i = 0; i <= 5; i++) setFunc(8, i, ((fb >>> i) & 1) === 1);
+  setFunc(8, 7, ((fb >>> 6) & 1) === 1);
+  setFunc(8, 8, ((fb >>> 7) & 1) === 1);
+  setFunc(7, 8, ((fb >>> 8) & 1) === 1);
+  for (let i = 9; i < 15; i++) setFunc(14 - i, 8, ((fb >>> i) & 1) === 1);
+
+  for (let i = 0; i < 8; i++) setFunc(size - 1 - i, 8, ((fb >>> i) & 1) === 1);
+  for (let i = 8; i < 15; i++) setFunc(8, size - 15 + i, ((fb >>> i) & 1) === 1);
+  setFunc(size - 8, 8, true);
+
+  return modules;
+}
