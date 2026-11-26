@@ -155,3 +155,19 @@ function createRuntimeMonitor({
         }
     }
 
+    function getSnapshot() {
+        return {
+            uptimeSeconds: Math.round(process.uptime()),
+            memoryMb: getMemoryMb(),
+            eventLoopLagMs: getEventLoopLagMs(),
+            memorySheds,
+            keepAlive: {
+                lastAt: lastKeepAliveAt,
+                ok: lastKeepAliveOk,
+            },
+            cronTicker: {
+                lastAt: lastCronTickAt,
+                ok: lastCronTickOk,
+            },
+        };
+    }
