@@ -109,3 +109,37 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const { data, error } = await ctx.supabase
+      .from('promo_coupons')
+      .insert({
+        account_id: ctx.accountId,
+        user_id: ctx.userId,
+        code,
+        title,
+        discount_type: discountType,
+        discount_value: discountValue,
+        currency: typeof body.currency === 'string' ? body.currency.toUpperCase().slice(0, 3) : 'USD',
+        min_order_value: Math.max(0, Number(body.min_order_value ?? 0)),
+        max_uses: body.max_uses ? Math.max(1, Math.round(Number(body.max_uses))) : null,
+        expires_at: typeof body.expires_at === 'string' && body.expires_at ? body.expires_at : null,
+        is_active: true,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      const status = error.code === '23505' ? 409 : 500;
+      return NextResponse.json(
+        { error: status === 409 ? 'A coupon with this code already exists.' : error.message },
+        { status }
+      );
+    }
+
+    serverCache.invalidatePrefix(`marketing:analytics:${ctx.accountId}`);
+    return NextResponse.json({ coupon: data }, { status: 201 });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
