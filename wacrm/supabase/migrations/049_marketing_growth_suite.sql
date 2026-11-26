@@ -370,3 +370,24 @@ CREATE TABLE IF NOT EXISTS drip_enrollments (
   UNIQUE (sequence_id, contact_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_drip_enrollments_due
+  ON drip_enrollments (next_send_at)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_drip_enrollments_contact_active
+  ON drip_enrollments (account_id, contact_id)
+  WHERE status = 'active';
+
+ALTER TABLE drip_enrollments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "drip_enrollments_select" ON drip_enrollments;
+CREATE POLICY "drip_enrollments_select" ON drip_enrollments
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "drip_enrollments_write" ON drip_enrollments;
+CREATE POLICY "drip_enrollments_write" ON drip_enrollments
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
+
+-- ============================================================
+-- 4. AI COPYWRITER & A/B SPLIT-TEST CAMPAIGNS
