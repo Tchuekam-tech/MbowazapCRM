@@ -118,3 +118,18 @@ export function AbCampaignsTab({
           holdout_percent: holdoutPercent,
           winner_metric: 'reply_rate',
           variant_a: { label: labelA, body_text: bodyA, coupon_id: couponId || undefined },
+          variant_b: { label: labelB, body_text: bodyB, coupon_id: couponId || undefined },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success('A/B Split-Test Campaign saved as draft!');
+      setName('');
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create campaign');
+    } finally {
+      setCreating(false);
+    }
+  }
+
