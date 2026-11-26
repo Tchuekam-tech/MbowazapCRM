@@ -210,3 +210,114 @@ function isJson(value: unknown): value is Json {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function assertSession(session: string, { allowTempQr = false } = {}) {
+  if (allowTempQr && session === TEMP_QR_SESSION) return;
+  if (!SESSION_PATTERN.test(session)) {
+    throw new MbowazapBridgeError(
+      'invalid_request',
+      'session must be the paired number as 6-15 digits'
+    );
+  }
+}
+
+export function createMbowazapClient({
+  botUrl,
+  secret,
+  fetchImpl = fetch,
+  now = Date.now,
+  circuitBreaker,
+}: MbowazapClientOptions): MbowazapClient {
+  const failureThreshold = circuitBreaker?.failureThreshold ?? 4;
+  const cooldownMs = circuitBreaker?.cooldownMs ?? 15_000;
+  let consecutiveFailures = 0;
+  let circuitOpenUntil = 0;
+
+  async function call<T>(
+    method: 'GET' | 'POST' | 'PUT',
+    path: string,
+    body: unknown,
+    timeoutMs: number
+  ): Promise<T> {
+    const nowMs = now();
+    if (circuitOpenUntil > nowMs && path !== BOT_PATHS.ping) {
+      const waitSec = Math.max(1, Math.ceil((circuitOpenUntil - nowMs) / 1000));
+      throw new MbowazapBridgeError(
+        'network_error',
+        `TchuekBot circuit breaker open after repeated transport failures; retrying in ${waitSec}s`
+      );
+    }
+
+    const raw = body === undefined ? '' : JSON.stringify(body);
+    const headers = signBridgeRequest({
+      method,
+      pathAndQuery: path,
+      body: raw,
+      secret,
+      nowSeconds: Math.floor(nowMs / 1000),
+    });
+
+    let res: Response;
+    try {
+      res = await fetchImpl(`${botUrl}${path}`, {
+        method,
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: method === 'GET' ? undefined : raw,
+        signal: AbortSignal.timeout(timeoutMs),
+        cache: 'no-store',
+      });
+    } catch (err) {
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= failureThreshold) {
+        circuitOpenUntil = now() + cooldownMs;
+      }
+      const name = err instanceof Error ? err.name : '';
+      if (name === 'TimeoutError' || name === 'AbortError') {
+        throw new MbowazapBridgeError(
+          'timeout',
+          `TchuekBot did not answer within ${timeoutMs / 1000}s`
+        );
+      }
+      throw new MbowazapBridgeError(
+        'network_error',
+        `Could not reach TchuekBot: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    // Reachable server — reset transport failure counter.
+    consecutiveFailures = 0;
+    circuitOpenUntil = 0;
+
+    let payload: unknown;
+    try {
+      payload = await res.json();
+    } catch {
+      throw new MbowazapBridgeError(
+        'bad_response',
+        `TchuekBot answered HTTP ${res.status} without JSON`,
+        res.status
+      );
+    }
+
+    if (res.ok && isJson(payload) && payload.ok === true) {
+      return Object.fromEntries(
+        Object.entries(payload).filter(([key]) => key !== 'ok')
+      ) as T;
+    }
+
+    const error =
+      isJson(payload) && isJson(payload.error) ? payload.error : null;
+    throw new MbowazapBridgeError(
+      typeof error?.code === 'string'
+        ? (error.code as BridgeErrorCode)
+        : 'bad_response',
+      typeof error?.message === 'string'
+        ? error.message
+        : `TchuekBot answered HTTP ${res.status}`,
+      res.status
+    );
+  }
+
+  return {
+    ping: () => call('GET', BOT_PATHS.ping, undefined, DEFAULT_TIMEOUT_MS),
+
+    metrics: () => call('GET', BOT_PATHS.metrics, undefined, 5_000),
