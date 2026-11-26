@@ -63,3 +63,39 @@ describe('Buffer GraphQL Client', () => {
     expect(channels[1]!.isQueuePaused).toBe(true);
   });
 
+  it('gracefully falls back when Buffer rejects the metrics selection', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        gqlJson({
+          errors: [{ message: 'Field "metrics" requires insightsRead scope' }],
+        })
+      )
+      .mockResolvedValueOnce(
+        gqlJson({
+          data: {
+            posts: {
+              edges: [
+                {
+                  node: {
+                    id: 'p_1',
+                    text: 'Chat on WhatsApp https://crm.test/go/ig-promo',
+                    status: 'sent',
+                    sentAt: '2026-11-25T10:00:00Z',
+                    dueAt: null,
+                    channelId: 'ch_1',
+                  },
+                },
+              ],
+            },
+          },
+        })
+      );
+
+    const client = createBufferClient({ apiKey: 'buf_live_secret_123', fetchImpl });
+    const res = await client.getPosts('org_1');
+    expect(res.insightsAvailable).toBe(false);
+    expect(res.posts).toHaveLength(1);
+    expect(extractGrowthSlugFromPost(res.posts[0]!.text)).toBe('ig-promo');
+  });
+
