@@ -161,3 +161,45 @@ export function computeDigitalPresenceReport(
     }
   }
   const postsWithGrowthLinks = posts.filter((p) => Boolean(p.linked_growth_slug)).length;
+
+  // 4-Pillar Digital Presence Score (each 0..25 -> total 0..100)
+  const activeUnpaused = channelMetrics.filter((c) => !c.isQueuePaused).length;
+  const channelCoverage = Math.min(
+    25,
+    activeServices.length * 6 + (activeUnpaused > 0 ? 7 : 0)
+  );
+  const publishingConsistency = Math.min(
+    25,
+    Math.min(15, sentPosts30d * 2) + Math.min(10, scheduledQueueTotal * 2)
+  );
+  const audienceEngagement = Math.min(
+    25,
+    totalEngagements > 0
+      ? Math.min(15, Math.round(Math.log10(totalEngagements + 1) * 5)) +
+          Math.min(10, Math.round(avgEngagementRate * 2))
+      : sentPosts30d > 0
+        ? 6
+        : 0
+  );
+  const bridgedChannels = channelMetrics.filter((c) => c.hasGrowthLinkBridge).length;
+  const whatsappConversionBridge = Math.min(
+    25,
+    (channelMetrics.length > 0
+      ? Math.round((bridgedChannels / channelMetrics.length) * 14)
+      : 0) +
+      Math.min(6, postsWithGrowthLinks * 2) +
+      Math.min(5, socialDrivenWaLeads)
+  );
+
+  const presenceScore = integration
+    ? Math.max(
+        0,
+        Math.min(
+          100,
+          channelCoverage +
+            publishingConsistency +
+            audienceEngagement +
+            whatsappConversionBridge
+        )
+      )
+    : 0;
