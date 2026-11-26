@@ -283,3 +283,41 @@ export interface BufferChannelRow {
   synced_at: string;
 }
 
+export interface BufferPostRow {
+  id: string;
+  account_id: string;
+  buffer_post_id: string;
+  buffer_channel_id: string;
+  service: string;
+  status: string;
+  text_content: string;
+  due_at: string | null;
+  sent_at: string | null;
+  impressions: number;
+  reach: number;
+  reactions: number;
+  comments: number;
+  shares: number;
+  clicks: number;
+  total_engagements: number;
+  linked_growth_slug: string | null;
+}
+
+export interface ChannelBridgeMetric {
+  channelId: string;
+  service: string;
+  name: string;
+  avatarUrl: string | null;
+  isQueuePaused: boolean;
+  sentPosts: number;
+  scheduledPosts: number;
+  impressions: number;
+  reach: number;
+  engagements: number;
+  engagementRate: number;
+  whatsappLinkClicks: number;
+  whatsappLeads: number;
+  whatsappRevenue: number;
+  hasGrowthLinkBridge: boolean;
+  healthStatus: 'thriving' | 'needs_bridge' | 'low_queue' | 'paused';
+}
