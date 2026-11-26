@@ -184,3 +184,19 @@ export function RoiCouponsTab({
 
   return (
     <div className="space-y-6">
+      {/* Funnel Strip */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold text-foreground">
+              End-to-End WhatsApp Marketing ROI Funnel
+            </h2>
+          </div>
+          {analytics?.bestSendWindow && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+              <Clock className="h-3.5 w-3.5" />
+              Best Send Window: {analytics.bestSendWindow.dayName} {analytics.bestSendWindow.hourRange} UTC
+            </span>
+          )}
+        </div>
