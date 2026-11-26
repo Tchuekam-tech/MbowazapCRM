@@ -440,3 +440,40 @@ export async function handleMarketingInboundEffects(
       .eq('account_id', accountId)
       .eq('contact_id', contactId)
       .eq('status', 'active');
+
+    for (const enr of (activeEnrollments ?? []) as Array<{ id: string; sequence_id: string }>) {
+      const { data: seq } = await db
+        .from('drip_sequences')
+        .select('id, stop_on_reply, replied_count')
+        .eq('id', enr.sequence_id)
+        .maybeSingle();
+
+      if (seq?.stop_on_reply) {
+        await db
+          .from('drip_enrollments')
+          .update({ status: 'replied', completed_at: nowIso })
+          .eq('id', enr.id)
+          .eq('status', 'active');
+        await db
+          .from('drip_sequences')
+          .update({ replied_count: Number(seq.replied_count ?? 0) + 1 })
+          .eq('id', seq.id);
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  // 3. Attribute reply to most recent A/B Campaign sent within 7 days
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    const { data: abRecip } = await db
+      .from('ab_campaign_recipients')
+      .select('id, variant_id')
+      .eq('account_id', accountId)
+      .eq('contact_id', contactId)
+      .in('status', ['sent', 'delivered', 'read'])
+      .gte('sent_at', sevenDaysAgo)
+      .order('sent_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
