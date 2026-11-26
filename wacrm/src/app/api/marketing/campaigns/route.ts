@@ -367,3 +367,44 @@ export async function POST(request: NextRequest) {
           })
           .eq('id', campaignId),
       ]);
+
+      return NextResponse.json({
+        ok: true,
+        sentA,
+        sentB,
+        holdoutQueued: Math.max(0, shuffled.length - testCount),
+      });
+    }
+
+    // Create a new A/B split-test campaign
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const bodyA = typeof body.variant_a?.body_text === 'string' ? body.variant_a.body_text.trim() : '';
+    const bodyB = typeof body.variant_b?.body_text === 'string' ? body.variant_b.body_text.trim() : '';
+
+    if (!name || !bodyA || !bodyB) {
+      return NextResponse.json(
+        { error: 'Campaign name, Variant A copy, and Variant B copy are required' },
+        { status: 400 }
+      );
+    }
+
+    const splitRatio = Math.max(10, Math.min(90, Number(body.split_ratio ?? 50)));
+    const holdoutPercent = Math.max(0, Math.min(80, Number(body.holdout_percent ?? 0)));
+
+    const { data: created, error: cErr } = await ctx.supabase
+      .from('ab_campaigns')
+      .insert({
+        account_id: ctx.accountId,
+        user_id: ctx.userId,
+        name,
+        goal: typeof body.goal === 'string' ? body.goal : 'promotion',
+        segment_id: typeof body.segment_id === 'string' && body.segment_id ? body.segment_id : null,
+        status: 'draft',
+        split_ratio: splitRatio,
+        holdout_percent: holdoutPercent,
+        winner_metric: ['reply_rate', 'read_rate', 'conversion_rate'].includes(body.winner_metric)
+          ? body.winner_metric
+          : 'reply_rate',
+      })
+      .select()
+      .single();
