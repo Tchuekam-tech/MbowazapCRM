@@ -79,3 +79,15 @@ export function LeadSegmentsTab({
 
   const filteredLeads =
     tierFilter === 'all' ? leads : leads.filter((l) => l.tier === tierFilter);
+
+  function buildRules(): SegmentRules {
+    const rules: SegmentRules = { excludeOptedOut: true };
+    if (segTiers.length > 0) rules.tiers = segTiers;
+    if (minScore.trim()) rules.minScore = Number(minScore);
+    if (inactiveDays.trim()) rules.inactiveDays = Number(inactiveDays);
+    if (activeWithinDays.trim()) rules.activeWithinDays = Number(activeWithinDays);
+    if (selectedTagId) rules.tagIds = [selectedTagId];
+    if (utmSource.trim()) rules.utmSource = utmSource.trim();
+    return rules;
+  }
+
