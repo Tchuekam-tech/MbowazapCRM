@@ -458,3 +458,23 @@ export function AbCampaignsTab({
         </form>
       </div>
 
+      {/* Existing Experiments */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          A/B Split-Test Experiments ({campaigns.length})
+        </h3>
+        {campaigns.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-xs text-muted-foreground">
+            No A/B experiments yet. Use the AI Copywriter above to generate and launch your first split test.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {campaigns.map((camp) => {
+              const vA = camp.variants?.find((v) => v.variant_key === 'A');
+              const vB = camp.variants?.find((v) => v.variant_key === 'B');
+              const isBusy = busyCampaignId === camp.id;
+              return (
+                <div
+                  key={camp.id}
+                  className="space-y-3 rounded-xl border border-border bg-card p-4"
+                >
