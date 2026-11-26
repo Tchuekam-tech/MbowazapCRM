@@ -296,3 +296,149 @@ function startHealthCheckServer(port = process.env.PORT || 8080, host = process.
                 res.end(JSON.stringify({ error: 'Missing ?number= parameter' }));
                 return;
             }
+
+            const cleanNumber = number.replace(/[^0-9]/g, '');
+            if (!cleanNumber || cleanNumber.length < 8 || cleanNumber.length > 15) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Invalid phone number' }));
+                return;
+            }
+            const sock = sessionManager.getSocket(cleanNumber);
+
+            try {
+                if (typeof global.cancelReconnectForNumber === 'function') {
+                    global.cancelReconnectForNumber(cleanNumber);
+                }
+                if (sock) {
+                    sock._manuallyEnded = true;
+                    sock._closed = true;
+                    if (sock.watchdogInterval) { clearInterval(sock.watchdogInterval); sock.watchdogInterval = null; }
+                    if (sock.heartbeatInterval) { clearInterval(sock.heartbeatInterval); sock.heartbeatInterval = null; }
+                    if (sock._presenceTimeout) { clearTimeout(sock._presenceTimeout); sock._presenceTimeout = null; }
+                    try {
+                        await Promise.race([
+                            sock.logout(),
+                            new Promise((resolve) => setTimeout(resolve, 10000)),
+                        ]);
+                    } catch (_) {}
+                    try { sock.ev?.removeAllListeners?.(); } catch (_) {}
+                    try { sock.end(); } catch (_) {}
+                    try { sock.ws?.close?.(); } catch (_) {}
+                    sessionManager.deleteSocket(cleanNumber);
+                }
+
+                bridgeState.clearPairingRef(cleanNumber);
+
+                const sessionDir = path.join(__dirname, `../data/sessions/${cleanNumber}`);
+                if (fs.existsSync(sessionDir)) {
+                    fs.rmSync(sessionDir, { recursive: true, force: true });
+                }
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, message: 'Disconnected and deleted credentials.' }));
+            } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+            return;
+        }
+
+        // ──────────────────────────────────────────────
+        // Route: /api/send → Send message via Baileys socket
+        // ──────────────────────────────────────────────
+        if (pathname === '/api/send' && req.method === 'POST') {
+            let payload;
+            try {
+                payload = await readJsonBody(req, 1024 * 1024);
+            } catch (err) {
+                res.writeHead(err.statusCode || 400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+                return;
+            }
+            try {
+                const { to, text, number } = payload || {};
+
+                if (typeof to !== 'string' || typeof text !== 'string' || !to.trim() || !text.trim()) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Missing to or text parameters' }));
+                    return;
+                }
+
+                const cleanToDigits = to.replace(/[^0-9]/g, '');
+                if (cleanToDigits.length < 6 || cleanToDigits.length > 15) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Invalid recipient phone number' }));
+                    return;
+                }
+
+                const cleanNumber = typeof number === 'string' ? number.replace(/[^0-9]/g, '') : '';
+                const targetSock = (cleanNumber ? sessionManager.getSocket(cleanNumber) : null) || global.sock;
+
+                if (!targetSock || !sessionManager.isSocketOpen(targetSock)) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'No active WhatsApp session found' }));
+                    return;
+                }
+
+                const cleanTo = cleanToDigits + '@s.whatsapp.net';
+                const sentMsg = await targetSock.sendMessage(cleanTo, { text });
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, messageId: sentMsg?.key?.id || null }));
+            } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+            return;
+        }
+
+        // ──────────────────────────────────────────────
+        // Route: /pair?number=237XXXXXXXXX → Pairing code
+        // ──────────────────────────────────────────────
+        if (pathname === '/pair' && req.method === 'GET') {
+            const number = queryParam(parsedUrl.query.number);
+            if (!number) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Missing ?number= parameter' }));
+                return;
+            }
+
+            const cleanNumber = number.replace(/[^0-9]/g, '');
+            if (cleanNumber.length < 8 || cleanNumber.length > 15) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Invalid phone number. Use the full international number without + or spaces.' }));
+                return;
+            }
+
+            try {
+                const getPairCodeFn = global.requestPairingCodeForNumber || generatePairCode;
+                const result = await getPairCodeFn(cleanNumber);
+
+                if (result.error && !result.code) {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: result.error, code: result.isConnected ? 'Already Connected' : null }));
+                    return;
+                }
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ code: result.code }));
+                console.log(`[PairServer] Pairing code delivered for ${cleanNumber}: ${result.code}`);
+            } catch (err) {
+                console.error(`[PairServer] Pairing failed for ${number}:`, err.message);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: `Pairing failed: ${err.message}` }));
+            }
+            return;
+        }
+
+        // ──────────────────────────────────────────────
+        // Route: /qr -> QR code generation (resilient lifecycle)
+        // ──────────────────────────────────────────────
+        if (pathname === '/qr' && req.method === 'GET') {
+            const result = await getTempQrDataUrl();
+
+            if (!result.qr) {
+                res.writeHead(result.status, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(result.status === 500 ? { error: result.error } : { qr: null, error: result.error }));
+                return;
+            }
