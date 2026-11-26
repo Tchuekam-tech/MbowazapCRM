@@ -139,6 +139,18 @@ export async function loadConversationsSeries(
   rangeDays: number,
 ): Promise<ConversationsSeriesPoint[]> {
   const start = daysAgoStart(rangeDays - 1).toISOString()
+  const keys = lastNDayKeys(rangeDays)
+  const buckets = new Map<string, { incoming: number; outgoing: number }>()
+  for (const k of keys) buckets.set(k, { incoming: 0, outgoing: 0 })
+
+  // Fast path: aggregate inside Postgres (migration 050) instead of
+  // shipping thousands of raw message rows over the network.
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    const { data: rpcRows, error: rpcErr } = await db.rpc(
+      'get_conversations_series_fast',
+      { p_start: start, p_tz: tz },
+    )
   const { data, error } = await db
     .from('messages')
     .select('created_at, sender_type')
