@@ -48,6 +48,23 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       return {
         activeConversations: {
           current: Number(m.open_conv_cur ?? 0),
+          previous: Number(m.new_conv_today ?? 0) - Number(m.new_conv_yesterday ?? 0),
+        },
+        newContactsToday: {
+          current: Number(m.new_contacts_today ?? 0),
+          previous: Number(m.new_contacts_yesterday ?? 0),
+        },
+        openDealsValue: Number(m.open_deals_value ?? 0),
+        openDealsCount: Number(m.open_deals_count ?? 0),
+        messagesSentToday: {
+          current: Number(m.messages_today ?? 0),
+          previous: Number(m.messages_yesterday ?? 0),
+        },
+      }
+    }
+  } catch {
+    // Fall back to standard client-side aggregation below.
+  }
 
   const [
     openConvCur,
