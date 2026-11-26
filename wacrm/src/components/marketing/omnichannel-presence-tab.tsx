@@ -774,3 +774,29 @@ export function OmnichannelPresenceTab({
               </div>
             </div>
           )}
+
+          <div className="flex items-center gap-2">
+            <select
+              value={publishMode}
+              onChange={(e) =>
+                setPublishMode(e.target.value as 'addToQueue' | 'shareNow')
+              }
+              className="h-9 rounded-md border border-border bg-background px-2.5 text-xs text-foreground"
+            >
+              <option value="addToQueue">Add to Buffer Queue</option>
+              <option value="shareNow">Publish Immediately</option>
+            </select>
+            <Button
+              type="submit"
+              disabled={!canEdit || publishing || selectedChannels.length === 0}
+              className="flex-1"
+            >
+              {publishing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              Send to {selectedChannels.length || 0} Channel(s)
+            </Button>
+          </div>
+        </form>
