@@ -621,3 +621,22 @@ export async function aiDeepAnalyzeContact(
       // Fallback to deterministic insight below
     }
   }
+
+  const fallbackSummary = scoreRow
+    ? `Lead score ${scoreRow.score}/100 (${String(scoreRow.tier).toUpperCase()}) — ${scoreRow.intent_label || 'General Inquiry'}.`
+    : 'Not enough conversation history yet for a deep summary.';
+  const fallbackAction =
+    (scoreRow?.next_best_action as string) ||
+    'Send a concise check-in with a clear question or limited-time promo code.';
+
+  await db
+    .from('contact_lead_scores')
+    .update({
+      ai_summary: fallbackSummary,
+      next_best_action: fallbackAction,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('contact_id', contactId);
+
+  return { aiSummary: fallbackSummary, nextBestAction: fallbackAction, usedAi: false };
+}
