@@ -255,3 +255,34 @@ export function AbCampaignsTab({
                 className="mt-1 text-xs"
               />
             </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <Label className="text-xs">Tone</Label>
+                <select
+                  value={tone}
+                  onChange={(e) => setTone(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs text-foreground"
+                >
+                  <option>Friendly & Urgent</option>
+                  <option>Direct & Concise</option>
+                  <option>Luxury & Exclusive</option>
+                  <option>Consultative</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">Inject Promo Code</Label>
+                <select
+                  value={couponId}
+                  onChange={(e) => setCouponId(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs text-foreground"
+                >
+                  <option value="">None</option>
+                  {coupons.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.code} ({c.discount_type === 'percent' ? `${c.discount_value}%` : `${c.currency} ${c.discount_value}`})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
