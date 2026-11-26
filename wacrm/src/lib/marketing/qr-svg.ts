@@ -160,3 +160,28 @@ function versionBits(version: number): number {
   }
   return (version << 12) | rem;
 }
+
+export function encodeQrMatrix(text: string): boolean[][] {
+  const bytes = new TextEncoder().encode(text);
+  const spec = QR_LEVEL_M_SPECS.find((s) => {
+    const countBits = s.version <= 9 ? 8 : 16;
+    const neededBits = 4 + countBits + bytes.length * 8;
+    return Math.ceil(neededBits / 8) <= s.dataCodewords;
+  });
+  if (!spec) {
+    throw new Error('QR payload exceeds maximum supported length (213 bytes)');
+  }
+
+  // 1. Build bit stream (Byte mode 0100 + char count + payload + terminator + pad)
+  const bits: number[] = [];
+  const pushBits = (val: number, len: number) => {
+    for (let i = len - 1; i >= 0; i--) bits.push((val >>> i) & 1);
+  };
+  pushBits(0b0100, 4);
+  pushBits(bytes.length, spec.version <= 9 ? 8 : 16);
+  for (const b of bytes) pushBits(b, 8);
+
+  const maxBits = spec.dataCodewords * 8;
+  const term = Math.min(4, maxBits - bits.length);
+  for (let i = 0; i < term; i++) bits.push(0);
+  while (bits.length % 8 !== 0) bits.push(0);
