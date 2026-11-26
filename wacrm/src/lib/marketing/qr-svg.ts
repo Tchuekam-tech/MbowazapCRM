@@ -295,3 +295,25 @@ export function encodeQrMatrix(text: string): boolean[][] {
       setFunc(b, a, bit);
     }
   }
+
+  // 4. Place data bits in upward/downward 2-column zig-zag
+  let bitIndex = 0;
+  const totalBits = finalCodewords.length * 8;
+  let upward = true;
+  for (let right = size - 1; right >= 1; right -= 2) {
+    if (right === 6) right = 5;
+    for (let vert = 0; vert < size; vert++) {
+      const r = upward ? size - 1 - vert : vert;
+      for (let j = 0; j < 2; j++) {
+        const c = right - j;
+        if (isFunc[r]![c]) continue;
+        let dark = false;
+        if (bitIndex < totalBits) {
+          dark = ((finalCodewords[bitIndex >>> 3]! >>> (7 - (bitIndex & 7))) & 1) === 1;
+          bitIndex++;
+        }
+        modules[r]![c] = dark;
+      }
+    }
+    upward = !upward;
+  }
