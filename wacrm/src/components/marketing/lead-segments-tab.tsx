@@ -133,3 +133,30 @@ export function LeadSegmentsTab({
     }
   }
 
+  async function handlePreviewSegment() {
+    try {
+      const res = await fetch('/api/marketing/segments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preview: true, rules: buildRules() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPreviewCount(data.count ?? 0);
+    } catch {
+      toast.error('Could not preview segment');
+    }
+  }
+
+  async function handleSaveSegment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!segName.trim()) {
+      toast.error('Segment name is required');
+      return;
+    }
+    setSavingSeg(true);
+    try {
+      const res = await fetch('/api/marketing/segments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: segName, rules: buildRules() }),
