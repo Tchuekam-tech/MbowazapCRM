@@ -262,3 +262,30 @@ export function LeadSegmentsTab({
                         >
                           <Icon className="h-3 w-3" />
                           {meta.label} · {lead.score}/100
+                        </span>
+                        {lead.intent_label && (
+                          <span className="rounded bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                            {lead.intent_label}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                        {lead.contact?.phone}
+                        {lead.contact?.utm_source ? ` · via ${lead.contact.utm_source}` : ''}
+                      </p>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canEdit || analyzingId === lead.contact_id}
+                      onClick={() => handleAnalyzeLead(lead.contact_id)}
+                    >
+                      {analyzingId === lead.contact_id ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="mr-1.5 h-3.5 w-3.5 text-primary" />
+                      )}
+                      AI Analyze
+                    </Button>
+                  </div>
