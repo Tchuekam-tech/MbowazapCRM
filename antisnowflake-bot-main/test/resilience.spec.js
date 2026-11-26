@@ -67,3 +67,17 @@ test('lightweight_store writeToFileAsync skips clean writes and writes atomicall
     }
 });
 
+test('bridge GET /bridge/metrics returns signed runtime telemetry', async () => {
+    const secret = 'mbowazap-metrics-test-secret-0123456789';
+    const handler = createBridgeHandler({
+        getSecret: () => secret,
+        getRuntimeMetrics: () => ({
+            uptimeSeconds: 120,
+            memoryMb: { rss: 92.4, heapUsed: 41.2, heapTotal: 64.0 },
+            eventLoopLagMs: { mean: 0.8, p95: 2.1, max: 4.5 },
+            activeSockets: 2,
+            connectedSockets: 2,
+            outboxPendingBatches: 0,
+            storeStats: { messages: 15, contacts: 8, chats: 3 },
+        }),
+    });
