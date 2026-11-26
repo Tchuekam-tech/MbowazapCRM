@@ -270,3 +270,28 @@ export function encodeQrMatrix(text: string): boolean[][] {
       }
     }
   }
+
+  // Reserve format info + dark module
+  for (let i = 0; i <= 8; i++) {
+    if (i !== 6) {
+      setFunc(8, i, false);
+      setFunc(i, 8, false);
+    }
+  }
+  for (let i = size - 8; i < size; i++) {
+    setFunc(8, i, false);
+    setFunc(i, 8, false);
+  }
+  setFunc(size - 8, 8, true);
+
+  // Version info for >= 7
+  if (spec.version >= 7) {
+    const vb = versionBits(spec.version);
+    for (let i = 0; i < 18; i++) {
+      const bit = ((vb >>> i) & 1) === 1;
+      const a = Math.floor(i / 3);
+      const b = size - 11 + (i % 3);
+      setFunc(a, b, bit);
+      setFunc(b, a, bit);
+    }
+  }
