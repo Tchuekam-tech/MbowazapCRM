@@ -101,3 +101,57 @@ export async function POST(request: NextRequest) {
             contact.id
           );
           if (!opened) throw new Error('Could not open conversation');
+
+          const text = renderPersonalizedCopy(variant.body_text, contact, couponCode);
+          const sent =
+            variant.template_name && transport.provider === 'meta'
+              ? await transport.sendTemplate({
+                  to: target.target,
+                  templateName: variant.template_name,
+                  language: variant.template_language || 'en_US',
+                  contentText: text,
+                  params: [],
+                  origin: 'automation',
+                  conversationId: opened.conversation.id,
+                })
+              : await transport.sendText({
+                  to: target.target,
+                  text,
+                  origin: 'automation',
+                  conversationId: opened.conversation.id,
+                });
+
+          const nowIso = new Date().toISOString();
+          await Promise.all([
+            ctx.supabase.from('messages').insert({
+              conversation_id: opened.conversation.id,
+              sender_type: 'bot',
+              content_type: 'text',
+              content_text: text,
+              message_id: sent.messageId,
+              status: 'sent',
+            }),
+            ctx.supabase
+              .from('ab_campaign_recipients')
+              .update({
+                variant_id: variant.id,
+                variant_key: variant.variant_key,
+                status: 'sent',
+                whatsapp_message_id: sent.messageId,
+                sent_at: nowIso,
+                error_message: null,
+              })
+              .eq('id', recipientRowId),
+          ]);
+          return true;
+        } catch (err) {
+          await ctx.supabase
+            .from('ab_campaign_recipients')
+            .update({
+              status: 'failed',
+              error_message: (err instanceof Error ? err.message : String(err)).slice(0, 400),
+            })
+            .eq('id', recipientRowId);
+          return false;
+        }
+      };
