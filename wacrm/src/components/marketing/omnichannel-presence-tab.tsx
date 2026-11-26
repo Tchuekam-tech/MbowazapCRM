@@ -130,3 +130,23 @@ export function OmnichannelPresenceTab({
       setSyncing(false);
     }
   }
+
+  async function handleSwitchOrg(orgId: string) {
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/marketing/buffer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'switch_org', organization_id: orgId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(`Switched Buffer workspace to ${data.sync?.organizationName || orgId}`);
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not switch workspace');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
