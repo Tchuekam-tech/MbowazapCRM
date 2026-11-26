@@ -270,3 +270,41 @@ export function OmnichannelPresenceTab({
               <li>Paste it below — MboWazapCRM encrypts it with AES-256-GCM and syncs every connected channel automatically.</li>
             </ol>
           </div>
+
+          <div>
+            <Label htmlFor="buffer-api-key" className="text-xs">
+              Buffer Personal API Key
+            </Label>
+            <div className="relative mt-1">
+              <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="buffer-api-key"
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Paste your Buffer API token..."
+                className="pl-9 font-mono text-xs"
+                required
+              />
+            </div>
+            <p className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+              Encrypted at rest with AES-256-GCM. Never exposed to the browser.
+            </p>
+          </div>
+
+          <Button
+            type="submit"
+            disabled={!canAdmin || connecting}
+            className="w-full"
+          >
+            {connecting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Globe className="mr-2 h-4 w-4" />
+            )}
+            {canAdmin
+              ? 'Connect Buffer & Sync All Channels'
+              : 'Admin Role Required to Connect Buffer'}
+          </Button>
+        </form>
