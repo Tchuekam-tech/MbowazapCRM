@@ -445,3 +445,21 @@ export function LeadSegmentsTab({
                 />
               </div>
             </div>
+
+            <div>
+              <Label htmlFor="seg-tag" className="text-xs">Has Tag</Label>
+              <select
+                id="seg-tag"
+                value={selectedTagId}
+                onChange={(e) => setSelectedTagId(e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground"
+              >
+                <option value="">Any tag</option>
+                {tags.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
