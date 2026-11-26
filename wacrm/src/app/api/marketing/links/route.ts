@@ -92,3 +92,30 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const ctx = await requireRole('agent');
+    const body = await request.json();
+    const id = typeof body.id === 'string' ? body.id : '';
+    if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+
+    const patch: Record<string, unknown> = {};
+    if (typeof body.is_active === 'boolean') patch.is_active = body.is_active;
+    if (typeof body.name === 'string' && body.name.trim()) patch.name = body.name.trim();
+    if (typeof body.prefill_message === 'string') patch.prefill_message = body.prefill_message.trim();
+
+    const { data, error } = await ctx.supabase
+      .from('growth_links')
+      .update(patch)
+      .eq('id', id)
+      .eq('account_id', ctx.accountId)
+      .select()
+      .single();
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (data?.slug) serverCache.delete(`growth-link:${data.slug}`);
+    return NextResponse.json({ link: data });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
