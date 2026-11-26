@@ -74,3 +74,24 @@ function formatUptime(sec: number): string {
   return `${m}m ${sec % 60}s`;
 }
 
+export function RoiCouponsTab({
+  analytics,
+  coupons,
+  systemHealth,
+  currency,
+  canEdit,
+  onRefresh,
+  onRefreshHealth,
+}: RoiCouponsTabProps) {
+  const [code, setCode] = useState('');
+  const [title, setTitle] = useState('');
+  const [discountType, setDiscountType] = useState<'percent' | 'fixed'>('percent');
+  const [discountValue, setDiscountValue] = useState('20');
+  const [maxUses, setMaxUses] = useState('100');
+  const [expiresAt, setExpiresAt] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [redeemValues, setRedeemValues] = useState<Record<string, string>>({});
+  const [redeemingId, setRedeemingId] = useState<string | null>(null);
+
