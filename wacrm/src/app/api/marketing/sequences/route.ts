@@ -211,3 +211,41 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const id = typeof body.id === 'string' ? body.id : '';
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+
+    const patch: Record<string, unknown> = {};
+    if (['draft', 'active', 'paused'].includes(body.status)) patch.status = body.status;
+    if (typeof body.stop_on_reply === 'boolean') patch.stop_on_reply = body.stop_on_reply;
+
+    const { data, error } = await ctx.supabase
+      .from('drip_sequences')
+      .update(patch)
+      .eq('id', id)
+      .eq('account_id', ctx.accountId)
+      .select()
+      .single();
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ sequence: data });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const ctx = await requireRole('agent');
+    const id = request.nextUrl.searchParams.get('id');
+    if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+
+    const { error } = await ctx.supabase
+      .from('drip_sequences')
+      .delete()
+      .eq('id', id)
+      .eq('account_id', ctx.accountId);
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ deleted: true });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
