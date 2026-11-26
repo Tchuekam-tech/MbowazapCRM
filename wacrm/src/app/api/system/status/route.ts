@@ -45,3 +45,12 @@ export async function GET() {
           metrics: null,
           error: env.ok ? null : env.problems.join('; '),
         };
+
+        if (env.ok) {
+          const client = createMbowazapClient(env.env);
+          const botStart = performance.now();
+          try {
+            const metrics = await client.metrics();
+            bot = {
+              configured: true,
+              reachable: true,
