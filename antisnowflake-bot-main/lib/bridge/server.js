@@ -70,6 +70,36 @@ function productionDeps() {
         getAllSockets: () => sessionManager.getAllSockets(),
         deleteSocket: (session) => sessionManager.deleteSocket(session),
         isSocketOpen: (sock) => sessionManager.isSocketOpen(sock),
+        getRuntimeMetrics: () => {
+            const rt = require('../runtimeResilience').getRuntimeMonitor().getSnapshot();
+            const store = require('../lightweight_store');
+            const { getWacrmClient } = require('./wacrmClient');
+            const sockets = sessionManager.getAllSockets();
+            let connectedSockets = 0;
+            for (const [, s] of sockets) {
+                if (sessionManager.isLinked(s) && sessionManager.isSocketOpen(s)) connectedSockets++;
+            }
+            const storeStats = typeof store.getStats === 'function'
+                ? store.getStats()
+                : { messages: 0, contacts: 0, chats: 0 };
+            let outboxPendingBatches = 0;
+            try {
+                outboxPendingBatches = getWacrmClient().pendingBatches();
+            } catch (_) {}
+            return {
+                uptimeSeconds: rt.uptimeSeconds,
+                memoryMb: rt.memoryMb,
+                eventLoopLagMs: rt.eventLoopLagMs,
+                activeSockets: sockets.length,
+                connectedSockets,
+                outboxPendingBatches,
+                storeStats: {
+                    messages: storeStats.messages || 0,
+                    contacts: storeStats.contacts || 0,
+                    chats: storeStats.chats || 0,
+                },
+            };
+        },
         isLinked: (sock) => sessionManager.isLinked(sock),
         requestPairingCode: (phone) => {
             const request = global.requestPairingCodeForNumber || require('../pairServer').generatePairCode;
@@ -100,8 +130,8 @@ function productionDeps() {
                 clearInterval(sock.heartbeatInterval);
                 clearTimeout(sock._presenceTimeout);
                 sock.ev?.removeAllListeners();
-                try { sock.end(); } catch (_) {}
-                try { sock.ws?.close(); } catch (_) {}
+                try { sock.end(); } catch (_) { }
+                try { sock.ws?.close(); } catch (_) { }
                 sessionManager.deleteSocket(session);
             }
             fs.rmSync(dir, { recursive: true, force: true });
