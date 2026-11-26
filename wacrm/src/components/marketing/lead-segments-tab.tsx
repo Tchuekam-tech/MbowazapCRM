@@ -160,3 +160,29 @@ export function LeadSegmentsTab({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: segName, rules: buildRules() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(`Smart segment "${segName}" saved (${data.segment?.cached_count ?? 0} contacts)`);
+      setSegName('');
+      setPreviewCount(null);
+      onRefresh();
+    } catch {
+      toast.error('Failed to save segment');
+    } finally {
+      setSavingSeg(false);
+    }
+  }
+
+  async function handleDeleteSegment(id: string) {
+    try {
+      const res = await fetch(`/api/marketing/segments?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Segment removed');
+      onRefresh();
+    } catch {
+      toast.error('Failed to delete segment');
+    }
+  }
