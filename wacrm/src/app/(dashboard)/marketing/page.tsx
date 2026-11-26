@@ -178,3 +178,13 @@ function MarketingStudioInner() {
           <p className="mt-1 text-xl font-bold tabular-nums text-foreground">
             {analytics?.funnel.clicks.toLocaleString() ?? 0}
           </p>
+          <p className="text-[11px] text-muted-foreground">
+            {links.length} tracked links
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground">{t('kpiHotLeads')}</p>
+          <p className="mt-1 text-xl font-bold tabular-nums text-orange-400">
+            {analytics?.summary.hotLeadCount ?? 0}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
