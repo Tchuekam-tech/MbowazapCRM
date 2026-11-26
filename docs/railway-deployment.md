@@ -32,9 +32,19 @@ MboWazapCRM consists of two separate runtime services:
 
 ## 2. Database Migrations
 
-Apply `wacrm/supabase/migrations/047_mbowazap_events_rls.sql` in Supabase so `mbowazap_events` has Row Level Security enabled and restricted to `service_role`.
+Apply the latest migrations in Supabase SQL Editor:
+- `wacrm/supabase/migrations/047_mbowazap_events_rls.sql` (locks down `mbowazap_events` with RLS)
+- `wacrm/supabase/migrations/048_ai_gemini_provider.sql` (enables Gemini 2.5 Flash provider)
+- `wacrm/supabase/migrations/049_marketing_growth_suite.sql` (enables Growth Links, Lead Intelligence, Smart Segments, Drip Sequences, A/B Campaigns, and Promo Coupons)
+- `wacrm/supabase/migrations/050_performance_hardening_and_indexes.sql` (adds composite performance indexes and fast single-roundtrip dashboard RPCs)
+- `wacrm/supabase/migrations/051_buffer_omnichannel.sql` (adds encrypted Buffer API integration, synced social channels/posts, and Omnichannel Digital Presence Analytics)
 
-## 3. Post-Deploy Verification
+## 3. Always-Up & Ultra-Fast Server Hardening
+
+- **Unified Cron Endpoint**: Set `AUTOMATION_CRON_SECRET` on **both** `MbowazapCRM` and `mbowazap-bot`. Because `mbowazap-bot` runs 24/7 as a persistent container, its built-in resilience monitor automatically pings `WACRM_URL/api/health` every 4 minutes (preventing cold starts) and calls `WACRM_URL/api/cron/tick` every 60 seconds to execute due Drip Sequences, delayed Automations, and Flow timeouts without requiring an external cron service.
+- **Live Server Telemetry**: Visit **Marketing Studio → Server Health** or query `GET /api/system/status` (authenticated) or `GET /api/health?deep=1` (with `x-cron-secret`) to monitor Supabase latency, CRM cache hit rate, bot event-loop lag, memory usage, and active WhatsApp sockets.
+
+## 4. Post-Deploy Verification
 
 - CRM health: `curl https://mbowazapcrm-production.up.railway.app/api/health` -> `200 {"ok":true,"service":"wacrm",...}`
 - CRM login UI: open `https://mbowazapcrm-production.up.railway.app/` -> redirects to `/login` with `Cache-Control: private, no-store`

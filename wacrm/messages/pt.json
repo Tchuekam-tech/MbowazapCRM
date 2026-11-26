@@ -39,7 +39,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configurações",
-    "menuSignOut": "Sair"
+    "menuSignOut": "Sair",
+    "marketing": "Estúdio de Marketing"
   },
   "Header": {
     "dashboard": "Painel",
@@ -58,7 +59,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configurações",
-    "menuSignOut": "Sair"
+    "menuSignOut": "Sair",
+    "marketing": "Estúdio de Marketing"
   },
   "ModeToggle": {
     "switchMode": "Mudar para o modo {mode}"
@@ -87,7 +89,8 @@
       "newContact": "Novo contato",
       "newDeal": "Novo negócio",
       "newBroadcast": "Novo disparo",
-      "newAutomation": "Nova automação"
+      "newAutomation": "Nova automação",
+      "marketingStudio": "Estúdio de Marketing"
     },
     "activityFeed": {
       "title": "Atividade recente",
@@ -2031,5 +2034,22 @@
   },
   "DashboardShell": {
     "loading": "Carregando..."
+  },
+  "Marketing": {
+    "title": "Estúdio de Crescimento e Marketing",
+    "subtitle": "Links QR para WhatsApp, pontuação IA de leads, sequências drip, testes A/B e ROI.",
+    "kpiLinks": "Cliques em Links",
+    "kpiHotLeads": "Leads Quentes (70+)",
+    "kpiDrips": "Sequências Ativas",
+    "kpiExperiments": "Testes A/B",
+    "kpiRevenue": "Receita Atribuída",
+    "tabs": {
+      "links": "Links e QR",
+      "leads": "Leads IA e Segmentos",
+      "drips": "Sequências Drip",
+      "campaigns": "Copy IA e Testes A/B",
+      "roi": "ROI, Cupons e Saúde",
+      "presence": "Omnicanal (Buffer)"
+    }
   }
 }
