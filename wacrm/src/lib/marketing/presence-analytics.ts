@@ -222,3 +222,41 @@ export function computeDigitalPresenceReport(
 
   // Actionable Cross-Channel Recommendations
   const recommendations: DigitalPresenceRecommendation[] = [];
+
+  for (const ch of channelMetrics) {
+    if (ch.isQueuePaused) {
+      recommendations.push({
+        priority: 'high',
+        title: `Resume paused ${ch.service} queue (${ch.name})`,
+        detail: `Your Buffer queue for ${ch.name} is paused. Resuming keeps organic reach and inbound WhatsApp discovery active.`,
+        channel: ch.service,
+        actionType: 'resume_queue',
+      });
+    } else if (!ch.hasGrowthLinkBridge) {
+      recommendations.push({
+        priority: 'high',
+        title: `Bridge ${ch.service} traffic to WhatsApp`,
+        detail: `${ch.name} has ${ch.sentPosts} synced post(s) but no tracked MboWazap /go/ link for "${ch.service}". Create one and drop it into your bio & next Buffer post to capture leads directly in WhatsApp.`,
+        channel: ch.service,
+        actionType: 'create_growth_link',
+      });
+    } else if (ch.scheduledPosts === 0) {
+      recommendations.push({
+        priority: 'medium',
+        title: `Refill empty queue on ${ch.name}`,
+        detail: `No upcoming posts are scheduled on ${ch.service}. Queue a Growth-Link promo post below to stay visible this week.`,
+        channel: ch.service,
+        actionType: 'publish_post',
+      });
+    }
+  }
+
+  if (topPosts.length > 0 && topPosts[0]!.total_engagements > 0) {
+    recommendations.push({
+      priority: 'medium',
+      title: `Repurpose your top ${topPosts[0]!.service} post into a WhatsApp A/B Campaign`,
+      detail: `Your #1 post earned ${topPosts[0]!.total_engagements.toLocaleString()} engagements — reuse that proven hook for Warm/Hot WhatsApp leads in the A/B Studio.`,
+      channel: topPosts[0]!.service,
+      actionType: 'launch_ab_test',
+    });
+  }
