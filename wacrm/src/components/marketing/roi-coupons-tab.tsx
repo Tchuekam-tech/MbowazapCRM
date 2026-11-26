@@ -339,3 +339,33 @@ export function RoiCouponsTab({
               </p>
             </div>
           </div>
+
+          <form onSubmit={handleCreateCoupon} className="grid grid-cols-2 gap-2.5 sm:grid-cols-6">
+            <Input
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="VIP20"
+              className="col-span-1 font-mono text-xs sm:col-span-2"
+              required
+            />
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Offer title"
+              className="col-span-1 text-xs sm:col-span-2"
+              required
+            />
+            <select
+              value={discountType}
+              onChange={(e) => setDiscountType(e.target.value as 'percent' | 'fixed')}
+              className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+            >
+              <option value="percent">% Off</option>
+              <option value="fixed">{currency} Off</option>
+            </select>
+            <Input
+              type="number"
+              min={1}
+              value={discountValue}
+              onChange={(e) => setDiscountValue(e.target.value)}
+              placeholder="20"
