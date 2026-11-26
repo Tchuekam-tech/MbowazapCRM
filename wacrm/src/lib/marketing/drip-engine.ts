@@ -69,3 +69,43 @@ export function isWithinQuietHours(
  * Computes the next allowed send timestamp, pushing forward to quietEnd
  * if the candidate time lands inside quiet hours.
  */
+export function nextAllowedSendTime(
+  candidate: Date,
+  quietStart: string,
+  quietEnd: string,
+  timezone = 'UTC'
+): Date {
+  if (!isWithinQuietHours(candidate, quietStart, quietEnd, timezone)) {
+    return candidate;
+  }
+  const end = parseHHMM(quietEnd, 8 * 60);
+  const cur = getTimeOfDayMinutes(candidate, timezone);
+  let deltaMinutes = end - cur;
+  if (deltaMinutes <= 0) deltaMinutes += 24 * 60;
+  return new Date(candidate.getTime() + deltaMinutes * 60_000);
+}
+
+export interface DripProcessResult {
+  processed: number;
+  sent: number;
+  deferredQuietHours: number;
+  exited: number;
+  failed: number;
+}
+
+/**
+ * Processes due `drip_enrollments` rows across all active sequences.
+ * Designed to run from `/api/marketing/sequences/cron` or `/api/cron/tick`.
+ */
+export async function processDueDripEnrollments(
+  db: SupabaseClient,
+  limit = 40,
+  now = new Date()
+): Promise<DripProcessResult> {
+  const result: DripProcessResult = {
+    processed: 0,
+    sent: 0,
+    deferredQuietHours: 0,
+    exited: 0,
+    failed: 0,
+  };
