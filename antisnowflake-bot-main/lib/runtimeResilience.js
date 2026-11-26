@@ -99,3 +99,11 @@ function createRuntimeMonitor({
             return false;
         }
     }
+
+    async function tickWacrmCron(baseUrl, cronSecret) {
+        try {
+            const res = await fetchImpl(`${baseUrl}/api/cron/tick`, {
+                method: 'GET',
+                headers: { 'x-cron-secret': cronSecret },
+                signal: AbortSignal.timeout(25_000),
+            });
