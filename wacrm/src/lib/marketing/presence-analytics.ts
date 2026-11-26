@@ -63,3 +63,38 @@ export interface PresenceComputationInput {
  * Score, cross-channel WhatsApp conversion bridge, top posts, queue
  * status, and prioritized growth recommendations.
  */
+export function computeDigitalPresenceReport(
+  input: PresenceComputationInput
+): DigitalPresenceReport {
+  const { integration, channels, posts, growthLinks, attributedContacts } = input;
+  const now = input.nowMs ?? Date.now();
+  const thirtyDaysAgo = now - 30 * 86_400_000;
+
+  // Roll up WhatsApp Growth Link + Contact attribution by canonical service
+  const waByService = new Map<
+    string,
+    { clicks: number; leads: number; revenue: number; hasLink: boolean }
+  >();
+  const ensureWa = (svc: string) => {
+    let row = waByService.get(svc);
+    if (!row) {
+      row = { clicks: 0, leads: 0, revenue: 0, hasLink: false };
+      waByService.set(svc, row);
+    }
+    return row;
+  };
+
+  for (const link of growthLinks) {
+    const svc = canonicalSocialService(link.utm_source);
+    const row = ensureWa(svc);
+    if (link.is_active) row.hasLink = true;
+    row.clicks += Number(link.clicks_count ?? 0);
+    row.leads += Number(link.conversions_count ?? 0);
+    row.revenue += Number(link.attributed_revenue ?? 0);
+  }
+  for (const c of attributedContacts) {
+    if (!c.utm_source) continue;
+    const svc = canonicalSocialService(c.utm_source);
+    const row = ensureWa(svc);
+    row.leads = Math.max(row.leads, row.leads + 1);
+  }
