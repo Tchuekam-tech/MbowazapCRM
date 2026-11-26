@@ -29,3 +29,19 @@ export async function GET() {
           .eq('id', ctx.accountId)
           .maybeSingle();
         const dbLatencyMs = Math.round(performance.now() - dbStart);
+
+        // 2. Measure Bot Gateway reachability + runtime metrics
+        const env = readMbowazapEnv();
+        let bot: {
+          configured: boolean;
+          reachable: boolean;
+          latencyMs: number | null;
+          metrics: BotRuntimeMetrics | null;
+          error: string | null;
+        } = {
+          configured: env.ok,
+          reachable: false,
+          latencyMs: null,
+          metrics: null,
+          error: env.ok ? null : env.problems.join('; '),
+        };
