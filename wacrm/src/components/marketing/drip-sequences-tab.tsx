@@ -148,3 +148,32 @@ export function DripSequencesTab({
     }
   }
 
+  async function handleEnrollSegment(seq: DripSequence) {
+    if (!seq.segment_id && segments.length === 0) {
+      toast.error('Create a Smart Segment first to enroll an audience.');
+      return;
+    }
+    const targetSegId = seq.segment_id || segments[0]?.id;
+    setEnrollingId(seq.id);
+    try {
+      const res = await fetch('/api/marketing/sequences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'enroll',
+          sequence_id: seq.id,
+          segment_id: targetSegId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(
+        `Enrolled ${data.enrolled} contacts (${data.skippedDuplicates} already enrolled).`
+      );
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Enrollment failed');
+    } finally {
+      setEnrollingId(null);
+    }
+  }
