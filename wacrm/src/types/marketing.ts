@@ -195,3 +195,16 @@ export interface PromoCoupon {
   created_at: string;
   updated_at: string;
 }
+
+export interface MarketingAnalyticsSnapshot {
+  funnel: {
+    clicks: number;
+    leads: number;
+    replied: number;
+    hotLeads: number;
+    redemptions: number;
+    wonRevenue: number;
+  };
+  channelBreakdown: Array<{
+    source: string;
+    clicks: number;
