@@ -226,3 +226,22 @@ export function createBufferClient(opts: BufferClientOptions) {
         payload?.errors?.[0]?.message || `Buffer API error (HTTP ${res.status})`;
       throw new BufferApiError('graphql_error', msg, res.status);
     }
+
+    if (Array.isArray(payload?.errors) && payload.errors.length > 0 && !payload.data) {
+      throw new BufferApiError(
+        'graphql_error',
+        payload.errors.map((e) => e.message || 'GraphQL error').join('; '),
+        200
+      );
+    }
+
+    if (!payload?.data) {
+      throw new BufferApiError(
+        'invalid_response',
+        'Buffer returned an empty GraphQL response.',
+        res.status
+      );
+    }
+
+    return payload.data;
+  }
