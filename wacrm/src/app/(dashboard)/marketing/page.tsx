@@ -93,3 +93,16 @@ function MarketingStudioInner() {
       campRes,
       couponsRes,
       analyticsRes,
+      presenceRes,
+      tagsRes,
+    ] = await Promise.all([
+      fetch('/api/marketing/links').then((r) => (r.ok ? r.json() : { links: [] })).catch(() => ({ links: [] })),
+      fetch('/api/marketing/leads').then((r) => (r.ok ? r.json() : { leads: [] })).catch(() => ({ leads: [] })),
+      fetch('/api/marketing/segments').then((r) => (r.ok ? r.json() : { segments: [] })).catch(() => ({ segments: [] })),
+      fetch('/api/marketing/sequences').then((r) => (r.ok ? r.json() : { sequences: [] })).catch(() => ({ sequences: [] })),
+      fetch('/api/marketing/campaigns').then((r) => (r.ok ? r.json() : { campaigns: [] })).catch(() => ({ campaigns: [] })),
+      fetch('/api/marketing/coupons').then((r) => (r.ok ? r.json() : { coupons: [] })).catch(() => ({ coupons: [] })),
+      fetch('/api/marketing/analytics').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch('/api/marketing/buffer').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      supabase.from('tags').select('*').order('name'),
+    ]);
