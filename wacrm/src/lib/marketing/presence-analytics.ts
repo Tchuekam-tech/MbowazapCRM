@@ -433,3 +433,34 @@ export async function runAiDigitalPresenceAudit(
         'None of your recent Buffer posts include a direct Click-to-WhatsApp /go/ CTA link.'
       );
     }
+
+    return {
+      headline:
+        report.presenceScore >= 75
+          ? `Strong Digital Presence (${report.presenceScore}/100) — Ready to Scale Conversion`
+          : report.presenceScore >= 45
+            ? `Growing Digital Presence (${report.presenceScore}/100) — Plug Social-to-WhatsApp Leaks`
+            : `Early Digital Presence (${report.presenceScore}/100) — High Upside Ahead`,
+      executiveSummary: topCh
+        ? `Your digital footprint spans ${report.totals.connectedChannels} Buffer channel(s) led by ${topCh.name} (${topCh.service}) with ${report.totals.impressions.toLocaleString()} impressions and ${report.totals.engagements.toLocaleString()} engagements. Bridging every social channel to tracked MboWazap Growth Links & automated WhatsApp drips will multiply your lead capture.`
+        : 'Connect channels in Buffer and publish tracked MboWazap Growth Links to build a unified social-to-WhatsApp revenue engine.',
+      strengths,
+      blindSpots:
+        blindSpots.length > 0
+          ? blindSpots
+          : ['All connected channels are active — focus on A/B testing CTAs to lift WhatsApp conversion rate.'],
+      actionPlan: report.recommendations.slice(0, 3).map((r) => ({
+        title: r.title,
+        channel: r.channel,
+        impact: r.priority === 'high' ? 'high' : 'medium',
+        step: r.detail,
+      })),
+      usedAi: false,
+      generatedAt: nowIso,
+    };
+  };
+
+  let audit: DigitalPresenceAudit = buildFallbackAudit();
+  const aiConfig = await loadAiConfig(db, accountId, { requireActive: false }).catch(
+    () => null
+  );
