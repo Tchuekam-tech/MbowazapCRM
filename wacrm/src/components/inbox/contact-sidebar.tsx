@@ -66,10 +66,14 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      fetch(`/api/marketing/leads?contactId=${encodeURIComponent(contact.id)}`)
+        .then((r) => (r.ok ? r.json() : { lead: null }))
+        .catch(() => ({ lead: null })),
     ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
+    setLeadScore((leadRes?.lead as ContactLeadScore | null) ?? null);
     if (tagsRes.data) {
       const mapped = tagsRes.data
         .filter((ct: Record<string, unknown>) => ct.tags)
