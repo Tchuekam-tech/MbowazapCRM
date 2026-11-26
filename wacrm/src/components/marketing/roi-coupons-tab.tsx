@@ -420,3 +420,31 @@ export function RoiCouponsTab({
                     </span>
                   </p>
                 </div>
+
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder="Order $"
+                    value={redeemValues[c.id] ?? ''}
+                    onChange={(e) =>
+                      setRedeemValues((prev) => ({ ...prev, [c.id]: e.target.value }))
+                    }
+                    className="h-8 w-24 text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!canEdit || redeemingId === c.id}
+                    onClick={() => handleRedeem(c)}
+                  >
+                    <DollarSign className="mr-1 h-3 w-3" />
+                    Log Sale
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(c.code);
+                      setCopiedId(c.id);
+                      setTimeout(() => setCopiedId(null), 1500);
