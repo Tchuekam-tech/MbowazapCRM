@@ -267,3 +267,29 @@ export function DripSequencesTab({
           </div>
         </div>
 
+        {/* Steps */}
+        <div className="space-y-3">
+          {steps.map((step, idx) => (
+            <div
+              key={idx}
+              className="space-y-2 rounded-lg border border-border bg-muted/20 p-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-primary">
+                  Step {idx + 1}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-[11px] text-muted-foreground">Wait (hours):</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={Math.round(step.delay_minutes / 60)}
+                    onChange={(e) =>
+                      updateStep(idx, {
+                        delay_minutes: Math.max(0, Number(e.target.value) * 60),
+                      })
+                    }
+                    className="h-7 w-16 text-xs"
+                  />
+                  {coupons.length > 0 && (
