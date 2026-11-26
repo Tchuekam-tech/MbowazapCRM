@@ -35,3 +35,13 @@ function createRuntimeMonitor({
     } catch (_) {
         histogram = null;
     }
+
+    let memTimer = null;
+    let keepAliveTimer = null;
+    let cronTimer = null;
+    let lastKeepAliveAt = null;
+    let lastKeepAliveOk = null;
+    let lastCronTickAt = null;
+    let lastCronTickOk = null;
+    let memorySheds = 0;
+
