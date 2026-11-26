@@ -357,3 +357,23 @@ export async function recomputeAccountLeadScores(
       .in('conversation_id', convIds)
       .order('created_at', { ascending: false })
       .limit(Math.min(3000, convIds.length * 12));
+
+    for (const m of (msgs ?? []) as Array<{
+      conversation_id: string;
+      sender_type: string;
+      content_text: string | null;
+    }>) {
+      const cid = convToContact.get(m.conversation_id);
+      if (!cid) continue;
+      const entry = msgsByContact.get(cid) ?? { inbound: 0, outbound: 0, texts: [] };
+      if (m.sender_type === 'customer') {
+        entry.inbound += 1;
+        if (m.content_text && entry.texts.length < 8) {
+          entry.texts.push(m.content_text);
+        }
+      } else {
+        entry.outbound += 1;
+      }
+      msgsByContact.set(cid, entry);
+    }
+  }
