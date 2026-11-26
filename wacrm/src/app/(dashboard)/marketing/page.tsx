@@ -82,3 +82,14 @@ function MarketingStudioInner() {
       // Non-fatal
     }
   }, []);
+
+  const loadAll = useCallback(async () => {
+    const supabase = createClient();
+    const [
+      linksRes,
+      leadsRes,
+      segmentsRes,
+      seqRes,
+      campRes,
+      couponsRes,
+      analyticsRes,
