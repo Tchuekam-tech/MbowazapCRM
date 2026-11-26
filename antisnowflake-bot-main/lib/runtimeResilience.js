@@ -134,3 +134,15 @@ function createRuntimeMonitor({
             }, intervalMs);
             if (typeof keepAliveTimer.unref === 'function') keepAliveTimer.unref();
         }
+
+        const cronSecret = (env.AUTOMATION_CRON_SECRET || '').trim();
+        if (baseUrl && cronSecret && env.DISABLE_CRON_TICKER !== 'true' && !cronTimer) {
+            const cronIntervalMs = Math.max(15_000, Number(env.CRON_TICK_INTERVAL_MS) || DEFAULT_CRON_TICK_MS);
+            cronTimer = setInterval(() => {
+                void tickWacrmCron(baseUrl, cronSecret);
+            }, cronIntervalMs);
+            if (typeof cronTimer.unref === 'function') cronTimer.unref();
+            log.log(`[resilience] Internal CRM cron ticker active every ${Math.round(cronIntervalMs / 1000)}s`);
+        }
+    }
+
