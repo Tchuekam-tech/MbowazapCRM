@@ -312,3 +312,12 @@ function MarketingStudioInner() {
               systemHealth={systemHealth}
               currency={defaultCurrency}
               canEdit={canEdit}
+              onRefresh={loadAll}
+              onRefreshHealth={loadHealth}
+            />
+          </TabsContent>
+        </Tabs>
+      )}
+    </div>
+  );
+}
