@@ -113,3 +113,34 @@ describe('Feature 2: Behavioral Lead Scoring & Smart Segments', () => {
     ).toBe(false);
   });
 });
+
+describe('Feature 3: Drip Quiet Hours Scheduler', () => {
+  it('detects midnight-wrapping quiet hours and shifts sends to quietEnd', () => {
+    const lateNight = new Date('2026-11-26T23:30:00Z');
+    expect(isWithinQuietHours(lateNight, '21:00', '08:00', 'UTC')).toBe(true);
+    const shifted = nextAllowedSendTime(lateNight, '21:00', '08:00', 'UTC');
+    expect(shifted.toISOString()).toBe('2026-11-27T08:00:00.000Z');
+
+    const daytime = new Date('2026-11-26T14:15:00Z');
+    expect(isWithinQuietHours(daytime, '21:00', '08:00', 'UTC')).toBe(false);
+    expect(nextAllowedSendTime(daytime, '21:00', '08:00', 'UTC').toISOString()).toBe(
+      daytime.toISOString()
+    );
+  });
+});
+
+describe('Feature 4: Copywriter Compliance Linter & A/B Winner Evaluator', () => {
+  it('grades personalized clean copy as A and flags ALL CAPS spammy copy', () => {
+    const clean = lintWhatsAppCopy(
+      'Hi {{first_name}} 👋 Quick update — your VIP offer is live today. Reply YES to claim it.'
+    );
+    expect(clean.grade).toBe('A');
+    expect(clean.score).toBeGreaterThanOrEqual(90);
+
+    const spam = lintWhatsAppCopy(
+      'ACT NOW!!!! 100% FREE GUARANTEED MONEY CLICK HERE IMMEDIATELY https://bit.ly/spam'
+    );
+    expect(spam.grade).toBe('D');
+    expect(spam.warnings.length).toBeGreaterThanOrEqual(3);
+  });
+
