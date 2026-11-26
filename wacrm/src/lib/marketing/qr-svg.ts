@@ -127,3 +127,36 @@ function rsGeneratorPoly(degree: number): Uint8Array {
   return poly;
 }
 
+function rsRemainder(data: Uint8Array, ecLen: number): Uint8Array {
+  const gen = rsGeneratorPoly(ecLen);
+  const rem = new Uint8Array(ecLen);
+  for (let i = 0; i < data.length; i++) {
+    const factor = data[i]! ^ rem[0]!;
+    for (let j = 0; j < ecLen - 1; j++) rem[j] = rem[j + 1]!;
+    rem[ecLen - 1] = 0;
+    if (factor !== 0) {
+      for (let j = 0; j < ecLen; j++) {
+        rem[j] ^= gfMul(gen[j + 1]!, factor);
+      }
+    }
+  }
+  return rem;
+}
+
+function formatBits(mask: number): number {
+  // Level M = 00 in 2-bit EC indicator
+  const data = (0b00 << 3) | (mask & 0x7);
+  let rem = data << 10;
+  for (let i = 4; i >= 0; i--) {
+    if (rem & (1 << (i + 10))) rem ^= 0x537 << i;
+  }
+  return ((data << 10) | rem) ^ 0x5412;
+}
+
+function versionBits(version: number): number {
+  let rem = version << 12;
+  for (let i = 5; i >= 0; i--) {
+    if (rem & (1 << (i + 12))) rem ^= 0x1f25 << i;
+  }
+  return (version << 12) | rem;
+}
