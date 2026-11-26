@@ -109,11 +109,16 @@ const store = {
                     this.messages[jid] = this.messages[jid].slice(-MAX_MESSAGES)
                 }
             })
+            pruneMapCap(this.messages, MAX_CHATS)
         }
+        if (this.contacts) pruneMapCap(this.contacts, MAX_CONTACTS)
+        if (this.chats) pruneMapCap(this.chats, MAX_CHATS)
+        this._dirty = true
     },
 
     bind(ev) {
         ev.on('messages.upsert', ({ messages }) => {
+            let changed = false
             messages.forEach(msg => {
                 if (!msg.key?.remoteJid) return
                 const jid = msg.key.remoteJid
