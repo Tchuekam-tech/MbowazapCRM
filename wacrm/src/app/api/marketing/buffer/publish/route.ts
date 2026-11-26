@@ -65,3 +65,27 @@ export async function POST(request: NextRequest) {
         };
       }
     });
+
+    const succeeded = results.filter((r) => r.ok).length;
+    if (succeeded === 0) {
+      return NextResponse.json(
+        {
+          error: results[0]?.error || 'Buffer could not publish to the selected channel(s).',
+          results,
+        },
+        { status: 502 }
+      );
+    }
+
+    // Best-effort refresh so the newly queued post shows up immediately
+    await syncBufferForAccount(ctx.supabase, ctx.accountId, { plainApiKey: apiKey }).catch(() => {});
+    const report = await loadDigitalPresenceReport(ctx.supabase, ctx.accountId);
+
+    return NextResponse.json({ ok: true, succeeded, failed: results.length - succeeded, results, report });
+  } catch (err) {
+    if (err instanceof BufferApiError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: 502 });
+    }
+    return toErrorResponse(err);
+  }
+}
