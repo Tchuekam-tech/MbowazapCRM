@@ -68,3 +68,17 @@ function createRuntimeMonitor({
         const mem = getMemoryMb();
         const gcThresholdMb = Number(env.GC_HEAP_THRESHOLD_MB) || 280;
         const shedThresholdMb = Number(env.MEMORY_SHED_RSS_MB) || 430;
+
+        if (mem.heapUsed >= gcThresholdMb || mem.rss >= shedThresholdMb) {
+            if (typeof global.gc === 'function') {
+                try { global.gc(); } catch (_) {}
+            }
+        }
+        if (mem.rss >= shedThresholdMb) {
+            memorySheds += 1;
+            log.warn(`[resilience] High RSS (${mem.rss}MB >= ${shedThresholdMb}MB) — shedding caches (#${memorySheds})`);
+            if (typeof onMemoryPressure === 'function') {
+                try { onMemoryPressure(mem); } catch (_) {}
+            }
+        }
+    }
