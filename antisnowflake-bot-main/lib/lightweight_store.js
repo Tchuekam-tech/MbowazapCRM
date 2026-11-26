@@ -124,14 +124,17 @@ const store = {
                 const jid = msg.key.remoteJid
                 this.messages[jid] = this.messages[jid] || []
 
-                // push new message
                 this.messages[jid].push(msg)
 
-                // trim old ones
                 if (this.messages[jid].length > MAX_MESSAGES) {
                     this.messages[jid] = this.messages[jid].slice(-MAX_MESSAGES)
                 }
+                changed = true
             })
+            if (changed) {
+                pruneMapCap(this.messages, MAX_CHATS)
+                this._dirty = true
+            }
         })
 
         ev.on('contacts.update', (contacts) => {
