@@ -107,3 +107,23 @@ const GF_LOG = new Uint8Array(256);
   }
   for (let i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255]!;
 }
+
+function gfMul(a: number, b: number): number {
+  if (a === 0 || b === 0) return 0;
+  return GF_EXP[GF_LOG[a]! + GF_LOG[b]!]!;
+}
+
+function rsGeneratorPoly(degree: number): Uint8Array {
+  let poly = new Uint8Array([1]);
+  for (let i = 0; i < degree; i++) {
+    const next = new Uint8Array(poly.length + 1);
+    const factor = GF_EXP[i]!;
+    for (let j = 0; j < poly.length; j++) {
+      next[j] ^= poly[j]!;
+      next[j + 1] ^= gfMul(poly[j]!, factor);
+    }
+    poly = next;
+  }
+  return poly;
+}
+
