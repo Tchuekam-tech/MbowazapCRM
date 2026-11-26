@@ -96,3 +96,48 @@ function normalizeServiceName(service: string | null | undefined): string {
   if (s === 'x') return 'twitter';
   return s || 'social';
 }
+
+export function extractNormalizedPostMetrics(metrics: BufferPostMetricItem[]): {
+  impressions: number;
+  reach: number;
+  reactions: number;
+  comments: number;
+  shares: number;
+  clicks: number;
+  totalEngagements: number;
+} {
+  let impressions = 0;
+  let reach = 0;
+  let reactions = 0;
+  let comments = 0;
+  let shares = 0;
+  let clicks = 0;
+
+  for (const m of metrics) {
+    const val = Number(m.value ?? 0);
+    if (!Number.isFinite(val) || val < 0) continue;
+    const key = `${m.type || ''} ${m.name || ''}`.toLowerCase();
+    if (key.includes('impression') || key.includes('view')) {
+      impressions = Math.max(impressions, Math.round(val));
+    } else if (key.includes('reach')) {
+      reach = Math.max(reach, Math.round(val));
+    } else if (
+      key.includes('reaction') ||
+      key.includes('like') ||
+      key.includes('favorite') ||
+      key.includes('upvote')
+    ) {
+      reactions += Math.round(val);
+    } else if (key.includes('comment') || key.includes('repl')) {
+      comments += Math.round(val);
+    } else if (
+      key.includes('share') ||
+      key.includes('repost') ||
+      key.includes('retweet') ||
+      key.includes('save')
+    ) {
+      shares += Math.round(val);
+    } else if (key.includes('click') || key.includes('link')) {
+      clicks += Math.round(val);
+    }
+  }
