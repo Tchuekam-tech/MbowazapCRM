@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     }
 
     if (decision === 'reject') {
-      const { data: rejected } = await supabase
+      const { data: rejected, error: rejErr } = await supabase
         .from('jarvis_actions')
         .update({
           status: 'rejected',
@@ -69,29 +69,73 @@ export async function POST(request: Request) {
         })
         .eq('id', actionId)
         .eq('account_id', accountId)
+        .eq('status', 'pending_approval')
         .select('*')
-        .single();
+        .maybeSingle();
+      if (rejErr) {
+        return NextResponse.json({ error: rejErr.message }, { status: 500 });
+      }
+      if (!rejected) {
+        return NextResponse.json(
+          { error: 'Action has already been decided or executed' },
+          { status: 409 }
+        );
+      }
       return NextResponse.json({ success: true, action: rejected });
     }
 
-    // Optional inline payload edit (e.g. tweaking WhatsApp follow-up text before approving)
-    let actionRow = existing as JarvisActionRecord;
+    // Optional inline payload edit — allowlist safe text/numeric fields only so
+    // callers cannot overwrite cross-tenant foreign IDs (sequenceId/pipelineId/stageId).
+    const ALLOWED_EDIT_KEYS = new Set([
+      'messageText',
+      'dealTitle',
+      'value',
+      'currency',
+      'text',
+      'alertTitle',
+      'alertBody',
+      'tagName',
+    ]);
+    let mergedPayload = (existing as JarvisActionRecord).payload;
     if (body?.editedPayload && typeof body.editedPayload === 'object') {
-      const mergedPayload = { ...actionRow.payload, ...body.editedPayload };
-      const { data: updated } = await supabase
-        .from('jarvis_actions')
-        .update({ payload: mergedPayload })
-        .eq('id', actionId)
-        .eq('account_id', accountId)
-        .select('*')
-        .single();
-      if (updated) actionRow = updated as JarvisActionRecord;
+      const safePatch: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(body.editedPayload)) {
+        if (ALLOWED_EDIT_KEYS.has(k)) safePatch[k] = v;
+      }
+      if (Object.keys(safePatch).length > 0) {
+        mergedPayload = { ...mergedPayload, ...safePatch };
+      }
+    }
+
+    // Atomically claim the pending action to prevent double-execution on double-click/replay.
+    const { data: claimed, error: claimErr } = await supabase
+      .from('jarvis_actions')
+      .update({
+        status: 'approved',
+        payload: mergedPayload,
+        decided_by: userId,
+        decided_at: new Date().toISOString(),
+      })
+      .eq('id', actionId)
+      .eq('account_id', accountId)
+      .eq('status', 'pending_approval')
+      .select('*')
+      .maybeSingle();
+
+    if (claimErr) {
+      return NextResponse.json({ error: claimErr.message }, { status: 500 });
+    }
+    if (!claimed) {
+      return NextResponse.json(
+        { error: 'Action has already been approved, executed, or rejected' },
+        { status: 409 }
+      );
     }
 
     const executed = await executeJarvisAction(
       supabaseAdmin(),
       accountId,
-      actionRow,
+      claimed as JarvisActionRecord,
       userId
     );
     return NextResponse.json({ success: true, action: executed });

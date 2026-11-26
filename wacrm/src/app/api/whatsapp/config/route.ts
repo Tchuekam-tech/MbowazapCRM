@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import {
   getSubscribedApps,
@@ -300,24 +301,8 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
+    const { supabase, accountId, userId } = await requireRole('admin')
+    const user = { id: userId }
 
     // One connection per account. While MboWazap holds it, refuse before
     // touching Meta — disconnecting MboWazap (which also unlinks the bot
@@ -643,6 +628,9 @@ export async function POST(request: Request) {
       phone_info: phoneInfo,
     })
   } catch (error) {
+    if (error && typeof error === 'object' && 'status' in error) {
+      return toErrorResponse(error)
+    }
     console.error('Error in WhatsApp config POST:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -657,24 +645,7 @@ export async function POST(request: Request) {
  */
 export async function DELETE() {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
+    const { supabase, accountId } = await requireRole('admin')
 
     // A MboWazap connection is removed from its own settings page, which
     // also unlinks the bot session; deleting the row here would leave
@@ -706,6 +677,9 @@ export async function DELETE() {
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error && typeof error === 'object' && 'status' in error) {
+      return toErrorResponse(error)
+    }
     console.error('Error in WhatsApp config DELETE:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

@@ -216,7 +216,22 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Launch A/B test pass
+      // Launch A/B test pass — atomically claim draft -> running to prevent double launch
+      const { data: claimedLaunch } = await ctx.supabase
+        .from('ab_campaigns')
+        .update({ status: 'running', started_at: new Date().toISOString() })
+        .eq('id', campaignId)
+        .eq('account_id', ctx.accountId)
+        .eq('status', 'draft')
+        .select('id')
+        .maybeSingle();
+      if (!claimedLaunch) {
+        return NextResponse.json(
+          { error: 'Campaign has already been launched or completed' },
+          { status: 409 }
+        );
+      }
+
       let contactIds: string[] = [];
       if (campaign.segment_id) {
         const { data: seg } = await ctx.supabase
@@ -234,15 +249,16 @@ export async function POST(request: NextRequest) {
           contactIds = evalRes.contactIds;
         }
       } else {
-        const { data: allContacts } = await ctx.supabase
-          .from('contacts')
-          .select('id')
-          .eq('account_id', ctx.accountId)
-          .limit(200);
-        contactIds = (allContacts ?? []).map((c) => c.id as string);
+        // Default audience still excludes opted-out contacts via segment evaluator
+        const evalRes = await evaluateAccountSegment(ctx.supabase, ctx.accountId, {});
+        contactIds = evalRes.contactIds.slice(0, 200);
       }
 
       if (contactIds.length === 0) {
+        await ctx.supabase
+          .from('ab_campaigns')
+          .update({ status: 'draft', started_at: null })
+          .eq('id', campaignId);
         return NextResponse.json(
           { error: 'No contacts match the target audience' },
           { status: 400 }
@@ -262,7 +278,8 @@ export async function POST(request: NextRequest) {
         Math.min(2, shuffled.length),
         Math.round((shuffled.length * (100 - holdoutPct)) / 100)
       );
-      const countA = Math.max(1, Math.round((testCount * splitRatio) / 100));
+      const rawCountA = Math.max(1, Math.round((testCount * splitRatio) / 100));
+      const countA = testCount >= 2 ? Math.min(testCount - 1, rawCountA) : rawCountA;
 
       const planRows = shuffled.map((cid, idx) => {
         if (idx < countA) {
@@ -388,8 +405,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const splitRatio = Math.max(10, Math.min(90, Number(body.split_ratio ?? 50)));
-    const holdoutPercent = Math.max(0, Math.min(80, Number(body.holdout_percent ?? 0)));
+    const rawSplit = Number(body.split_ratio ?? 50);
+    const rawHoldout = Number(body.holdout_percent ?? 0);
+    const splitRatio = Number.isFinite(rawSplit)
+      ? Math.max(10, Math.min(90, Math.round(rawSplit)))
+      : 50;
+    const holdoutPercent = Number.isFinite(rawHoldout)
+      ? Math.max(0, Math.min(80, Math.round(rawHoldout)))
+      : 0;
 
     const { data: created, error: cErr } = await ctx.supabase
       .from('ab_campaigns')
@@ -444,7 +467,10 @@ export async function POST(request: NextRequest) {
       ])
       .select();
 
-    if (vErr) return NextResponse.json({ error: vErr.message }, { status: 500 });
+    if (vErr) {
+      await ctx.supabase.from('ab_campaigns').delete().eq('id', created.id);
+      return NextResponse.json({ error: vErr.message }, { status: 500 });
+    }
 
     return NextResponse.json(
       { campaign: { ...created, variants: savedVariants ?? [] } },

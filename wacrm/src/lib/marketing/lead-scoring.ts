@@ -456,7 +456,7 @@ export async function evaluateAccountSegment(
   accountId: string,
   rules: SegmentRules
 ): Promise<{ contactIds: string[]; totalContacts: number }> {
-  const [contactsRes, scoresRes, dealsRes, tagsRes] = await Promise.all([
+  const [contactsRes, scoresRes, dealsRes] = await Promise.all([
     db
       .from('contacts')
       .select('id, utm_source, utm_campaign')
@@ -471,10 +471,6 @@ export async function evaluateAccountSegment(
       .select('contact_id, status, value')
       .eq('account_id', accountId)
       .eq('status', 'open'),
-    db
-      .from('contact_tags')
-      .select('contact_id, tag_id, tags(name)')
-      .limit(5000),
   ]);
 
   const contacts = (contactsRes.data ?? []) as Array<{
@@ -483,6 +479,20 @@ export async function evaluateAccountSegment(
     utm_campaign: string | null;
   }>;
   if (contacts.length === 0) return { contactIds: [], totalContacts: 0 };
+
+  // Scope contact_tags strictly to this account's contacts in chunks so large
+  // multi-tenant tables never truncate opt-out tags.
+  const allContactIds = contacts.map((c) => c.id);
+  const tagRowsAccum: unknown[] = [];
+  for (let i = 0; i < allContactIds.length; i += 400) {
+    const chunk = allContactIds.slice(i, i + 400);
+    const { data: chunkTags } = await db
+      .from('contact_tags')
+      .select('contact_id, tag_id, tags(name)')
+      .in('contact_id', chunk);
+    if (chunkTags) tagRowsAccum.push(...chunkTags);
+  }
+  const tagsRes = { data: tagRowsAccum };
 
   const scoreMap = new Map<
     string,

@@ -403,32 +403,51 @@ export async function saveAndIndexCompanyProfile(
 // 2. SSRF-Hardened Website Crawler & HTML Cleaner
 // ------------------------------------------------------------
 
+function isPrivateIpv4Octets(a: number, b: number): boolean {
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true; // link-local / cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  if (a >= 224) return true; // multicast / reserved
+  return false;
+}
+
 export function isPrivateOrBlockedIp(ip: string): boolean {
-  const lower = ip.toLowerCase().trim();
+  const lower = ip.toLowerCase().trim().replace(/^\[|\]$/g, '');
   if (!lower) return true;
 
-  // Strip IPv4-mapped IPv6 prefix ::ffff:
-  const v4Mapped = lower.startsWith('::ffff:') ? lower.slice(7) : lower;
+  // Strip IPv4-mapped IPv6 prefix ::ffff: (handles both dotted and hex forms like ::ffff:7f00:1)
+  if (lower.startsWith('::ffff:')) {
+    const tail = lower.slice(7);
+    if (isIP(tail) === 4) {
+      const parts = tail.split('.').map(Number);
+      if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n))) return true;
+      return isPrivateIpv4Octets(parts[0]!, parts[1]!);
+    }
+    const hexMatch = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(tail);
+    if (hexMatch) {
+      const hi = Number.parseInt(hexMatch[1]!, 16);
+      const a = (hi >>> 8) & 0xff;
+      const b = hi & 0xff;
+      return isPrivateIpv4Octets(a, b);
+    }
+    return true;
+  }
 
-  if (isIP(v4Mapped) === 4) {
-    const parts = v4Mapped.split('.').map(Number);
+  if (isIP(lower) === 4) {
+    const parts = lower.split('.').map(Number);
     if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n))) return true;
-    const [a, b] = parts;
-    if (a === 0 || a === 10 || a === 127) return true;
-    if (a === 169 && b === 254) return true; // link-local / cloud metadata
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-    if (a >= 224) return true; // multicast / reserved
-    return false;
+    return isPrivateIpv4Octets(parts[0]!, parts[1]!);
   }
 
   if (isIP(lower) === 6) {
     if (lower === '::' || lower === '::1') return true;
-    if (lower.startsWith('fe80:') || lower.startsWith('fc') || lower.startsWith('fd')) {
+    // Block full fe80::/10 link-local, fc00::/7 unique local, ff00::/8 multicast, and 0:0:0:0:0:ffff:...
+    if (/^fe[89ab][0-9a-f]:/.test(lower) || lower.startsWith('fc') || lower.startsWith('fd')) {
       return true;
     }
-    if (lower.startsWith('ff')) return true;
+    if (lower.startsWith('ff') || /^0*:0*:0*:0*:0*:ffff:/.test(lower)) return true;
     return false;
   }
 
@@ -457,27 +476,28 @@ export async function validatePublicHttpUrl(
   }
 
   const host = parsed.hostname.toLowerCase();
+  const bareHost = host.replace(/^\[|\]$/g, '');
   if (
-    !host ||
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    host.endsWith('.local') ||
-    host.endsWith('.internal') ||
-    host.endsWith('.arpa')
+    !bareHost ||
+    bareHost === 'localhost' ||
+    bareHost.endsWith('.localhost') ||
+    bareHost.endsWith('.local') ||
+    bareHost.endsWith('.internal') ||
+    bareHost.endsWith('.arpa')
   ) {
     throw new Error('Private or internal network URLs are not allowed');
   }
 
-  if (isIP(host)) {
-    if (isPrivateOrBlockedIp(host)) {
+  if (isIP(bareHost)) {
+    if (isPrivateOrBlockedIp(bareHost)) {
       throw new Error('Private IP addresses are not allowed');
     }
   } else if (!opts.skipDnsLookup) {
     let records: Array<{ address: string }>;
     try {
-      records = await lookup(host, { all: true });
+      records = await lookup(bareHost, { all: true });
     } catch {
-      throw new Error(`Could not resolve domain "${host}"`);
+      throw new Error(`Could not resolve domain "${bareHost}"`);
     }
     if (!records.length || records.some((r) => isPrivateOrBlockedIp(r.address))) {
       throw new Error('Website resolves to a private or disallowed IP address');
@@ -617,53 +637,73 @@ export function extractSameOriginLinks(html: string, baseUrl: URL, maxLinks = 4)
   return candidates.slice(0, maxLinks).map((c) => c.url);
 }
 
+async function readBodyCapped(res: Response, maxBytes: number): Promise<string> {
+  if (!res.body || typeof res.body.getReader !== 'function') {
+    return (await res.text()).slice(0, maxBytes);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+  let total = 0;
+  let out = '';
+  try {
+    while (total < maxBytes) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      const remaining = maxBytes - total;
+      const slice = value.byteLength > remaining ? value.subarray(0, remaining) : value;
+      out += decoder.decode(slice, { stream: true });
+      total += slice.byteLength;
+      if (total >= maxBytes) {
+        await reader.cancel().catch(() => {});
+        break;
+      }
+    }
+    out += decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+  return out;
+}
+
 async function fetchSinglePage(
   targetUrl: URL,
   fetchImpl: typeof fetch = fetch
 ): Promise<{ html: string; finalUrl: string; contentType: string }> {
-  const res = await fetchImpl(targetUrl.toString(), {
-    method: 'GET',
-    redirect: 'manual',
-    headers: {
-      'user-agent': 'MboWazapJarvisBot/1.0 (+https://mbowazapcrm.app; KnowledgeBaseSync)',
-      accept: 'text/html, text/plain, text/markdown, application/json;q=0.9, */*;q=0.5',
-    },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  const MAX_REDIRECTS = 3;
+  let currentUrl = targetUrl;
 
-  // Handle up to 2 safe redirects with full SSRF validation on each hop
-  if (res.status >= 300 && res.status < 400) {
-    const loc = res.headers.get('location');
-    if (loc) {
-      const nextUrl = await validatePublicHttpUrl(new URL(loc, targetUrl).toString());
-      const second = await fetchImpl(nextUrl.toString(), {
-        method: 'GET',
-        redirect: 'manual',
-        headers: {
-          'user-agent': 'MboWazapJarvisBot/1.0 (+https://mbowazapcrm.app; KnowledgeBaseSync)',
-          accept: 'text/html, text/plain, text/markdown, application/json;q=0.9, */*;q=0.5',
-        },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-      if (!second.ok) {
-        throw new Error(`Website returned HTTP ${second.status}`);
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const res = await fetchImpl(currentUrl.toString(), {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        'user-agent': 'MboWazapJarvisBot/1.0 (+https://mbowazapcrm.app; KnowledgeBaseSync)',
+        accept: 'text/html, text/plain, text/markdown, application/json;q=0.9, */*;q=0.5',
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location');
+      if (loc && hop < MAX_REDIRECTS) {
+        await res.body?.cancel().catch(() => {});
+        currentUrl = await validatePublicHttpUrl(new URL(loc, currentUrl).toString());
+        continue;
       }
-      const text = (await second.text()).slice(0, MAX_FETCH_BYTES);
-      return {
-        html: text,
-        finalUrl: nextUrl.toString(),
-        contentType: second.headers.get('content-type') || 'text/html',
-      };
+      throw new Error(`Too many redirects or missing Location header (HTTP ${res.status})`);
     }
+
+    if (!res.ok) {
+      throw new Error(`Website returned HTTP ${res.status}`);
+    }
+
+    const contentType = res.headers.get('content-type') || 'text/html';
+    const html = await readBodyCapped(res, MAX_FETCH_BYTES);
+    return { html, finalUrl: currentUrl.toString(), contentType };
   }
 
-  if (!res.ok) {
-    throw new Error(`Website returned HTTP ${res.status}`);
-  }
-
-  const contentType = res.headers.get('content-type') || 'text/html';
-  const html = (await res.text()).slice(0, MAX_FETCH_BYTES);
-  return { html, finalUrl: targetUrl.toString(), contentType };
+  throw new Error('Too many redirects');
 }
 
 export async function crawlWebsiteUrl(
@@ -855,6 +895,7 @@ export async function syncStaleWebsiteSources(
         .from('ai_knowledge_documents')
         .update({
           sync_status: 'error',
+          last_synced_at: new Date().toISOString(),
           last_sync_error: err instanceof Error ? err.message.slice(0, 400) : 'Sync failed',
         })
         .eq('id', row.id);

@@ -35,7 +35,10 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const ctx = await requireRole('agent');
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
 
     // Enroll contacts or segment into an existing drip sequence
     if (body.action === 'enroll') {
@@ -55,9 +58,20 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Sequence not found' }, { status: 404 });
       }
 
-      let contactIds: string[] = Array.isArray(body.contact_ids)
+      const rawContactIds: string[] = Array.isArray(body.contact_ids)
         ? body.contact_ids.filter((id: unknown): id is string => typeof id === 'string')
         : [];
+
+      let contactIds: string[] = [];
+      if (rawContactIds.length > 0) {
+        // Verify caller-supplied contact IDs strictly belong to ctx.accountId
+        const { data: ownedContacts } = await ctx.supabase
+          .from('contacts')
+          .select('id')
+          .eq('account_id', ctx.accountId)
+          .in('id', rawContactIds.slice(0, 500));
+        contactIds = (ownedContacts ?? []).map((c) => c.id as string);
+      }
 
       const segmentId =
         typeof body.segment_id === 'string' ? body.segment_id : (seq.segment_id as string | null);
@@ -144,6 +158,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Verify caller-supplied foreign keys belong to ctx.accountId
+    let verifiedSegmentId: string | null = null;
+    if (typeof body.segment_id === 'string' && body.segment_id) {
+      const { data: segRow } = await ctx.supabase
+        .from('marketing_segments')
+        .select('id')
+        .eq('id', body.segment_id)
+        .eq('account_id', ctx.accountId)
+        .maybeSingle();
+      if (!segRow) {
+        return NextResponse.json({ error: 'Target segment not found in account' }, { status: 400 });
+      }
+      verifiedSegmentId = segRow.id;
+    }
+    let verifiedStopTagId: string | null = null;
+    if (typeof body.stop_on_tag_id === 'string' && body.stop_on_tag_id) {
+      const { data: tagRow } = await ctx.supabase
+        .from('tags')
+        .select('id')
+        .eq('id', body.stop_on_tag_id)
+        .eq('account_id', ctx.accountId)
+        .maybeSingle();
+      if (!tagRow) {
+        return NextResponse.json({ error: 'Stop tag not found in account' }, { status: 400 });
+      }
+      verifiedStopTagId = tagRow.id;
+    }
+
+    const couponIds = rawSteps
+      .map((s) => (typeof s.coupon_id === 'string' && s.coupon_id ? s.coupon_id : null))
+      .filter((id): id is string => Boolean(id));
+    const ownedCoupons = new Set<string>();
+    if (couponIds.length > 0) {
+      const { data: cRows } = await ctx.supabase
+        .from('promo_coupons')
+        .select('id')
+        .eq('account_id', ctx.accountId)
+        .in('id', couponIds);
+      for (const r of cRows ?? []) ownedCoupons.add(r.id as string);
+      if (couponIds.some((cid) => !ownedCoupons.has(cid))) {
+        return NextResponse.json({ error: 'One or more step coupons not found in account' }, { status: 400 });
+      }
+    }
+
     const { data: seq, error: seqErr } = await ctx.supabase
       .from('drip_sequences')
       .insert({
@@ -152,12 +210,9 @@ export async function POST(request: NextRequest) {
         name,
         description: typeof body.description === 'string' ? body.description.trim() || null : null,
         status: body.status === 'active' ? 'active' : 'draft',
-        segment_id: typeof body.segment_id === 'string' && body.segment_id ? body.segment_id : null,
+        segment_id: verifiedSegmentId,
         stop_on_reply: body.stop_on_reply !== false,
-        stop_on_tag_id:
-          typeof body.stop_on_tag_id === 'string' && body.stop_on_tag_id
-            ? body.stop_on_tag_id
-            : null,
+        stop_on_tag_id: verifiedStopTagId,
         quiet_hours_start:
           typeof body.quiet_hours_start === 'string' ? body.quiet_hours_start : '21:00',
         quiet_hours_end:
@@ -174,18 +229,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const stepRows = rawSteps.map((s, idx) => ({
-      sequence_id: seq.id,
-      account_id: ctx.accountId,
-      step_order: idx + 1,
-      delay_minutes: Math.max(0, Math.round(Number(s.delay_minutes ?? 0))),
-      message_type: s.message_type === 'template' || s.message_type === 'image' ? s.message_type : 'text',
-      content_text: String(s.content_text || '').trim(),
-      media_url: s.media_url || null,
-      template_name: s.template_name || null,
-      template_language: s.template_language || null,
-      coupon_id: s.coupon_id || null,
-    }));
+    const stepRows = rawSteps.map((s, idx) => {
+      const parsedDelay = Number(s.delay_minutes ?? 0);
+      return {
+        sequence_id: seq.id,
+        account_id: ctx.accountId,
+        step_order: idx + 1,
+        delay_minutes: Number.isFinite(parsedDelay) ? Math.max(0, Math.round(parsedDelay)) : 0,
+        message_type:
+          s.message_type === 'template' || s.message_type === 'image' ? s.message_type : 'text',
+        content_text: String(s.content_text || '').trim(),
+        media_url: s.media_url || null,
+        template_name: s.template_name || null,
+        template_language: s.template_language || null,
+        coupon_id: s.coupon_id && ownedCoupons.has(s.coupon_id) ? s.coupon_id : null,
+      };
+    });
 
     const { data: savedSteps, error: stepsErr } = await ctx.supabase
       .from('drip_sequence_steps')
@@ -193,6 +252,8 @@ export async function POST(request: NextRequest) {
       .select();
 
     if (stepsErr) {
+      // Roll back the orphaned sequence row if step insertion fails
+      await ctx.supabase.from('drip_sequences').delete().eq('id', seq.id);
       return NextResponse.json({ error: stepsErr.message }, { status: 500 });
     }
 
@@ -208,13 +269,19 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const ctx = await requireRole('agent');
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
     const id = typeof body.id === 'string' ? body.id : '';
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
     const patch: Record<string, unknown> = {};
     if (['draft', 'active', 'paused'].includes(body.status)) patch.status = body.status;
     if (typeof body.stop_on_reply === 'boolean') patch.stop_on_reply = body.stop_on_reply;
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+    }
 
     const { data, error } = await ctx.supabase
       .from('drip_sequences')
@@ -222,9 +289,10 @@ export async function PATCH(request: NextRequest) {
       .eq('id', id)
       .eq('account_id', ctx.accountId)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ error: 'Sequence not found' }, { status: 404 });
     return NextResponse.json({ sequence: data });
   } catch (err) {
     return toErrorResponse(err);

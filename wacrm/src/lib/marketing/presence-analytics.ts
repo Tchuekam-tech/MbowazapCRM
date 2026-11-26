@@ -92,11 +92,15 @@ export function computeDigitalPresenceReport(
     row.leads += Number(link.conversions_count ?? 0);
     row.revenue += Number(link.attributed_revenue ?? 0);
   }
+  const contactLeadsByService = new Map<string, number>();
   for (const c of attributedContacts) {
     if (!c.utm_source) continue;
     const svc = canonicalSocialService(c.utm_source);
+    contactLeadsByService.set(svc, (contactLeadsByService.get(svc) ?? 0) + 1);
+  }
+  for (const [svc, count] of contactLeadsByService.entries()) {
     const row = ensureWa(svc);
-    row.leads = Math.max(row.leads, row.leads + 1);
+    row.leads = Math.max(row.leads, count);
   }
 
   // Compute per-channel bridge metrics
@@ -322,7 +326,7 @@ export async function loadDigitalPresenceReport(
             .from('buffer_posts')
             .select('*')
             .eq('account_id', accountId)
-            .order('sent_at', { ascending: false })
+            .order('sent_at', { ascending: false, nullsFirst: false })
             .limit(100),
           db
             .from('growth_links')

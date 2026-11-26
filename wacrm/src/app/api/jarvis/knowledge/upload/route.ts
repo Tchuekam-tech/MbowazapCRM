@@ -27,6 +27,12 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) {
       return NextResponse.json({ error: 'file field is required' }, { status: 400 });
     }
+    if (file.size > 5 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: 'File exceeds the 5 MB maximum upload size' },
+        { status: 413 }
+      );
+    }
 
     const titleField = formData.get('title');
     const sourceTypeField = formData.get('sourceType');

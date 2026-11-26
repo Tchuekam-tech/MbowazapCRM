@@ -28,7 +28,10 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const ctx = await requireRole('agent');
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
 
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const destinationPhone =
@@ -46,10 +49,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const customSlug =
+      typeof body.slug === 'string' && body.slug.trim() ? normalizeSlug(body.slug) : '';
     const slug =
-      typeof body.slug === 'string' && body.slug.trim()
-        ? normalizeSlug(body.slug)
-        : slugifyLinkName(`${name}-${Math.random().toString(36).slice(2, 6)}`);
+      customSlug || slugifyLinkName(`${name}-${Math.random().toString(36).slice(2, 6)}`);
+
+    let verifiedAutoTagId: string | null = null;
+    if (typeof body.auto_tag_id === 'string' && body.auto_tag_id) {
+      const { data: ownedTag } = await ctx.supabase
+        .from('tags')
+        .select('id')
+        .eq('id', body.auto_tag_id)
+        .eq('account_id', ctx.accountId)
+        .maybeSingle();
+      if (!ownedTag) {
+        return NextResponse.json({ error: 'Auto-tag not found in account' }, { status: 400 });
+      }
+      verifiedAutoTagId = ownedTag.id;
+    }
 
     const refCode =
       typeof body.ref_code === 'string' && body.ref_code.trim()
@@ -70,7 +87,7 @@ export async function POST(request: NextRequest) {
         utm_medium: typeof body.utm_medium === 'string' ? body.utm_medium.trim() || null : null,
         utm_campaign: typeof body.utm_campaign === 'string' ? body.utm_campaign.trim() || null : null,
         utm_content: typeof body.utm_content === 'string' ? body.utm_content.trim() || null : null,
-        auto_tag_id: typeof body.auto_tag_id === 'string' && body.auto_tag_id ? body.auto_tag_id : null,
+        auto_tag_id: verifiedAutoTagId,
         is_active: true,
       })
       .select()
@@ -95,7 +112,10 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const ctx = await requireRole('agent');
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
     const id = typeof body.id === 'string' ? body.id : '';
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
@@ -103,6 +123,9 @@ export async function PATCH(request: NextRequest) {
     if (typeof body.is_active === 'boolean') patch.is_active = body.is_active;
     if (typeof body.name === 'string' && body.name.trim()) patch.name = body.name.trim();
     if (typeof body.prefill_message === 'string') patch.prefill_message = body.prefill_message.trim();
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+    }
 
     const { data, error } = await ctx.supabase
       .from('growth_links')
@@ -110,10 +133,12 @@ export async function PATCH(request: NextRequest) {
       .eq('id', id)
       .eq('account_id', ctx.accountId)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    if (data?.slug) serverCache.delete(`growth-link:${data.slug}`);
+    if (!data) return NextResponse.json({ error: 'Growth link not found' }, { status: 404 });
+    if (data.slug) serverCache.delete(`growth-link:${data.slug}`);
+    serverCache.invalidatePrefix(`marketing:analytics:${ctx.accountId}`);
     return NextResponse.json({ link: data });
   } catch (err) {
     return toErrorResponse(err);
@@ -136,6 +161,7 @@ export async function DELETE(request: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (deleted?.slug) serverCache.delete(`growth-link:${deleted.slug}`);
+    serverCache.invalidatePrefix(`marketing:analytics:${ctx.accountId}`);
     return NextResponse.json({ deleted: true });
   } catch (err) {
     return toErrorResponse(err);

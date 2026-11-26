@@ -68,7 +68,7 @@ export async function GET() {
         .from('jarvis_chat_messages')
         .select('*')
         .eq('account_id', accountId)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(40),
       supabase
         .from('jarvis_actions')
@@ -89,7 +89,7 @@ export async function GET() {
       pendingActions,
       recentActions: (recentRes.data ?? []) as JarvisActionRecord[],
       knowledgeDocs: (docsRes.data ?? []) as KnowledgeDocumentItem[],
-      chatMessages: (chatRes.data ?? []) as JarvisChatMessage[],
+      chatMessages: ([...(chatRes.data ?? [])].reverse()) as JarvisChatMessage[],
       todayStats: {
         actionsExecutedToday: todayExecuted.length,
         proactiveMessagesToday: todayExecuted.filter(

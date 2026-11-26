@@ -24,7 +24,10 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const ctx = await requireRole('admin');
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
 
     // Switch Buffer organization without re-entering API key
     if (body.action === 'switch_org') {
@@ -32,14 +35,27 @@ export async function POST(request: NextRequest) {
       if (!orgId) {
         return NextResponse.json({ error: 'organization_id is required' }, { status: 400 });
       }
-      // Clear old org's cached channels/posts before syncing the newly selected org
-      await Promise.all([
-        ctx.supabase.from('buffer_channels').delete().eq('account_id', ctx.accountId),
-        ctx.supabase.from('buffer_posts').delete().eq('account_id', ctx.accountId),
-      ]);
+      // Verify orgId exists on this integration BEFORE clearing cached channels/posts
+      const { data: existingInt } = await ctx.supabase
+        .from('buffer_integrations')
+        .select('organizations_json')
+        .eq('account_id', ctx.accountId)
+        .maybeSingle();
+      const orgs = Array.isArray(existingInt?.organizations_json)
+        ? (existingInt.organizations_json as Array<{ id: string }>)
+        : [];
+      if (orgs.length > 0 && !orgs.some((o) => o.id === orgId)) {
+        return NextResponse.json({ error: 'Invalid Buffer organization_id' }, { status: 400 });
+      }
+      // Sync new org first; only prune stale rows from other orgs after sync succeeds
       const sync = await syncBufferForAccount(ctx.supabase, ctx.accountId, {
         organizationId: orgId,
       });
+      await ctx.supabase
+        .from('buffer_channels')
+        .delete()
+        .eq('account_id', ctx.accountId)
+        .neq('organization_id', orgId);
       const report = await loadDigitalPresenceReport(ctx.supabase, ctx.accountId);
       return NextResponse.json({ ok: true, sync, report });
     }

@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { GET as runAutomationsCron } from '@/app/api/automations/cron/route';
 import { GET as runFlowsCron } from '@/app/api/flows/cron/route';
-import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { hasServiceRoleKey, supabaseAdmin } from '@/lib/flows/admin-client';
 import { processDueDripEnrollments } from '@/lib/marketing/drip-engine';
 import { syncStaleBufferIntegrations } from '@/lib/marketing/buffer-sync';
 import { processScheduledJarvisCycles } from '@/lib/jarvis/autonomous-engine';
@@ -33,6 +33,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  if (!hasServiceRoleKey()) {
+    return NextResponse.json(
+      { error: 'SUPABASE_SERVICE_ROLE_KEY not configured' },
+      { status: 503 }
+    );
+  }
+
   const startedAt = performance.now();
 
   const adminDb = supabaseAdmin();
@@ -43,7 +50,7 @@ export async function GET(request: Request) {
     runFlowsCron(request)
       .then((r) => r.json())
       .catch((err) => ({ error: err instanceof Error ? err.message : String(err) })),
-    processDueDripEnrollments(adminDb, 40).catch((err) => ({
+    processDueDripEnrollments(adminDb, 15).catch((err) => ({
       error: err instanceof Error ? err.message : String(err),
     })),
     syncStaleBufferIntegrations(adminDb, 10).catch((err) => ({

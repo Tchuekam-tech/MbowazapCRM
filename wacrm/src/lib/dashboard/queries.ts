@@ -27,6 +27,11 @@ import type {
 
 type DB = SupabaseClient
 
+// Remember when fast SQL RPCs (migration 050) are absent on older schemas so
+// the browser doesn't repeat 404 RPC probes on every refresh or range switch.
+let fastMetricsRpcAvailable = true
+let fastSeriesRpcAvailable = true
+
 // --- 1. Metric cards ---------------------------------------------------
 
 export async function loadMetrics(db: DB): Promise<MetricsBundle> {
@@ -35,35 +40,39 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
 
   // Fast path: single-roundtrip SQL RPC (migration 050). Falls back
   // transparently to parallel PostgREST queries on older schemas.
-  try {
-    const { data: rpcData, error: rpcErr } = await db.rpc(
-      'get_dashboard_metrics_fast',
-      {
-        p_today_start: todayStart,
-        p_yesterday_start: yesterdayStart,
-      },
-    )
-    if (!rpcErr && rpcData && typeof rpcData === 'object') {
-      const m = rpcData as Record<string, number>
-      return {
-        activeConversations: {
-          current: Number(m.open_conv_cur ?? 0),
-          previous: Number(m.new_conv_today ?? 0) - Number(m.new_conv_yesterday ?? 0),
+  if (fastMetricsRpcAvailable) {
+    try {
+      const { data: rpcData, error: rpcErr } = await db.rpc(
+        'get_dashboard_metrics_fast',
+        {
+          p_today_start: todayStart,
+          p_yesterday_start: yesterdayStart,
         },
-        newContactsToday: {
-          current: Number(m.new_contacts_today ?? 0),
-          previous: Number(m.new_contacts_yesterday ?? 0),
-        },
-        openDealsValue: Number(m.open_deals_value ?? 0),
-        openDealsCount: Number(m.open_deals_count ?? 0),
-        messagesSentToday: {
-          current: Number(m.messages_today ?? 0),
-          previous: Number(m.messages_yesterday ?? 0),
-        },
+      )
+      if (rpcErr?.code === 'PGRST202') {
+        fastMetricsRpcAvailable = false
+      } else if (!rpcErr && rpcData && typeof rpcData === 'object') {
+        const m = rpcData as Record<string, number>
+        return {
+          activeConversations: {
+            current: Number(m.open_conv_cur ?? 0),
+            previous: Number(m.new_conv_today ?? 0) - Number(m.new_conv_yesterday ?? 0),
+          },
+          newContactsToday: {
+            current: Number(m.new_contacts_today ?? 0),
+            previous: Number(m.new_contacts_yesterday ?? 0),
+          },
+          openDealsValue: Number(m.open_deals_value ?? 0),
+          openDealsCount: Number(m.open_deals_count ?? 0),
+          messagesSentToday: {
+            current: Number(m.messages_today ?? 0),
+            previous: Number(m.messages_yesterday ?? 0),
+          },
+        }
       }
+    } catch {
+      // Fall back to standard client-side aggregation below.
     }
-  } catch {
-    // Fall back to standard client-side aggregation below.
   }
 
   const [
@@ -145,23 +154,27 @@ export async function loadConversationsSeries(
 
   // Fast path: aggregate inside Postgres (migration 050) instead of
   // shipping thousands of raw message rows over the network.
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-    const { data: rpcRows, error: rpcErr } = await db.rpc(
-      'get_conversations_series_fast',
-      { p_start: start, p_tz: tz },
-    )
-    if (!rpcErr && Array.isArray(rpcRows)) {
-      for (const row of rpcRows as { day: string; incoming: number; outgoing: number }[]) {
-        const bucket = buckets.get(row.day)
-        if (!bucket) continue
-        bucket.incoming = Number(row.incoming ?? 0)
-        bucket.outgoing = Number(row.outgoing ?? 0)
+  if (fastSeriesRpcAvailable) {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      const { data: rpcRows, error: rpcErr } = await db.rpc(
+        'get_conversations_series_fast',
+        { p_start: start, p_tz: tz },
+      )
+      if (rpcErr?.code === 'PGRST202') {
+        fastSeriesRpcAvailable = false
+      } else if (!rpcErr && Array.isArray(rpcRows)) {
+        for (const row of rpcRows as { day: string; incoming: number; outgoing: number }[]) {
+          const bucket = buckets.get(row.day)
+          if (!bucket) continue
+          bucket.incoming = Number(row.incoming ?? 0)
+          bucket.outgoing = Number(row.outgoing ?? 0)
+        }
+        return keys.map((day) => ({ day, ...(buckets.get(day) ?? { incoming: 0, outgoing: 0 }) }))
       }
-      return keys.map((day) => ({ day, ...(buckets.get(day) ?? { incoming: 0, outgoing: 0 }) }))
+    } catch {
+      // Fall back to client-side scan below.
     }
-  } catch {
-    // Fall back to client-side scan below.
   }
 
   const { data, error } = await db

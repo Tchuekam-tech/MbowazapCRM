@@ -36,7 +36,7 @@ export function loadEnvGeminiConfig(): AiConfig | null {
     apiKey: uniqueKeys.join(','),
     systemPrompt: process.env.AI_SYSTEM_PROMPT?.trim() || null,
     isActive: true,
-    autoReplyEnabled: process.env.AI_AUTO_REPLY_ENABLED !== 'false',
+    autoReplyEnabled: process.env.AI_AUTO_REPLY_ENABLED === 'true',
     autoReplyMaxPerConversation: 10,
     handoffAgentId: null,
     embeddingsApiKey: null,

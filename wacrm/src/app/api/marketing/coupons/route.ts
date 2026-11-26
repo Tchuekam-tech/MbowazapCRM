@@ -23,15 +23,22 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const ctx = await requireRole('agent');
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
 
     // Record a redemption and attribute revenue to the promo coupon
     if (body.action === 'redeem') {
       const couponId = typeof body.coupon_id === 'string' ? body.coupon_id : '';
-      const orderValue = Math.max(0, Number(body.order_value ?? 0));
+      const rawOrderValue = Number(body.order_value ?? 0);
       if (!couponId) {
         return NextResponse.json({ error: 'coupon_id is required' }, { status: 400 });
       }
+      if (!Number.isFinite(rawOrderValue) || rawOrderValue < 0) {
+        return NextResponse.json({ error: 'order_value must be a non-negative number' }, { status: 400 });
+      }
+      const orderValue = rawOrderValue;
 
       const { data: coupon } = await ctx.supabase
         .from('promo_coupons')
@@ -63,15 +70,7 @@ export async function POST(request: NextRequest) {
 
       const netRevenue = Math.max(0, orderValue - discountApplied);
 
-      await ctx.supabase.from('coupon_redemptions').insert({
-        coupon_id: coupon.id,
-        account_id: ctx.accountId,
-        contact_id: typeof body.contact_id === 'string' && body.contact_id ? body.contact_id : null,
-        deal_id: typeof body.deal_id === 'string' && body.deal_id ? body.deal_id : null,
-        order_value: orderValue,
-        discount_applied: discountApplied,
-      });
-
+      // Optimistic-concurrency update prevents concurrent redemptions exceeding max_uses
       const { data: updated, error: updErr } = await ctx.supabase
         .from('promo_coupons')
         .update({
@@ -79,10 +78,31 @@ export async function POST(request: NextRequest) {
           attributed_revenue: Number(coupon.attributed_revenue ?? 0) + netRevenue,
         })
         .eq('id', coupon.id)
+        .eq('account_id', ctx.accountId)
+        .eq('uses_count', Number(coupon.uses_count ?? 0))
         .select()
-        .single();
+        .maybeSingle();
 
       if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      if (!updated) {
+        return NextResponse.json(
+          { error: 'Coupon was updated concurrently; please retry redemption' },
+          { status: 409 }
+        );
+      }
+
+      const { error: redErr } = await ctx.supabase.from('coupon_redemptions').insert({
+        coupon_id: coupon.id,
+        account_id: ctx.accountId,
+        contact_id: typeof body.contact_id === 'string' && body.contact_id ? body.contact_id : null,
+        deal_id: typeof body.deal_id === 'string' && body.deal_id ? body.deal_id : null,
+        order_value: orderValue,
+        discount_applied: discountApplied,
+      });
+      if (redErr) {
+        return NextResponse.json({ error: redErr.message }, { status: 500 });
+      }
+
       serverCache.invalidatePrefix(`marketing:analytics:${ctx.accountId}`);
       return NextResponse.json({ coupon: updated, discountApplied, netRevenue });
     }
@@ -110,6 +130,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const rawMinOrder = Number(body.min_order_value ?? 0);
+    const minOrderValue = Number.isFinite(rawMinOrder) ? Math.max(0, rawMinOrder) : 0;
+    let maxUses: number | null = null;
+    if (body.max_uses !== undefined && body.max_uses !== null && body.max_uses !== '') {
+      const parsedMax = Number(body.max_uses);
+      if (!Number.isFinite(parsedMax) || parsedMax < 1) {
+        return NextResponse.json({ error: 'max_uses must be a positive integer' }, { status: 400 });
+      }
+      maxUses = Math.round(parsedMax);
+    }
+
     const { data, error } = await ctx.supabase
       .from('promo_coupons')
       .insert({
@@ -120,8 +151,8 @@ export async function POST(request: NextRequest) {
         discount_type: discountType,
         discount_value: discountValue,
         currency: typeof body.currency === 'string' ? body.currency.toUpperCase().slice(0, 3) : 'USD',
-        min_order_value: Math.max(0, Number(body.min_order_value ?? 0)),
-        max_uses: body.max_uses ? Math.max(1, Math.round(Number(body.max_uses))) : null,
+        min_order_value: minOrderValue,
+        max_uses: maxUses,
         expires_at: typeof body.expires_at === 'string' && body.expires_at ? body.expires_at : null,
         is_active: true,
       })
@@ -146,7 +177,10 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const ctx = await requireRole('agent');
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
     const id = typeof body.id === 'string' ? body.id : '';
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
@@ -156,9 +190,11 @@ export async function PATCH(request: NextRequest) {
       .eq('id', id)
       .eq('account_id', ctx.accountId)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ error: 'Coupon not found' }, { status: 404 });
+    serverCache.invalidatePrefix(`marketing:analytics:${ctx.accountId}`);
     return NextResponse.json({ coupon: data });
   } catch (err) {
     return toErrorResponse(err);
@@ -178,6 +214,7 @@ export async function DELETE(request: NextRequest) {
       .eq('account_id', ctx.accountId);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    serverCache.invalidatePrefix(`marketing:analytics:${ctx.accountId}`);
     return NextResponse.json({ deleted: true });
   } catch (err) {
     return toErrorResponse(err);

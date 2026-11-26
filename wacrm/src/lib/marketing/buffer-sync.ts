@@ -11,6 +11,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption';
 import { serverCache } from '@/lib/server/cache';
 import {
+  BufferApiError,
   createBufferClient,
   extractNormalizedPostMetrics,
   type BufferClientOptions,
@@ -203,7 +204,7 @@ export async function syncBufferForAccount(
       const denom = acc ? Math.max(acc.impressions, acc.reach) : 0;
       const engRate =
         acc && denom > 0
-          ? Math.round((acc.engagements / denom) * 10000) / 100
+          ? Math.min(999999.99, Math.max(0, Math.round((acc.engagements / denom) * 10000) / 100))
           : 0;
       return {
         account_id: accountId,
@@ -272,12 +273,15 @@ export async function syncBufferForAccount(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    const isAuthError = err instanceof BufferApiError && err.code === 'unauthorized';
+    const nowIso = new Date().toISOString();
     await db
       .from('buffer_integrations')
       .update({
-        status: 'error',
+        status: isAuthError ? 'error' : 'connected',
+        last_synced_at: nowIso,
         last_error: msg.slice(0, 500),
-        updated_at: new Date().toISOString(),
+        updated_at: nowIso,
       })
       .eq('account_id', accountId);
     throw err;

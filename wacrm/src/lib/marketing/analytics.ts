@@ -111,7 +111,8 @@ export async function loadMarketingAnalytics(
       .eq('account_id', accountId),
     db
       .from('messages')
-      .select('created_at')
+      .select('created_at, conversations!inner(account_id)')
+      .eq('conversations.account_id', accountId)
       .eq('sender_type', 'customer')
       .gte('created_at', thirtyDaysAgo)
       .order('created_at', { ascending: false })

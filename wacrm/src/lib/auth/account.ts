@@ -70,6 +70,20 @@ export function toErrorResponse(err: unknown): NextResponse {
   if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
     return NextResponse.json({ error: err.message }, { status: err.status });
   }
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  if (
+    /PGRST205|PGRST202|42703|Could not find the table|does not exist/i.test(msg)
+  ) {
+    console.error("[toErrorResponse] missing database migration:", msg);
+    return NextResponse.json(
+      {
+        error:
+          "Required database migrations (049–053) have not been applied to this Supabase project yet. Run wacrm/supabase/APPLY_TO_PRODUCTION_047_TO_053.sql in your Supabase SQL Editor.",
+        code: "MIGRATION_REQUIRED",
+      },
+      { status: 503 },
+    );
+  }
   console.error("[toErrorResponse] uncategorized error:", err);
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });
 }

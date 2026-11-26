@@ -139,6 +139,15 @@ export async function engineSendText(
       text: args.text,
       config: typingCfg,
     })
+    // Re-check automation gate after typing sleep in case a human took over mid-typing
+    if (args.conversationId) {
+      await assertAutomationAllowed(db, {
+        conversationId: args.conversationId,
+        accountId: args.accountId,
+        expectedVersion: args.expectedVersion,
+        site: 'engineSendText:postTyping',
+      })
+    }
   }
 
   const attempt = async (target: string): Promise<string> => {
@@ -275,6 +284,14 @@ export async function engineSendMedia(
       text: args.caption || `[${args.kind}]`,
       config: typingCfg,
     })
+    if (args.conversationId) {
+      await assertAutomationAllowed(db, {
+        conversationId: args.conversationId,
+        accountId: args.accountId,
+        expectedVersion: args.expectedVersion,
+        site: 'engineSendMedia:postTyping',
+      })
+    }
   }
 
   const attempt = async (target: string): Promise<string> => {
@@ -324,6 +341,7 @@ export async function engineSendMedia(
     sender_type: 'bot',
     content_type: args.kind,
     content_text: args.caption ?? null,
+    media_url: args.link,
     message_id: waMessageId,
     status: 'sent',
   })

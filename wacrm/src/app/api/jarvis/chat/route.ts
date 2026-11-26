@@ -13,13 +13,13 @@ export async function GET() {
       .from('jarvis_chat_messages')
       .select('*')
       .eq('account_id', accountId)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(50);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ messages: data ?? [] });
+    return NextResponse.json({ messages: [...(data ?? [])].reverse() });
   } catch (err) {
     return toErrorResponse(err);
   }
@@ -50,7 +50,13 @@ export async function POST(request: Request) {
 export async function DELETE() {
   try {
     const { supabase, accountId } = await requireRole('agent');
-    await supabase.from('jarvis_chat_messages').delete().eq('account_id', accountId);
+    const { error } = await supabase
+      .from('jarvis_chat_messages')
+      .delete()
+      .eq('account_id', accountId);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
     return NextResponse.json({ success: true });
   } catch (err) {
     return toErrorResponse(err);

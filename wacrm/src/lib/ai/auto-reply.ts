@@ -163,15 +163,21 @@ export async function dispatchInboundToAiReply(
     }
     registerInFlightAi(inFlight)
 
-    // Resolve recipient phone / lid for typing presence
+    // Resolve recipient phone / lid via transport.resolveTarget so formatted phones
+    // and LID targets (lid:...) match the exact format Baileys expects.
     let recipient: string | undefined
     try {
       const { data: contact } = await db
         .from('contacts')
-        .select('phone, wa_lid')
+        .select('phone, wa_lid, wa_user_id')
         .eq('id', contactId)
         .maybeSingle()
-      recipient = contact?.phone || contact?.wa_lid || undefined
+      if (contact) {
+        recipient =
+          transport?.resolveTarget(contact)?.target ??
+          contact.phone?.replace(/[^0-9]/g, '') ??
+          (contact.wa_lid ? `lid:${contact.wa_lid}` : undefined)
+      }
     } catch (_) {}
 
     let text: string | null = null

@@ -241,9 +241,9 @@ export async function analyzeAccountEcosystem(
       .limit(200),
     db
       .from('pipelines')
-      .select('id, is_default, pipeline_stages(id, position)')
+      .select('id, pipeline_stages(id, position)')
       .eq('account_id', accountId)
-      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: true })
       .limit(5),
     db
       .from('growth_links')
@@ -287,7 +287,7 @@ export async function analyzeAccountEcosystem(
       .maybeSingle(),
     db
       .from('whatsapp_config')
-      .select('id, provider, mbowazap_status')
+      .select('id, provider, status, mbowazap_state')
       .eq('account_id', accountId)
       .maybeSingle(),
     loadCompanyProfile(db, accountId).catch(() => null),
@@ -361,7 +361,8 @@ export async function analyzeAccountEcosystem(
     }
 
     const lastSender = latestSenderByConv.get(c.id);
-    const isWaitingCustomer = lastSender === 'customer' || (c.unread_count ?? 0) > 0;
+    const isWaitingCustomer =
+      lastSender !== undefined ? lastSender === 'customer' : (c.unread_count ?? 0) > 0;
     if (!isWaitingCustomer || !c.last_message_at) continue;
 
     const waitMin = Math.max(0, Math.round((now - new Date(c.last_message_at).getTime()) / 60_000));
@@ -449,7 +450,6 @@ export async function analyzeAccountEcosystem(
   // Default pipeline + first stage
   type PipeRow = {
     id: string;
-    is_default: boolean;
     pipeline_stages: Array<{ id: string; position: number }> | null;
   };
   const defaultPipe = ((pipelinesRes.data ?? []) as PipeRow[])[0] ?? null;
@@ -510,9 +510,17 @@ export async function analyzeAccountEcosystem(
     totalDocuments: kbDocs.length,
   });
 
-  const waCfg = waCfgRes.data as { id?: string; provider?: string; mbowazap_status?: string } | null;
+  const waCfg = waCfgRes.data as {
+    id?: string;
+    provider?: string;
+    status?: string;
+    mbowazap_state?: string;
+  } | null;
   const whatsappConnected = Boolean(
-    waCfg && (waCfg.provider !== 'mbowazap' || waCfg.mbowazap_status === 'connected')
+    waCfg &&
+      (waCfg.provider === 'mbowazap'
+        ? waCfg.mbowazap_state === 'connected'
+        : waCfg.status === 'connected')
   );
 
   return {

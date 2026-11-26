@@ -133,7 +133,21 @@ export async function processDueDripEnrollments(
     contact_id: string;
     conversation_id: string | null;
     current_step_order: number;
+    next_send_at: string;
   }>) {
+    // Atomically lease this enrollment for 5 minutes so overlapping cron ticks
+    // cannot send duplicate drip steps to the same contact.
+    const leaseUntil = new Date(now.getTime() + 5 * 60_000).toISOString();
+    const { data: claimed } = await db
+      .from('drip_enrollments')
+      .update({ next_send_at: leaseUntil })
+      .eq('id', enrollment.id)
+      .eq('status', 'active')
+      .eq('next_send_at', enrollment.next_send_at)
+      .select('id')
+      .maybeSingle();
+    if (!claimed) continue;
+
     result.processed += 1;
 
     // Load parent sequence
@@ -227,11 +241,21 @@ export async function processDueDripEnrollments(
       continue;
     }
 
-    // Load contact + optional coupon
+    // Load contact + optional coupon scoped strictly to enrollment.account_id
     const [{ data: contact }, couponRes] = await Promise.all([
-      db.from('contacts').select('*').eq('id', enrollment.contact_id).maybeSingle(),
+      db
+        .from('contacts')
+        .select('*')
+        .eq('id', enrollment.contact_id)
+        .eq('account_id', enrollment.account_id)
+        .maybeSingle(),
       currentStep.coupon_id
-        ? db.from('promo_coupons').select('code').eq('id', currentStep.coupon_id).maybeSingle()
+        ? db
+            .from('promo_coupons')
+            .select('code')
+            .eq('id', currentStep.coupon_id)
+            .eq('account_id', enrollment.account_id)
+            .maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
 
@@ -413,7 +437,7 @@ export async function handleMarketingInboundEffects(
         .maybeSingle();
 
       if (link) {
-        await db
+        const { data: attributed } = await db
           .from('contacts')
           .update({
             utm_source: link.utm_source || 'growth-link',
@@ -422,23 +446,36 @@ export async function handleMarketingInboundEffects(
             growth_link_id: link.id,
           })
           .eq('id', contactId)
-          .is('growth_link_id', null);
+          .eq('account_id', accountId)
+          .is('growth_link_id', null)
+          .select('id')
+          .maybeSingle();
 
-        await db
-          .from('growth_links')
-          .update({
-            conversions_count: Number(link.conversions_count ?? 0) + 1,
-            updated_at: nowIso,
-          })
-          .eq('id', link.id);
+        if (attributed) {
+          await db
+            .from('growth_links')
+            .update({
+              conversions_count: Number(link.conversions_count ?? 0) + 1,
+              updated_at: nowIso,
+            })
+            .eq('id', link.id);
+        }
 
         if (link.auto_tag_id) {
-          await db
-            .from('contact_tags')
-            .upsert(
-              { contact_id: contactId, tag_id: link.auto_tag_id },
-              { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
-            );
+          const { data: ownedTag } = await db
+            .from('tags')
+            .select('id')
+            .eq('id', link.auto_tag_id)
+            .eq('account_id', accountId)
+            .maybeSingle();
+          if (ownedTag) {
+            await db
+              .from('contact_tags')
+              .upsert(
+                { contact_id: contactId, tag_id: ownedTag.id },
+                { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
+              );
+          }
         }
       }
     }

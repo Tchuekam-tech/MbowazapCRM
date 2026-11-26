@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit';
+import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { BufferApiError } from '@/lib/marketing/buffer-client';
 import { syncBufferForAccount } from '@/lib/marketing/buffer-sync';
 import { loadDigitalPresenceReport } from '@/lib/marketing/presence-analytics';
@@ -14,8 +15,9 @@ export async function POST() {
     const limit = checkRateLimit(`buffer-sync:${ctx.accountId}`, RATE_LIMITS.adminAction);
     if (!limit.success) return rateLimitResponse(limit);
 
-    const sync = await syncBufferForAccount(ctx.supabase, ctx.accountId);
-    const report = await loadDigitalPresenceReport(ctx.supabase, ctx.accountId);
+    const admin = supabaseAdmin();
+    const sync = await syncBufferForAccount(admin, ctx.accountId);
+    const report = await loadDigitalPresenceReport(admin, ctx.accountId);
     return NextResponse.json({ ok: true, sync, report });
   } catch (err) {
     if (err instanceof BufferApiError) {

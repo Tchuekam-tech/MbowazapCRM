@@ -38,7 +38,7 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({ success: true, profile, warning });
   } catch (err) {
-    if (err instanceof Error) {
+    if (err instanceof Error && !('status' in err)) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
     return toErrorResponse(err);

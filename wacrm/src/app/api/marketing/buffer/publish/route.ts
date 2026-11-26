@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
+import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { mapWithConcurrency } from '@/lib/server/concurrency';
 import { BufferApiError, createBufferClient } from '@/lib/marketing/buffer-client';
@@ -18,7 +19,10 @@ export const maxDuration = 60;
 export async function POST(request: NextRequest) {
   try {
     const ctx = await requireRole('agent');
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
 
     const channelIds = Array.isArray(body.channel_ids)
       ? body.channel_ids.filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
@@ -78,8 +82,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Best-effort refresh so the newly queued post shows up immediately
-    await syncBufferForAccount(ctx.supabase, ctx.accountId, { plainApiKey: apiKey }).catch(() => {});
-    const report = await loadDigitalPresenceReport(ctx.supabase, ctx.accountId);
+    const admin = supabaseAdmin();
+    await syncBufferForAccount(admin, ctx.accountId, { plainApiKey: apiKey }).catch(() => {});
+    const report = await loadDigitalPresenceReport(admin, ctx.accountId);
 
     return NextResponse.json({ ok: true, succeeded, failed: results.length - succeeded, results, report });
   } catch (err) {

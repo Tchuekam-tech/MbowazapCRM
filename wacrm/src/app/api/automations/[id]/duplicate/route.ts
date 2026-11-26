@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 
@@ -9,27 +8,20 @@ export async function POST(
 ) {
   const { id } = await params
 
-  // Duplicating creates a new automation row — a write. Enforce `agent`
-  // (the service-role client below bypasses the agent-gated
-  // automations_insert RLS).
+  let accountId: string
+  let userId: string
   try {
-    await requireRole('agent')
+    ;({ accountId, userId } = await requireRole('agent'))
   } catch (err) {
     return toErrorResponse(err)
   }
-
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const admin = supabaseAdmin()
   const { data: original, error: origErr } = await admin
     .from('automations')
     .select('*')
     .eq('id', id)
-    .eq('user_id', user.id)
+    .eq('account_id', accountId)
     .maybeSingle()
   if (origErr) return NextResponse.json({ error: origErr.message }, { status: 500 })
   if (!original) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -37,10 +29,8 @@ export async function POST(
   const { data: copy, error: copyErr } = await admin
     .from('automations')
     .insert({
-      // Clone into the same account as the original. account_id is NOT
-      // NULL post-017, so the INSERT fails the constraint without it.
       account_id: original.account_id,
-      user_id: user.id,
+      user_id: userId,
       name: `${original.name} (Copy)`,
       description: original.description,
       trigger_type: original.trigger_type,
@@ -60,8 +50,6 @@ export async function POST(
     .order('position', { ascending: true })
 
   if (steps && steps.length > 0) {
-    // Re-map parent_step_id: build old→new id map first so the second
-    // pass inserts rows with correct parent references.
     const idMap = new Map<string, string>()
     const uid = () =>
       typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -79,7 +67,10 @@ export async function POST(
       position: row.position,
     }))
     const { error: insErr } = await admin.from('automation_steps').insert(rows)
-    if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
+    if (insErr) {
+      await admin.from('automations').delete().eq('id', copy.id)
+      return NextResponse.json({ error: insErr.message }, { status: 500 })
+    }
   }
 
   return NextResponse.json({ automation: copy }, { status: 201 })

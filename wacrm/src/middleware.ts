@@ -11,8 +11,14 @@ export async function middleware(request: NextRequest) {
     pathname === '/api/mbowazap/events' ||
     pathname.startsWith('/api/mbowazap/media') ||
     pathname.startsWith('/go/') ||
+    pathname.startsWith('/pwa-icon/') ||
+    pathname === '/icon' ||
+    pathname === '/apple-icon' ||
+    pathname === '/manifest.webmanifest' ||
     pathname === '/api/cron/tick' ||
-    pathname === '/api/marketing/sequences/cron'
+    pathname === '/api/marketing/sequences/cron' ||
+    pathname === '/api/automations/cron' ||
+    pathname === '/api/flows/cron'
   ) {
     return NextResponse.next()
   }
@@ -94,6 +100,7 @@ export async function middleware(request: NextRequest) {
     '/pipelines',
     '/broadcasts',
     '/marketing',
+    '/jarvis',
     '/automations',
     '/flows',
     '/agents',
@@ -128,7 +135,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // api/health, api/mbowazap/events, api/mbowazap/media, /go/* growth
-    // redirects, and cron endpoints are excluded for zero-overhead latency.
-    '/((?!_next/static|_next/image|favicon.ico|api/health|api/mbowazap/events|api/mbowazap/media|api/cron/tick|api/marketing/sequences/cron|go/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // redirects, PWA icons, and cron endpoints are excluded for zero-overhead latency.
+    '/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|manifest\\.webmanifest|pwa-icon/|api/health|api/mbowazap/events|api/mbowazap/media|api/cron/tick|api/marketing/sequences/cron|api/automations/cron|api/flows/cron|go/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

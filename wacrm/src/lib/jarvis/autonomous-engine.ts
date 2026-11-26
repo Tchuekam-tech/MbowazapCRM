@@ -594,17 +594,49 @@ export async function executeJarvisAction(
         const currency = String(action.payload?.currency ?? 'USD');
 
         if (action.target_deal_id) {
+          const updatePatch: Record<string, unknown> = {
+            updated_at: new Date().toISOString(),
+          };
+          if (stageId) {
+            const { data: stageRow } = await db
+              .from('pipeline_stages')
+              .select('id, pipeline:pipelines!inner(account_id)')
+              .eq('id', stageId)
+              .eq('pipeline.account_id', accountId)
+              .maybeSingle();
+            if (!stageRow) throw new Error('Target pipeline stage not found in account');
+            updatePatch.stage_id = stageId;
+          }
+          const reqStatus = action.payload?.status;
+          if (reqStatus === 'open' || reqStatus === 'won' || reqStatus === 'lost') {
+            updatePatch.status = reqStatus;
+          }
           const { error } = await db
             .from('deals')
-            .update({ updated_at: new Date().toISOString() })
+            .update(updatePatch)
             .eq('id', action.target_deal_id)
             .eq('account_id', accountId);
           if (error) throw new Error(error.message);
-          result = { updatedDealId: action.target_deal_id };
+          result = { updatedDealId: action.target_deal_id, ...updatePatch };
         } else {
           if (!pipelineId || !stageId) {
             throw new Error('No default sales pipeline stage configured yet');
           }
+          const { data: pipeRow } = await db
+            .from('pipelines')
+            .select('id')
+            .eq('id', pipelineId)
+            .eq('account_id', accountId)
+            .maybeSingle();
+          if (!pipeRow) throw new Error('Target pipeline not found in account');
+          const { data: stageRow } = await db
+            .from('pipeline_stages')
+            .select('id')
+            .eq('id', stageId)
+            .eq('pipeline_id', pipelineId)
+            .maybeSingle();
+          if (!stageRow) throw new Error('Target stage does not belong to pipeline');
+
           const { data: created, error } = await db
             .from('deals')
             .insert({
@@ -650,12 +682,13 @@ export async function executeJarvisAction(
           tagId = newTag.id;
         }
 
-        await db
+        const { error: ctErr } = await db
           .from('contact_tags')
           .upsert(
             { contact_id: action.target_contact_id, tag_id: tagId },
             { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
           );
+        if (ctErr) throw new Error(ctErr.message);
         result = { tagId, tagName };
         break;
       }
@@ -664,6 +697,23 @@ export async function executeJarvisAction(
         if (!action.target_contact_id) throw new Error('Missing target_contact_id');
         const sequenceId = String(action.payload?.sequenceId ?? '');
         if (!sequenceId) throw new Error('Missing sequenceId');
+
+        const [{ data: seqRow }, { data: contactRow }] = await Promise.all([
+          db
+            .from('drip_sequences')
+            .select('id')
+            .eq('id', sequenceId)
+            .eq('account_id', accountId)
+            .maybeSingle(),
+          db
+            .from('contacts')
+            .select('id')
+            .eq('id', action.target_contact_id)
+            .eq('account_id', accountId)
+            .maybeSingle(),
+        ]);
+        if (!seqRow) throw new Error('Target drip sequence not found in account');
+        if (!contactRow) throw new Error('Target contact not found in account');
 
         const { error } = await db.from('drip_enrollments').upsert(
           {
@@ -730,17 +780,17 @@ export async function executeJarvisAction(
         const alertBody = String(action.payload?.alertBody ?? action.reasoning).slice(0, 1000);
 
         const { data: members } = await db
-          .from('account_members')
-          .select('user_id, role')
+          .from('profiles')
+          .select('user_id, account_role')
           .eq('account_id', accountId)
-          .in('role', ['owner', 'admin'])
+          .in('account_role', ['owner', 'admin'])
           .limit(10);
 
         const recipientIds = (members ?? []).map((m) => m.user_id as string);
         if (recipientIds.length === 0 && ownerId) recipientIds.push(ownerId);
 
         if (recipientIds.length > 0) {
-          await db.from('notifications').insert(
+          const { error: notifErr } = await db.from('notifications').insert(
             recipientIds.map((uid) => ({
               account_id: accountId,
               user_id: uid,
@@ -752,6 +802,9 @@ export async function executeJarvisAction(
               body: alertBody,
             }))
           );
+          if (notifErr) {
+            console.error('[jarvis] failed to insert team alert notifications:', notifErr.message);
+          }
         }
 
         if (action.action_type === 'escalate_conversation' && action.target_conversation_id) {
@@ -855,6 +908,7 @@ export async function runJarvisCycle(
     const cooldownSinceIso = new Date(
       Date.now() - config.contact_cooldown_hours * 3_600_000
     ).toISOString();
+    const lookbackSinceIso = cooldownSinceIso < dayStartIso ? cooldownSinceIso : dayStartIso;
 
     const [{ data: recentExecuted }, { data: existingPending }] = await Promise.all([
       db
@@ -862,7 +916,7 @@ export async function runJarvisCycle(
         .select('action_type, target_contact_id, executed_at')
         .eq('account_id', accountId)
         .eq('status', 'executed')
-        .gte('executed_at', dayStartIso),
+        .gte('executed_at', lookbackSinceIso),
       db
         .from('jarvis_actions')
         .select('action_type, target_contact_id, target_deal_id, title')
@@ -871,8 +925,11 @@ export async function runJarvisCycle(
         .gte('created_at', dayStartIso),
     ]);
 
-    let actionsExecutedToday = (recentExecuted ?? []).length;
-    let proactiveMessagesToday = (recentExecuted ?? []).filter(
+    const todayExecutedRows = (recentExecuted ?? []).filter(
+      (a) => a.executed_at && a.executed_at >= dayStartIso
+    );
+    let actionsExecutedToday = todayExecutedRows.length;
+    let proactiveMessagesToday = todayExecutedRows.filter(
       (a) => a.action_type === 'send_whatsapp_followup'
     ).length;
 
@@ -1060,6 +1117,27 @@ export async function processScheduledJarvisCycles(
 
   await mapWithConcurrency(dueAccounts, 3, async (accountId) => {
     try {
+      // Prevent overlapping cron ticks from launching duplicate concurrent cycles.
+      const tenMinAgoIso = new Date(Date.now() - 10 * 60_000).toISOString();
+      const { data: activeRun } = await db
+        .from('jarvis_runs')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('status', 'running')
+        .gte('started_at', tenMinAgoIso)
+        .limit(1)
+        .maybeSingle();
+      if (activeRun) return;
+
+      await db.from('jarvis_configs').upsert(
+        {
+          account_id: accountId,
+          last_cycle_at: new Date().toISOString(),
+          last_cycle_status: 'running',
+        },
+        { onConflict: 'account_id' }
+      );
+
       await runJarvisCycle(db, accountId, { trigger: 'cron' });
       result.ran += 1;
     } catch (err) {

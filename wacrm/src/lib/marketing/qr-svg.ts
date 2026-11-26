@@ -328,16 +328,20 @@ export function encodeQrMatrix(text: string): boolean[][] {
     }
   }
 
+  // Write 15-bit ISO/IEC 18004 format information MSB-first (bit 14 → bit 0).
   const fb = formatBits(mask);
-  for (let i = 0; i <= 5; i++) setFunc(8, i, ((fb >>> i) & 1) === 1);
-  setFunc(8, 7, ((fb >>> 6) & 1) === 1);
-  setFunc(8, 8, ((fb >>> 7) & 1) === 1);
-  setFunc(7, 8, ((fb >>> 8) & 1) === 1);
-  for (let i = 9; i < 15; i++) setFunc(14 - i, 8, ((fb >>> i) & 1) === 1);
+  const fbit = (idx: number) => ((fb >>> (14 - idx)) & 1) === 1;
+  // Copy 1: top-left around finder pattern
+  for (let i = 0; i <= 5; i++) setFunc(8, i, fbit(i));
+  setFunc(8, 7, fbit(6));
+  setFunc(8, 8, fbit(7));
+  setFunc(7, 8, fbit(8));
+  for (let i = 9; i < 15; i++) setFunc(14 - i, 8, fbit(i));
 
-  for (let i = 0; i < 8; i++) setFunc(size - 1 - i, 8, ((fb >>> i) & 1) === 1);
-  for (let i = 8; i < 15; i++) setFunc(8, size - 15 + i, ((fb >>> i) & 1) === 1);
+  // Copy 2: bottom-left column 8 (bits 14..8 = indices 0..6) + dark module + top-right row 8 (bits 7..0 = indices 7..14)
+  for (let i = 0; i < 7; i++) setFunc(size - 1 - i, 8, fbit(i));
   setFunc(size - 8, 8, true);
+  for (let i = 7; i < 15; i++) setFunc(8, size - 15 + i, fbit(i));
 
   return modules;
 }

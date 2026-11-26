@@ -161,6 +161,13 @@ export async function POST(request: Request) {
       } catch {
         return bad('Stored API key could not be decrypted — re-enter your key.')
       }
+    } else if (provider === 'gemini') {
+      const envFallback = loadEnvGeminiConfig()
+      if (envFallback?.apiKey) {
+        apiKeyPlain = envFallback.apiKey
+      } else {
+        return bad('api_key is required')
+      }
     } else {
       return bad('api_key is required')
     }
