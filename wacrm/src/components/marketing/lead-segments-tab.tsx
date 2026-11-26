@@ -418,3 +418,30 @@ export function LeadSegmentsTab({
                 />
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="seg-active" className="text-xs">Active Within (days)</Label>
+                <Input
+                  id="seg-active"
+                  type="number"
+                  min={1}
+                  value={activeWithinDays}
+                  onChange={(e) => setActiveWithinDays(e.target.value)}
+                  placeholder="7"
+                  className="mt-1 text-xs"
+                />
+              </div>
+              <div>
+                <Label htmlFor="seg-inactive" className="text-xs">Dormant Over (days)</Label>
+                <Input
+                  id="seg-inactive"
+                  type="number"
+                  min={1}
+                  value={inactiveDays}
+                  onChange={(e) => setInactiveDays(e.target.value)}
+                  placeholder="14 (win-back)"
+                  className="mt-1 text-xs"
+                />
+              </div>
+            </div>
