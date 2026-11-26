@@ -138,14 +138,20 @@ const store = {
         })
 
         ev.on('contacts.update', (contacts) => {
+            let changed = false
             contacts.forEach(contact => {
                 if (contact.id) {
                     this.contacts[contact.id] = {
                         id: contact.id,
                         name: contact.notify || contact.name || ''
                     }
+                    changed = true
                 }
             })
+            if (changed) {
+                pruneMapCap(this.contacts, MAX_CONTACTS)
+                this._dirty = true
+            }
         })
 
         ev.on('chats.set', (chats) => {
