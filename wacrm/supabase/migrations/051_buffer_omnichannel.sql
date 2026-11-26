@@ -1,0 +1,16 @@
+-- ============================================================
+-- 051_buffer_omnichannel.sql — Buffer API & Omnichannel Digital
+-- Presence Analytics
+--
+-- Lets each MboWazapCRM account connect its Buffer API key
+-- (encrypted with AES-256-GCM at rest), instantly sync all
+-- connected social channels (Instagram, LinkedIn, Facebook, X,
+-- TikTok, Threads, YouTube, Pinterest, etc.) + posts & metrics,
+-- cross-correlate social performance with WhatsApp Growth Links
+-- & CRM revenue, and publish Growth-Link-powered posts back to
+-- Buffer queues.
+--
+-- Idempotent — safe to re-run.
+-- ============================================================
+
+-- 1. Account-level Buffer connection (one per account)
