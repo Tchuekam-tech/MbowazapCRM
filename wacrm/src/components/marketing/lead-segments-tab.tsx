@@ -392,3 +392,15 @@ export function LeadSegmentsTab({
                 })}
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="seg-min" className="text-xs">Min Score (0–100)</Label>
+                <Input
+                  id="seg-min"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={minScore}
+                  onChange={(e) => setMinScore(e.target.value)}
+                  placeholder="60"
