@@ -23,3 +23,17 @@ describe('FastTtlCache', () => {
     expect(a).toEqual(b);
     expect(b).toEqual(c);
     expect(cache.stats().coalesced).toBe(2);
+
+    // Prefix invalidation clears matching keys
+    cache.set('acct:1:a', 1, 5000);
+    cache.set('acct:1:b', 2, 5000);
+    cache.set('acct:2:a', 3, 5000);
+    expect(cache.invalidatePrefix('acct:1:')).toBe(2);
+    expect(cache.get('acct:1:a')).toBeUndefined();
+    expect(cache.get('acct:2:a')).toBe(3);
+  });
+
+  it('serves stale data immediately during SWR window while refreshing asynchronously', async () => {
+    const cache = new FastTtlCache(16);
+    let t = 1000;
+    cache.set('swr-key', 'v1', 100, 500, t);
