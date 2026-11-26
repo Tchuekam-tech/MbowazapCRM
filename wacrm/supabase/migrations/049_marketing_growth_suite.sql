@@ -245,3 +245,18 @@ CREATE INDEX IF NOT EXISTS idx_drip_sequences_account
 ALTER TABLE drip_sequences ENABLE ROW LEVEL SECURITY;
 
 DROP TRIGGER IF EXISTS set_updated_at ON drip_sequences;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON drip_sequences
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP POLICY IF EXISTS "drip_sequences_select" ON drip_sequences;
+CREATE POLICY "drip_sequences_select" ON drip_sequences
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "drip_sequences_write" ON drip_sequences;
+CREATE POLICY "drip_sequences_write" ON drip_sequences
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
+
+-- ============================================================
+-- 5 (defined before steps/variants FKs): PROMO COUPONS
+-- ============================================================
