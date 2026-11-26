@@ -321,3 +321,21 @@ export function RoiCouponsTab({
           </div>
         </div>
       </div>
+
+      {/* Promo Coupon Engine + Server Health Monitor */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        {/* Promo Coupons */}
+        <div className="space-y-4 rounded-xl border border-border bg-card p-5 lg:col-span-7">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <TicketPercent className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">
+                Trackable WhatsApp Promo & Coupon Engine
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Inject into Drip Sequences & A/B Campaigns with {`{{coupon}}`} and log revenue redemptions.
+              </p>
+            </div>
+          </div>
