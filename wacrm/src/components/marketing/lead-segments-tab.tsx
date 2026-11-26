@@ -369,3 +369,26 @@ export function LeadSegmentsTab({
                 required
               />
             </div>
+
+            <div>
+              <Label className="text-xs">Lead Temperature</Label>
+              <div className="mt-1.5 flex gap-2">
+                {(['hot', 'warm', 'cold'] as const).map((tier) => {
+                  const active = segTiers.includes(tier);
+                  return (
+                    <button
+                      key={tier}
+                      type="button"
+                      onClick={() => toggleSegTier(tier)}
+                      className={`flex-1 rounded-lg border py-1.5 text-xs font-medium capitalize transition-colors ${
+                        active
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-muted/40 text-muted-foreground'
+                      }`}
+                    >
+                      {tier}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
