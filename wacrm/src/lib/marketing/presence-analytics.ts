@@ -368,3 +368,27 @@ export async function loadDigitalPresenceReport(
         (sum, d) => sum + Number(d.value ?? 0),
         0
       );
+
+      return computeDigitalPresenceReport({
+        integration,
+        channels: (chRes.data ?? []) as BufferChannelRow[],
+        posts: (postRes.data ?? []) as BufferPostRow[],
+        growthLinks: (linksRes.data ?? []) as GrowthLink[],
+        attributedContacts: (contactsRes.data ?? []) as Array<{ utm_source: string | null }>,
+        wonDealsRevenue: wonRevenue,
+      });
+    },
+    { staleWhileRevalidateMs: 30_000 }
+  );
+}
+
+/**
+ * Runs a 1-click AI Digital Presence Strategist audit across ALL connected
+ * Buffer social channels + WhatsApp CRM funnel metrics, and persists it.
+ */
+export async function runAiDigitalPresenceAudit(
+  db: SupabaseClient,
+  accountId: string
+): Promise<DigitalPresenceAudit> {
+  serverCache.invalidatePrefix(`marketing:presence:${accountId}`);
+  const report = await loadDigitalPresenceReport(db, accountId);
