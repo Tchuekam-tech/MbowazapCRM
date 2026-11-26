@@ -106,3 +106,9 @@ function MarketingStudioInner() {
       fetch('/api/marketing/buffer').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       supabase.from('tags').select('*').order('name'),
     ]);
+
+    setLinks(linksRes.links ?? []);
+    setLeads(leadsRes.leads ?? []);
+    setSegments(segmentsRes.segments ?? []);
+    setSequences(seqRes.sequences ?? []);
+    setCampaigns(campRes.campaigns ?? []);
