@@ -138,3 +138,161 @@ function startHealthCheckServer(port = process.env.PORT || 8080, host = process.
             res.end(JSON.stringify({ error: 'Use the authenticated CRM gateway.' }));
             return;
         }
+
+        // ──────────────────────────────────────────────
+        // Route: / → Serve landing page frontend
+        // ──────────────────────────────────────────────
+        if (pathname === '/' && req.method === 'GET') {
+            try {
+                const html = getLandingHtml();
+                res.writeHead(200, {
+                    'Content-Type': 'text/html; charset=utf-8',
+                    'Cache-Control': 'public, max-age=60',
+                });
+                res.end(html);
+            } catch (e) {
+                res.writeHead(500, { 'Content-Type': 'text/plain' });
+                res.end('Frontend not found. Ensure public/index.html exists.');
+            }
+            return;
+        }
+
+        // ──────────────────────────────────────────────
+        // Route: /health → Healthcheck JSON
+        // IMPORTANT: Always returns 200 so HF Spaces proxy never kills the container.
+        // ──────────────────────────────────────────────
+        if (pathname === '/health') {
+            const now = Date.now();
+            const timeSinceLastActive = now - lastActiveTime;
+            const isHealthy = timeSinceLastActive < 120000;
+            const sockets = sessionManager.getAllSockets();
+            let connectedSockets = 0;
+            for (const [, sock] of sockets) {
+                if (sock?.user && sessionManager.isSocketOpen(sock)) connectedSockets++;
+            }
+            const rt = getRuntimeMonitor().getSnapshot();
+
+            // Always 200 — HF Spaces terminates the Space on 5xx health responses
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-store',
+            });
+            res.end(JSON.stringify({
+                status: isHealthy ? 'healthy' : 'starting',
+                uptime: rt.uptimeSeconds,
+                lastActiveSecondsAgo: Math.round(timeSinceLastActive / 1000),
+                memoryMb: rt.memoryMb,
+                eventLoopLagMs: rt.eventLoopLagMs,
+                activeSockets: sockets.length,
+                connectedSockets,
+            }));
+            return;
+        }
+
+        // ──────────────────────────────────────────────
+        // Route: /api/status → Check connection status
+        // ──────────────────────────────────────────────
+        if (pathname === '/api/status' && req.method === 'GET') {
+            const number = queryParam(parsedUrl.query.number);
+            if (!number) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Missing ?number= parameter' }));
+                return;
+            }
+
+            const cleanNumber = number.replace(/[^0-9]/g, '');
+            const sock = sessionManager.getSocket(cleanNumber);
+            const isConnected = !!(sock?.user && sessionManager.isSocketOpen(sock));
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                number: cleanNumber,
+                status: isConnected ? 'connected' : 'disconnected'
+            }));
+            return;
+        }
+
+        // ──────────────────────────────────────────────
+        // Route: /api/config → Fetch / Save custom configurations
+        // ──────────────────────────────────────────────
+        if (pathname === '/api/config') {
+            if (req.method === 'GET') {
+                const number = queryParam(parsedUrl.query.number);
+                if (!number) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Missing ?number= parameter' }));
+                    return;
+                }
+
+                const cleanNumber = number.replace(/[^0-9]/g, '');
+                if (!cleanNumber || cleanNumber.length < 8 || cleanNumber.length > 15) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Invalid phone number' }));
+                    return;
+                }
+                const configPath = path.join(__dirname, `../data/config/${cleanNumber}.json`);
+
+                let config = { systemPrompt: '', knowledgeBase: '' };
+                if (fs.existsSync(configPath)) {
+                    try {
+                        config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                    } catch (_) {}
+                }
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(config));
+                return;
+            }
+
+            if (req.method === 'POST') {
+                let payload;
+                try {
+                    payload = await readJsonBody(req, 1024 * 1024);
+                } catch (err) {
+                    res.writeHead(err.statusCode || 400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: err.message }));
+                    return;
+                }
+
+                if (!payload || typeof payload.number !== 'string') {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Missing number field' }));
+                    return;
+                }
+
+                const cleanNumber = payload.number.replace(/[^0-9]/g, '');
+                if (!cleanNumber || cleanNumber.length < 8 || cleanNumber.length > 15) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Invalid phone number' }));
+                    return;
+                }
+                const configPath = path.join(__dirname, `../data/config/${cleanNumber}.json`);
+                const configDir = path.dirname(configPath);
+
+                if (!fs.existsSync(configDir)) {
+                    fs.mkdirSync(configDir, { recursive: true });
+                }
+
+                const configData = {
+                    systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : '',
+                    knowledgeBase: typeof payload.knowledgeBase === 'string' ? payload.knowledgeBase : ''
+                };
+
+                fs.writeFileSync(configPath, JSON.stringify(configData, null, 2), 'utf8');
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, message: 'Configuration saved successfully' }));
+                return;
+            }
+        }
+
+        // ──────────────────────────────────────────────
+        // Route: /api/disconnect → Log out and delete session
+        // ──────────────────────────────────────────────
+        if (pathname === '/api/disconnect' && req.method === 'POST') {
+            const number = queryParam(parsedUrl.query.number);
+            if (!number) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Missing ?number= parameter' }));
+                return;
+            }
