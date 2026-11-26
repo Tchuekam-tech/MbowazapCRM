@@ -448,3 +448,23 @@ export function RoiCouponsTab({
                       void navigator.clipboard.writeText(c.code);
                       setCopiedId(c.id);
                       setTimeout(() => setCopiedId(null), 1500);
+                    }}
+                  >
+                    {copiedId === c.id ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+                  </Button>
+                  {canEdit && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDeleteCoupon(c.id)}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
