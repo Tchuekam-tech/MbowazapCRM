@@ -129,3 +129,84 @@ export function describeBridgeError(err: MbowazapBridgeError): {
       return { status: 502, message: err.message };
   }
 }
+
+/** Status reads and switches are quick. */
+export const DEFAULT_TIMEOUT_MS = 15_000;
+/** Outbound commands may wait behind the gateway's pacing and token bucket. */
+export const SLOW_TIMEOUT_MS = 45_000;
+/**
+ * Pairing can use two fresh sockets, each with its own 25-second readiness
+ * window, plus a cooldown and a bounded WhatsApp version lookup.
+ */
+export const PAIRING_TIMEOUT_MS = 70_000;
+/**
+ * Typing presence is cosmetic and sits on the AI reply path (it is
+ * awaited before generation starts), so a stalled bot must not hold a
+ * reply back for long.
+ */
+export const PRESENCE_TIMEOUT_MS = 5_000;
+
+export interface MbowazapClientOptions {
+  botUrl: string;
+  secret: string;
+  fetchImpl?: typeof fetch;
+  /** ms since epoch; injectable for tests. */
+  now?: () => number;
+  /** Enable per-client circuit breaker (defaults true). */
+  circuitBreaker?: {
+    failureThreshold?: number;
+    cooldownMs?: number;
+  };
+}
+
+export interface BotRuntimeMetrics {
+  uptimeSeconds: number;
+  memoryMb: {
+    rss: number;
+    heapUsed: number;
+    heapTotal: number;
+  };
+  eventLoopLagMs: {
+    mean: number;
+    p95: number;
+    max: number;
+  };
+  activeSockets: number;
+  connectedSockets: number;
+  outboxPendingBatches: number;
+  storeStats: {
+    messages: number;
+    contacts: number;
+    chats: number;
+  };
+}
+
+export interface MbowazapClient {
+  ping(): Promise<{ protocol: string; time: number }>;
+  metrics(): Promise<BotRuntimeMetrics>;
+  pair(request: PairRequest): Promise<PairResult>;
+  getPairing(pairingRef: string): Promise<PairingInfo>;
+  cancelPairing(request: PairRequest): Promise<{ cancelled: boolean }>;
+  getSession(session: string): Promise<SessionInfo>;
+  logout(session: string): Promise<{ session: string; status: 'disconnected' }>;
+  setBrain(
+    session: string,
+    davila: boolean
+  ): Promise<{ session: string; davila: boolean }>;
+  send(request: SendRequest): Promise<SendResult>;
+  react(request: ReactRequest): Promise<{ messageId: string }>;
+  setContactAi(
+    contact: string,
+    request: ContactAiRequest
+  ): Promise<{ contact: string; pausedUntil: number | null }>;
+  presence(
+    request: PresenceRequest
+  ): Promise<{ session: string; presence: PresenceKind }>;
+}
+
+type Json = Record<string, unknown>;
+
+function isJson(value: unknown): value is Json {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
