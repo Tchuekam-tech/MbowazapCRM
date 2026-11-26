@@ -15,3 +15,12 @@ export async function mapWithConcurrency<T, R>(
   const limit = Math.max(1, Math.min(Math.floor(concurrency), items.length));
   const results = new Array<R>(items.length);
   let cursor = 0;
+
+  async function runWorker(): Promise<void> {
+    while (true) {
+      const idx = cursor;
+      cursor += 1;
+      if (idx >= items.length) return;
+      results[idx] = await worker(items[idx]!, idx);
+    }
+  }
