@@ -272,3 +272,23 @@ export function GrowthLinksTab({
             </select>
           </div>
         </div>
+
+        <Button type="submit" disabled={!canEdit || creating} className="w-full">
+          {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+          Create Growth Link & QR
+        </Button>
+      </form>
+
+      {/* Links List */}
+      <div className="space-y-3 lg:col-span-7">
+        {links.length === 0 ? (
+          <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card p-6 text-center">
+            <QrCode className="mb-3 h-10 w-10 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">No Growth Links yet</p>
+            <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+              Create tracked /go/ links and scannable QR codes for Instagram, TikTok, ads, and storefronts to capture and attribute WhatsApp leads automatically.
+            </p>
+          </div>
+        ) : (
+          links.map((link) => {
+            const convRate =
