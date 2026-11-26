@@ -199,3 +199,29 @@ export function computeLeadScore(input: LeadScoreInput): ComputedLeadScore {
   } else if (input.lastMessageAt) {
     nextBestAction = 'Enroll in a 3-step Win-Back Drip Sequence with an exclusive reactivation offer.';
   }
+
+  return {
+    score: clamped,
+    tier,
+    intentLabel: primaryIntent,
+    signals,
+    nextBestAction,
+  };
+}
+
+export interface EvaluableContact {
+  id: string;
+  utm_source?: string | null;
+  utm_campaign?: string | null;
+  tagIds: string[];
+  tagNames: string[];
+  score: number;
+  tier: LeadTier;
+  lastMessageAt: string | null;
+  openDealsCount: number;
+  openDealsValue: number;
+}
+
+/**
+ * Evaluates whether a contact matches a Smart Segment's ruleset.
+ */
