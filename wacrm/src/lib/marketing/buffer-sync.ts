@@ -175,3 +175,25 @@ export async function syncBufferForAccount(
           acc.lastPostAt = ts;
         }
       }
+
+      return {
+        account_id: accountId,
+        buffer_post_id: p.id,
+        buffer_channel_id: p.channelId,
+        service,
+        status: p.status,
+        text_content: p.text.slice(0, 4000),
+        due_at: p.dueAt,
+        sent_at: p.sentAt,
+        impressions: norm.impressions,
+        reach: norm.reach,
+        reactions: norm.reactions,
+        comments: norm.comments,
+        shares: norm.shares,
+        clicks: norm.clicks,
+        total_engagements: norm.totalEngagements,
+        metrics_raw: p.metrics,
+        linked_growth_slug: extractGrowthSlugFromPost(p.text),
+        synced_at: nowIso,
+      };
+    });
