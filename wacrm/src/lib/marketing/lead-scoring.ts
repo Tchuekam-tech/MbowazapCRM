@@ -53,3 +53,21 @@ const HIGH_BUY_INTENT_PATTERNS: Array<{ re: RegExp; label: string; pts: number }
     pts: 10,
   },
 ];
+
+const OPT_OUT_PATTERNS = /\b(stop|unsubscribe|opt[- ]?out|arret|arrêt|ne plus|pas interess|do not contact|spam)\b/i;
+
+export function tierFromScore(score: number): LeadTier {
+  if (score >= 70) return 'hot';
+  if (score >= 40) return 'warm';
+  return 'cold';
+}
+
+/**
+ * Deterministic real-time behavioral scoring (0..100).
+ * Runs in <1ms with zero external calls so every inbound message and
+ * contact refresh stays instantaneous.
+ */
+export function computeLeadScore(input: LeadScoreInput): ComputedLeadScore {
+  const now = input.nowMs ?? Date.now();
+  const signals: LeadSignal[] = [];
+  let score = 0;
