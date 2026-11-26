@@ -1,0 +1,541 @@
+// ============================================================
+// Unified Omnichannel Digital Presence Analytics & AI Audit
+//
+// Combines ALL connected Buffer social channels + post metrics
+// with MboWazapCRM WhatsApp Growth Links, Contacts, and Revenue
+// to give marketers a 360° command view of their entire online
+// digital presence.
+// ============================================================
+
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type {
+  BufferChannelRow,
+  BufferIntegrationPublic,
+  BufferOrganizationSummary,
+  BufferPostRow,
+  ChannelBridgeMetric,
+  DigitalPresenceAudit,
+  DigitalPresenceRecommendation,
+  DigitalPresenceReport,
+  GrowthLink,
+} from '@/types/marketing';
+import { loadAiConfig } from '@/lib/ai/config';
+import { generateReply } from '@/lib/ai/generate';
+import { serverCache } from '@/lib/server/cache';
+
+/**
+ * Maps any UTM source label (e.g. `facebook_ads`, `ig`, `x`, `yt`) to
+ * Buffer's canonical service identifier so cross-channel attribution
+ * automatically bridges social activity to WhatsApp CRM revenue.
+ */
+export function canonicalSocialService(raw: string | null | undefined): string {
+  const s = (raw || '').trim().toLowerCase();
+  if (!s) return 'direct';
+  if (s.includes('insta') || s === 'ig') return 'instagram';
+  if (s.includes('face') || s === 'fb') return 'facebook';
+  if (s.includes('link') || s === 'li') return 'linkedin';
+  if (s.includes('twit') || s === 'x' || s === 'x_ads') return 'twitter';
+  if (s.includes('tik')) return 'tiktok';
+  if (s.includes('you') || s === 'yt') return 'youtube';
+  if (s.includes('thread')) return 'threads';
+  if (s.includes('pin')) return 'pinterest';
+  if (s.includes('blue') || s === 'bsky') return 'bluesky';
+  if (s.includes('mast')) return 'mastodon';
+  if (s.includes('google') || s === 'gbp') return 'googlebusiness';
+  return s;
+}
+
+export interface PresenceComputationInput {
+  integration: BufferIntegrationPublic | null;
+  channels: BufferChannelRow[];
+  posts: BufferPostRow[];
+  growthLinks: Pick<
+    GrowthLink,
+    'slug' | 'utm_source' | 'clicks_count' | 'conversions_count' | 'attributed_revenue' | 'is_active'
+  >[];
+  attributedContacts: Array<{ utm_source: string | null }>;
+  wonDealsRevenue: number;
+  nowMs?: number;
+}
+
+/**
+ * Pure deterministic calculation of the holistic 0–100 Digital Presence
+ * Score, cross-channel WhatsApp conversion bridge, top posts, queue
+ * status, and prioritized growth recommendations.
+ */
+export function computeDigitalPresenceReport(
+  input: PresenceComputationInput
+): DigitalPresenceReport {
+  const { integration, channels, posts, growthLinks, attributedContacts } = input;
+  const now = input.nowMs ?? Date.now();
+  const thirtyDaysAgo = now - 30 * 86_400_000;
+
+  // Roll up WhatsApp Growth Link + Contact attribution by canonical service
+  const waByService = new Map<
+    string,
+    { clicks: number; leads: number; revenue: number; hasLink: boolean }
+  >();
+  const ensureWa = (svc: string) => {
+    let row = waByService.get(svc);
+    if (!row) {
+      row = { clicks: 0, leads: 0, revenue: 0, hasLink: false };
+      waByService.set(svc, row);
+    }
+    return row;
+  };
+
+  for (const link of growthLinks) {
+    const svc = canonicalSocialService(link.utm_source);
+    const row = ensureWa(svc);
+    if (link.is_active) row.hasLink = true;
+    row.clicks += Number(link.clicks_count ?? 0);
+    row.leads += Number(link.conversions_count ?? 0);
+    row.revenue += Number(link.attributed_revenue ?? 0);
+  }
+  for (const c of attributedContacts) {
+    if (!c.utm_source) continue;
+    const svc = canonicalSocialService(c.utm_source);
+    const row = ensureWa(svc);
+    row.leads = Math.max(row.leads, row.leads + 1);
+  }
+
+  // Compute per-channel bridge metrics
+  const channelMetrics: ChannelBridgeMetric[] = channels.map((ch) => {
+    const svc = canonicalSocialService(ch.service);
+    const wa = waByService.get(svc);
+    const hasBridge = Boolean(wa?.hasLink);
+
+    let healthStatus: ChannelBridgeMetric['healthStatus'] = 'thriving';
+    if (ch.is_queue_paused) {
+      healthStatus = 'paused';
+    } else if (!hasBridge && (ch.sent_posts_count > 0 || ch.total_engagements > 0)) {
+      healthStatus = 'needs_bridge';
+    } else if (ch.scheduled_posts_count === 0) {
+      healthStatus = 'low_queue';
+    }
+
+    return {
+      channelId: ch.buffer_channel_id,
+      service: svc,
+      name: ch.display_name || ch.name,
+      avatarUrl: ch.avatar_url,
+      isQueuePaused: ch.is_queue_paused,
+      sentPosts: Number(ch.sent_posts_count ?? 0),
+      scheduledPosts: Number(ch.scheduled_posts_count ?? 0),
+      impressions: Number(ch.total_impressions ?? 0),
+      reach: Number(ch.total_reach ?? 0),
+      engagements: Number(ch.total_engagements ?? 0),
+      engagementRate: Number(ch.engagement_rate ?? 0),
+      whatsappLinkClicks: wa?.clicks ?? 0,
+      whatsappLeads: wa?.leads ?? 0,
+      whatsappRevenue: wa?.revenue ?? 0,
+      hasGrowthLinkBridge: hasBridge,
+      healthStatus,
+    };
+  });
+
+  // Totals across all connected social channels
+  const activeServices = [...new Set(channelMetrics.map((c) => c.service))];
+  const sentPosts30d = posts.filter((p) => {
+    if (p.status === 'scheduled' || p.status === 'buffer') return false;
+    const ts = p.sent_at || p.due_at;
+    return !ts || Date.parse(ts) >= thirtyDaysAgo;
+  }).length;
+  const scheduledQueueTotal = channelMetrics.reduce((s, c) => s + c.scheduledPosts, 0);
+  const totalImpressions = channelMetrics.reduce((s, c) => s + c.impressions, 0);
+  const totalReach = channelMetrics.reduce((s, c) => s + c.reach, 0);
+  const totalEngagements = channelMetrics.reduce((s, c) => s + c.engagements, 0);
+  const avgDenom = Math.max(totalImpressions, totalReach);
+  const avgEngagementRate =
+    avgDenom > 0 ? Math.round((totalEngagements / avgDenom) * 10000) / 100 : 0;
+
+  let socialDrivenWaClicks = 0;
+  let socialDrivenWaLeads = 0;
+  let socialDrivenRevenue = 0;
+  for (const svc of activeServices) {
+    const wa = waByService.get(svc);
+    if (wa) {
+      socialDrivenWaClicks += wa.clicks;
+      socialDrivenWaLeads += wa.leads;
+      socialDrivenRevenue += wa.revenue;
+    }
+  }
+  const postsWithGrowthLinks = posts.filter((p) => Boolean(p.linked_growth_slug)).length;
+
+  // 4-Pillar Digital Presence Score (each 0..25 -> total 0..100)
+  const activeUnpaused = channelMetrics.filter((c) => !c.isQueuePaused).length;
+  const channelCoverage = Math.min(
+    25,
+    activeServices.length * 6 + (activeUnpaused > 0 ? 7 : 0)
+  );
+  const publishingConsistency = Math.min(
+    25,
+    Math.min(15, sentPosts30d * 2) + Math.min(10, scheduledQueueTotal * 2)
+  );
+  const audienceEngagement = Math.min(
+    25,
+    totalEngagements > 0
+      ? Math.min(15, Math.round(Math.log10(totalEngagements + 1) * 5)) +
+          Math.min(10, Math.round(avgEngagementRate * 2))
+      : sentPosts30d > 0
+        ? 6
+        : 0
+  );
+  const bridgedChannels = channelMetrics.filter((c) => c.hasGrowthLinkBridge).length;
+  const whatsappConversionBridge = Math.min(
+    25,
+    (channelMetrics.length > 0
+      ? Math.round((bridgedChannels / channelMetrics.length) * 14)
+      : 0) +
+      Math.min(6, postsWithGrowthLinks * 2) +
+      Math.min(5, socialDrivenWaLeads)
+  );
+
+  const presenceScore = integration
+    ? Math.max(
+        0,
+        Math.min(
+          100,
+          channelCoverage +
+            publishingConsistency +
+            audienceEngagement +
+            whatsappConversionBridge
+        )
+      )
+    : 0;
+
+  // Top performing sent posts & upcoming scheduled queue
+  const topPosts = [...posts]
+    .filter((p) => p.status !== 'scheduled' && p.status !== 'buffer')
+    .sort(
+      (a, b) =>
+        b.total_engagements - a.total_engagements ||
+        b.impressions - a.impressions ||
+        (b.sent_at || '').localeCompare(a.sent_at || '')
+    )
+    .slice(0, 8);
+
+  const upcomingQueue = [...posts]
+    .filter((p) => p.status === 'scheduled' || p.status === 'buffer')
+    .sort((a, b) => (a.due_at || '').localeCompare(b.due_at || ''))
+    .slice(0, 8);
+
+  // Actionable Cross-Channel Recommendations
+  const recommendations: DigitalPresenceRecommendation[] = [];
+
+  for (const ch of channelMetrics) {
+    if (ch.isQueuePaused) {
+      recommendations.push({
+        priority: 'high',
+        title: `Resume paused ${ch.service} queue (${ch.name})`,
+        detail: `Your Buffer queue for ${ch.name} is paused. Resuming keeps organic reach and inbound WhatsApp discovery active.`,
+        channel: ch.service,
+        actionType: 'resume_queue',
+      });
+    } else if (!ch.hasGrowthLinkBridge) {
+      recommendations.push({
+        priority: 'high',
+        title: `Bridge ${ch.service} traffic to WhatsApp`,
+        detail: `${ch.name} has ${ch.sentPosts} synced post(s) but no tracked MboWazap /go/ link for "${ch.service}". Create one and drop it into your bio & next Buffer post to capture leads directly in WhatsApp.`,
+        channel: ch.service,
+        actionType: 'create_growth_link',
+      });
+    } else if (ch.scheduledPosts === 0) {
+      recommendations.push({
+        priority: 'medium',
+        title: `Refill empty queue on ${ch.name}`,
+        detail: `No upcoming posts are scheduled on ${ch.service}. Queue a Growth-Link promo post below to stay visible this week.`,
+        channel: ch.service,
+        actionType: 'publish_post',
+      });
+    }
+  }
+
+  if (topPosts.length > 0 && topPosts[0]!.total_engagements > 0) {
+    recommendations.push({
+      priority: 'medium',
+      title: `Repurpose your top ${topPosts[0]!.service} post into a WhatsApp A/B Campaign`,
+      detail: `Your #1 post earned ${topPosts[0]!.total_engagements.toLocaleString()} engagements — reuse that proven hook for Warm/Hot WhatsApp leads in the A/B Studio.`,
+      channel: topPosts[0]!.service,
+      actionType: 'launch_ab_test',
+    });
+  }
+
+  return {
+    connected: Boolean(integration && integration.status !== 'disconnected'),
+    integration,
+    presenceScore,
+    scoreBreakdown: {
+      channelCoverage,
+      publishingConsistency,
+      audienceEngagement,
+      whatsappConversionBridge,
+    },
+    totals: {
+      connectedChannels: channelMetrics.length,
+      activeServices,
+      sentPosts30d,
+      scheduledQueueTotal,
+      impressions: totalImpressions,
+      reach: totalReach,
+      engagements: totalEngagements,
+      avgEngagementRate,
+      socialDrivenWaClicks,
+      socialDrivenWaLeads,
+      socialDrivenRevenue,
+      postsWithGrowthLinks,
+    },
+    channels: channelMetrics,
+    topPosts,
+    upcomingQueue,
+    recommendations: recommendations.slice(0, 6),
+    audit: integration?.ai_audit_summary ?? null,
+  };
+}
+
+/**
+ * Loads the complete cached Digital Presence report in one parallel DB pass.
+ */
+export async function loadDigitalPresenceReport(
+  db: SupabaseClient,
+  accountId: string
+): Promise<DigitalPresenceReport> {
+  return serverCache.getOrLoad(
+    `marketing:presence:${accountId}`,
+    15_000,
+    async () => {
+      const [intRes, chRes, postRes, linksRes, contactsRes, dealsRes] =
+        await Promise.all([
+          db
+            .from('buffer_integrations')
+            .select(
+              'id, account_id, buffer_account_id, buffer_account_email, buffer_account_name, organization_id, organization_name, organizations_json, status, insights_available, last_synced_at, last_error, ai_audit_summary, ai_audit_at'
+            )
+            .eq('account_id', accountId)
+            .maybeSingle(),
+          db
+            .from('buffer_channels')
+            .select('*')
+            .eq('account_id', accountId)
+            .order('total_engagements', { ascending: false }),
+          db
+            .from('buffer_posts')
+            .select('*')
+            .eq('account_id', accountId)
+            .order('sent_at', { ascending: false })
+            .limit(100),
+          db
+            .from('growth_links')
+            .select(
+              'slug, utm_source, clicks_count, conversions_count, attributed_revenue, is_active'
+            )
+            .eq('account_id', accountId),
+          db
+            .from('contacts')
+            .select('utm_source')
+            .eq('account_id', accountId)
+            .not('utm_source', 'is', null),
+          db
+            .from('deals')
+            .select('value')
+            .eq('account_id', accountId)
+            .eq('status', 'won'),
+        ]);
+
+      const rawInt = intRes.data as Record<string, unknown> | null;
+      const integration: BufferIntegrationPublic | null = rawInt
+        ? {
+            id: String(rawInt.id),
+            account_id: String(rawInt.account_id),
+            buffer_account_id: (rawInt.buffer_account_id as string | null) ?? null,
+            buffer_account_email: (rawInt.buffer_account_email as string | null) ?? null,
+            buffer_account_name: (rawInt.buffer_account_name as string | null) ?? null,
+            organization_id: String(rawInt.organization_id),
+            organization_name: (rawInt.organization_name as string | null) ?? null,
+            organizations: Array.isArray(rawInt.organizations_json)
+              ? (rawInt.organizations_json as BufferOrganizationSummary[])
+              : [],
+            status: rawInt.status as BufferIntegrationPublic['status'],
+            insights_available: Boolean(rawInt.insights_available),
+            last_synced_at: (rawInt.last_synced_at as string | null) ?? null,
+            last_error: (rawInt.last_error as string | null) ?? null,
+            ai_audit_summary: (rawInt.ai_audit_summary as DigitalPresenceAudit | null) ?? null,
+            ai_audit_at: (rawInt.ai_audit_at as string | null) ?? null,
+          }
+        : null;
+
+      const wonRevenue = ((dealsRes.data ?? []) as Array<{ value: number | null }>).reduce(
+        (sum, d) => sum + Number(d.value ?? 0),
+        0
+      );
+
+      return computeDigitalPresenceReport({
+        integration,
+        channels: (chRes.data ?? []) as BufferChannelRow[],
+        posts: (postRes.data ?? []) as BufferPostRow[],
+        growthLinks: (linksRes.data ?? []) as GrowthLink[],
+        attributedContacts: (contactsRes.data ?? []) as Array<{ utm_source: string | null }>,
+        wonDealsRevenue: wonRevenue,
+      });
+    },
+    { staleWhileRevalidateMs: 30_000 }
+  );
+}
+
+/**
+ * Runs a 1-click AI Digital Presence Strategist audit across ALL connected
+ * Buffer social channels + WhatsApp CRM funnel metrics, and persists it.
+ */
+export async function runAiDigitalPresenceAudit(
+  db: SupabaseClient,
+  accountId: string
+): Promise<DigitalPresenceAudit> {
+  serverCache.invalidatePrefix(`marketing:presence:${accountId}`);
+  const report = await loadDigitalPresenceReport(db, accountId);
+
+  const nowIso = new Date().toISOString();
+  const buildFallbackAudit = (): DigitalPresenceAudit => {
+    const topCh = report.channels[0];
+    const unbridged = report.channels.filter((c) => !c.hasGrowthLinkBridge);
+    const strengths: string[] = [];
+    if (report.totals.connectedChannels > 0) {
+      strengths.push(
+        `Active presence across ${report.totals.connectedChannels} Buffer channel(s) (${report.totals.activeServices.join(', ')}).`
+      );
+    }
+    if (report.totals.sentPosts30d > 0) {
+      strengths.push(
+        `${report.totals.sentPosts30d} social post(s) published in the last 30 days generating ${report.totals.engagements.toLocaleString()} total engagements.`
+      );
+    }
+    if (report.totals.socialDrivenWaLeads > 0) {
+      strengths.push(
+        `Social channels already converted ${report.totals.socialDrivenWaLeads} tracked WhatsApp lead(s).`
+      );
+    }
+    if (strengths.length === 0) {
+      strengths.push('Buffer workspace is connected and ready for omnichannel tracking.');
+    }
+
+    const blindSpots: string[] = [];
+    if (unbridged.length > 0) {
+      blindSpots.push(
+        `${unbridged.length} channel(s) (${unbridged.map((c) => c.service).join(', ')}) have no tracked MboWazap /go/ link bridging followers into WhatsApp.`
+      );
+    }
+    if (report.totals.scheduledQueueTotal < 3) {
+      blindSpots.push(
+        `Scheduled queue is low (${report.totals.scheduledQueueTotal} queued) — risk of organic reach drop next week.`
+      );
+    }
+    if (report.totals.postsWithGrowthLinks === 0) {
+      blindSpots.push(
+        'None of your recent Buffer posts include a direct Click-to-WhatsApp /go/ CTA link.'
+      );
+    }
+
+    return {
+      headline:
+        report.presenceScore >= 75
+          ? `Strong Digital Presence (${report.presenceScore}/100) — Ready to Scale Conversion`
+          : report.presenceScore >= 45
+            ? `Growing Digital Presence (${report.presenceScore}/100) — Plug Social-to-WhatsApp Leaks`
+            : `Early Digital Presence (${report.presenceScore}/100) — High Upside Ahead`,
+      executiveSummary: topCh
+        ? `Your digital footprint spans ${report.totals.connectedChannels} Buffer channel(s) led by ${topCh.name} (${topCh.service}) with ${report.totals.impressions.toLocaleString()} impressions and ${report.totals.engagements.toLocaleString()} engagements. Bridging every social channel to tracked MboWazap Growth Links & automated WhatsApp drips will multiply your lead capture.`
+        : 'Connect channels in Buffer and publish tracked MboWazap Growth Links to build a unified social-to-WhatsApp revenue engine.',
+      strengths,
+      blindSpots:
+        blindSpots.length > 0
+          ? blindSpots
+          : ['All connected channels are active — focus on A/B testing CTAs to lift WhatsApp conversion rate.'],
+      actionPlan: report.recommendations.slice(0, 3).map((r) => ({
+        title: r.title,
+        channel: r.channel,
+        impact: r.priority === 'high' ? 'high' : 'medium',
+        step: r.detail,
+      })),
+      usedAi: false,
+      generatedAt: nowIso,
+    };
+  };
+
+  let audit: DigitalPresenceAudit = buildFallbackAudit();
+  const aiConfig = await loadAiConfig(db, accountId, { requireActive: false }).catch(
+    () => null
+  );
+
+  if (aiConfig && report.connected) {
+    try {
+      const digest = JSON.stringify({
+        presenceScore: report.presenceScore,
+        scoreBreakdown: report.scoreBreakdown,
+        totals: report.totals,
+        channels: report.channels.map((c) => ({
+          service: c.service,
+          name: c.name,
+          sentPosts: c.sentPosts,
+          scheduled: c.scheduledPosts,
+          impressions: c.impressions,
+          engagements: c.engagements,
+          engRate: c.engagementRate,
+          waLeads: c.whatsappLeads,
+          hasBridge: c.hasGrowthLinkBridge,
+          paused: c.isQueuePaused,
+        })),
+        topPosts: report.topPosts.slice(0, 4).map((p) => ({
+          service: p.service,
+          text: p.text_content.slice(0, 180),
+          engagements: p.total_engagements,
+          impressions: p.impressions,
+        })),
+      });
+
+      const llmRes = await generateReply({
+        config: aiConfig,
+        systemPrompt:
+          'You are a Chief Digital Growth Officer auditing a business across Buffer social channels AND their WhatsApp CRM funnel. Return ONLY valid JSON (no markdown fences) with keys: "headline" (short punchy verdict), "executiveSummary" (2-3 sharp sentences), "strengths" (2-3 strings), "blindSpots" (2-3 strings), "actionPlan" (array of 3 objects with keys "title", "channel", "impact" ("high"|"medium"), "step"). Be specific with the actual numbers provided.',
+        messages: [{ role: 'user', content: digest }],
+      });
+
+      const cleaned = llmRes.text.replace(/^```json\s*|\s*```$/g, '').trim();
+      const parsed = JSON.parse(cleaned) as Partial<DigitalPresenceAudit>;
+      if (parsed.headline && parsed.executiveSummary && Array.isArray(parsed.actionPlan)) {
+        audit = {
+          headline: String(parsed.headline).slice(0, 180),
+          executiveSummary: String(parsed.executiveSummary).slice(0, 800),
+          strengths: Array.isArray(parsed.strengths)
+            ? parsed.strengths.map(String).slice(0, 4)
+            : audit.strengths,
+          blindSpots: Array.isArray(parsed.blindSpots)
+            ? parsed.blindSpots.map(String).slice(0, 4)
+            : audit.blindSpots,
+          actionPlan: parsed.actionPlan.slice(0, 4).map((a) => ({
+            title: String(a.title || 'Growth Action').slice(0, 120),
+            channel: String(a.channel || 'omnichannel').slice(0, 40),
+            impact: a.impact === 'high' ? 'high' : 'medium',
+            step: String(a.step || '').slice(0, 350),
+          })),
+          usedAi: true,
+          generatedAt: nowIso,
+        };
+      }
+    } catch {
+      // Keep deterministic fallback audit
+    }
+  }
+
+  if (report.connected) {
+    await db
+      .from('buffer_integrations')
+      .update({
+        ai_audit_summary: audit,
+        ai_audit_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq('account_id', accountId);
+    serverCache.invalidatePrefix(`marketing:presence:${accountId}`);
+  }
+
+  return audit;
+}
