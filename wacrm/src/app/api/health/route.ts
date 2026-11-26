@@ -84,12 +84,23 @@ export async function GET(request: NextRequest) {
       const client = createMbowazapClient(env.env);
       const ping = await client.ping();
       checks.botBridge = {
+        ok: true,
+        protocol: ping.protocol,
+        latencyMs: Math.round(performance.now() - botStart),
+      };
+    } catch (err) {
+      checks.botBridge = {
+        ok: false,
+        latencyMs: Math.round(performance.now() - botStart),
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  } else {
+    checks.botBridge = { ok: false, configured: false };
+  }
+
   return NextResponse.json(
-    {
-      ok: true,
-      service: 'wacrm',
-      timestamp: new Date().toISOString(),
-    },
-    { status: 200 }
+    { ...base, checks },
+    { status: 200, headers: { 'Cache-Control': 'no-store' } }
   );
 }
