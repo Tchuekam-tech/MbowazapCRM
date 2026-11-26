@@ -72,3 +72,32 @@ export async function POST(request: NextRequest) {
       if (!campaign) {
         return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
       }
+
+      const variants = (campaign.variants ?? []) as AbCampaignVariant[];
+      const variantA = variants.find((v) => v.variant_key === 'A');
+      const variantB = variants.find((v) => v.variant_key === 'B');
+      if (!variantA || !variantB) {
+        return NextResponse.json({ error: 'Campaign requires both Variant A and B' }, { status: 400 });
+      }
+
+      const transport = await loadTransport(ctx.supabase, ctx.accountId);
+      const concurrency = transport.provider === 'meta' ? 5 : 1;
+
+      // Helper to deliver a single contact with a chosen variant
+      const deliverOne = async (
+        contact: { id: string; phone: string; wa_lid?: string | null; name?: string | null; company?: string | null; email?: string | null },
+        variant: AbCampaignVariant,
+        recipientRowId: string,
+        couponCode: string | null
+      ): Promise<boolean> => {
+        try {
+          const target = transport.resolveTarget(contact);
+          if (!target) throw new Error('No valid WhatsApp recipient');
+
+          const opened = await findOrCreateConversation(
+            ctx.supabase,
+            ctx.accountId,
+            ctx.userId,
+            contact.id
+          );
+          if (!opened) throw new Error('Could not open conversation');
