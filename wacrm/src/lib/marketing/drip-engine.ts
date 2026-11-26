@@ -222,3 +222,37 @@ export async function processDueDripEnrollments(
         .eq('id', seq.id);
       continue;
     }
+
+    // Load contact + optional coupon
+    const [{ data: contact }, couponRes] = await Promise.all([
+      db.from('contacts').select('*').eq('id', enrollment.contact_id).maybeSingle(),
+      currentStep.coupon_id
+        ? db.from('promo_coupons').select('code').eq('id', currentStep.coupon_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+
+    if (!contact) {
+      await db
+        .from('drip_enrollments')
+        .update({ status: 'exited', last_error: 'Contact deleted' })
+        .eq('id', enrollment.id);
+      result.exited += 1;
+      continue;
+    }
+
+    try {
+      const transport = await loadTransport(db, enrollment.account_id);
+      const target = transport.resolveTarget(contact);
+      if (!target) throw new Error('Contact has no valid WhatsApp recipient');
+
+      let conversationId = enrollment.conversation_id;
+      if (!conversationId) {
+        const opened = await findOrCreateConversation(
+          db,
+          enrollment.account_id,
+          seq.user_id,
+          contact.id
+        );
+        conversationId = opened?.conversation.id ?? null;
+      }
+      if (!conversationId) throw new Error('Could not open conversation');
