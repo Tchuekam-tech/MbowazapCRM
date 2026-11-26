@@ -31,3 +31,29 @@ interface AbCampaignsTabProps {
   onRefresh: () => void;
 }
 
+export function AbCampaignsTab({
+  campaigns,
+  segments,
+  coupons,
+  canEdit,
+  onRefresh,
+}: AbCampaignsTabProps) {
+  // AI Copywriter state
+  const [goal, setGoal] = useState('Flash Promotion');
+  const [offer, setOffer] = useState('');
+  const [tone, setTone] = useState('Friendly & Urgent');
+  const [language, setLanguage] = useState('English');
+  const [couponId, setCouponId] = useState('');
+  const [generating, setGenerating] = useState(false);
+
+  // Campaign Builder state
+  const [name, setName] = useState('');
+  const [segmentId, setSegmentId] = useState('');
+  const [splitRatio, setSplitRatio] = useState(50);
+  const [holdoutPercent, setHoldoutPercent] = useState(40);
+  const [labelA, setLabelA] = useState('Variant A — Hook');
+  const [bodyA, setBodyA] = useState('');
+  const [labelB, setLabelB] = useState('Variant B — Urgency');
+  const [bodyB, setBodyB] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [busyCampaignId, setBusyCampaignId] = useState<string | null>(null);
