@@ -658,3 +658,36 @@ export function OmnichannelPresenceTab({
                     <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
                   )}
                 </div>
+
+                <div className="grid grid-cols-3 gap-2 rounded-lg bg-muted/40 p-2 text-center text-[11px]">
+                  <div>
+                    <p className="text-muted-foreground">Posts / Q</p>
+                    <p className="font-semibold text-foreground">
+                      {ch.sentPosts} / {ch.scheduledPosts}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Engaged</p>
+                    <p className="font-semibold text-foreground">
+                      {ch.engagements.toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">WA Leads</p>
+                    <p className="font-semibold text-primary">
+                      {ch.whatsappLeads.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-muted-foreground">
+                  {ch.hasGrowthLinkBridge
+                    ? `Bridged to WhatsApp · ${ch.whatsappLinkClicks} clicks · ${formatCurrency(ch.whatsappRevenue, currency)}`
+                    : 'No MboWazap Growth Link tagged for this channel yet.'}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
