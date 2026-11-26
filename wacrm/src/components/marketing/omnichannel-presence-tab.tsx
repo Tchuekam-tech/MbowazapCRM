@@ -237,3 +237,27 @@ export function OmnichannelPresenceTab({
       setPublishing(false);
     }
   }
+
+  // ============================================================
+  // State 1: Not yet connected — 1-Paste Buffer Onboarding
+  // ============================================================
+  if (!report?.connected || !report.integration) {
+    return (
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <form
+          onSubmit={handleConnect}
+          className="space-y-4 rounded-xl border border-primary/30 bg-card p-6 lg:col-span-6"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <Globe className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-foreground">
+                Connect Your Buffer API Key
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Instantly unlock unified analytics & publishing across all your social channels.
+              </p>
+            </div>
+          </div>
