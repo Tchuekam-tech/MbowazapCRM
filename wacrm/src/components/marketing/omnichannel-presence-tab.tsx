@@ -609,3 +609,34 @@ export function OmnichannelPresenceTab({
         </div>
       )}
 
+      {/* Connected Channels Grid — Cross-Channel to WhatsApp Bridge */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Connected Social Channels & WhatsApp Conversion Bridge ({report.channels.length})
+          </h3>
+          <Button size="sm" variant="ghost" onClick={onJumpToLinks} className="text-xs text-primary">
+            Create Growth Link Bridge <ArrowUpRight className="ml-1 h-3.5 w-3.5" />
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {report.channels.map((ch) => {
+            const meta = serviceMeta(ch.service);
+            return (
+              <div
+                key={ch.channelId}
+                className="space-y-3 rounded-xl border border-border bg-card p-4"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {ch.avatarUrl ? (
+                      <img
+                        src={ch.avatarUrl}
+                        alt={ch.name}
+                        className="h-9 w-9 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-foreground">
+                        {meta.label.charAt(0)}
+                      </div>
