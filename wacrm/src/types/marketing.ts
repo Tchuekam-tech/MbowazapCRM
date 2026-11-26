@@ -56,3 +56,30 @@ export interface ContactLeadScore {
   };
 }
 
+export interface SegmentRules {
+  tiers?: LeadTier[];
+  minScore?: number;
+  maxScore?: number;
+  tagIds?: string[];
+  excludeTagIds?: string[];
+  activeWithinDays?: number;
+  inactiveDays?: number;
+  hasOpenDeal?: boolean;
+  minDealValue?: number;
+  utmSource?: string;
+  utmCampaign?: string;
+  excludeOptedOut?: boolean;
+}
+
+export interface MarketingSegment {
+  id: string;
+  account_id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  rules: SegmentRules;
+  cached_count: number;
+  last_evaluated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
