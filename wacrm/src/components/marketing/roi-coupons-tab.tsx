@@ -396,3 +396,27 @@ export function RoiCouponsTab({
               Create Coupon
             </Button>
           </form>
+
+          <div className="space-y-2">
+            {coupons.map((c) => (
+              <div
+                key={c.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 p-3"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-primary/15 px-2 py-0.5 font-mono text-xs font-bold text-primary">
+                      {c.code}
+                    </span>
+                    <span className="text-xs font-medium text-foreground">{c.title}</span>
+                    <span className="text-xs text-muted-foreground">
+                      ({c.discount_type === 'percent' ? `${c.discount_value}%` : formatCurrency(c.discount_value, c.currency)} off)
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Used {c.uses_count}{c.max_uses ? `/${c.max_uses}` : ''} · Revenue{' '}
+                    <span className="font-semibold text-foreground">
+                      {formatCurrency(c.attributed_revenue, c.currency)}
+                    </span>
+                  </p>
+                </div>
