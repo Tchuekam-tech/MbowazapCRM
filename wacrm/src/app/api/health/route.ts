@@ -75,6 +75,15 @@ export async function GET(request: NextRequest) {
       error: err instanceof Error ? err.message : String(err),
     };
   }
+
+  // Bot gateway probe
+  const env = readMbowazapEnv();
+  if (env.ok) {
+    const botStart = performance.now();
+    try {
+      const client = createMbowazapClient(env.env);
+      const ping = await client.ping();
+      checks.botBridge = {
   return NextResponse.json(
     {
       ok: true,
