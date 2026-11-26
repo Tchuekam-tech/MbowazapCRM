@@ -1,74 +1,131 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useSyncExternalStore } from "react";
+import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import type { Conversation } from "@/types";
 
-/**
- * Count of conversations with at least one unread inbound message for
- * the current user. Used by the sidebar to surface a green dot on the
- * Inbox nav entry when the user is elsewhere in the app.
- *
- * Lives on its own realtime channel (distinct from the inbox page's
- * "inbox-realtime") so both can coexist without sharing state.
- */
-export function useTotalUnread(): number {
-  const [total, setTotal] = useState(0);
+const serverSnapshot = () => 0;
 
-  // Keep a live local mirror of {id: unread_count} so INSERT/UPDATE/DELETE
-  // events can adjust the total in O(1) without refetching.
-  const countsRef = useRef<Map<string, number>>(new Map());
+const listeners = new Set<() => void>();
+let currentTotal = 0;
+let countsMap = new Map<string, number>();
+let activeGeneration = 0;
+let channelSeq = 0;
+let activeChannel: RealtimeChannel | null = null;
+let activeClient: SupabaseClient | null = null;
 
-  useEffect(() => {
-    const supabase = createClient();
-    let cancelled = false;
+function emit() {
+  for (const listener of listeners) {
+    listener();
+  }
+}
 
-    // Initial load. RLS scopes this to the signed-in user automatically —
-    // no explicit user_id filter needed here.
-    (async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select("id, unread_count");
-      if (cancelled || error || !data) return;
+function recomputeTotal() {
+  let sum = 0;
+  for (const n of countsMap.values()) {
+    if (n > 0) sum += 1;
+  }
+  if (sum !== currentTotal) {
+    currentTotal = sum;
+    emit();
+  }
+}
 
-      const map = new Map<string, number>();
-      let sum = 0;
-      for (const row of data as { id: string; unread_count: number }[]) {
-        const n = row.unread_count ?? 0;
-        map.set(row.id, n);
-        if (n > 0) sum += 1;
-      }
-      countsRef.current = map;
-      setTotal(sum);
-    })();
+function startSubscription() {
+  const gen = ++activeGeneration;
+  const supabase = createClient();
+  activeClient = supabase;
 
-    const channel = supabase
-      .channel("total-unread-realtime")
+  // Initial load. RLS scopes this to the signed-in user automatically —
+  // no explicit user_id filter needed here.
+  (async () => {
+    const { data, error } = await supabase
+      .from("conversations")
+      .select("id, unread_count");
+    if (gen !== activeGeneration || error || !data) return;
+
+    const map = new Map<string, number>();
+    for (const row of data as { id: string; unread_count: number }[]) {
+      map.set(row.id, row.unread_count ?? 0);
+    }
+    countsMap = map;
+    recomputeTotal();
+  })();
+
+  // Unique monotonic channel topic avoids @supabase/realtime-js throwing
+  // "cannot add `postgres_changes` callbacks ... after `subscribe()`"
+  // across concurrent consumers (Sidebar + MobileBottomDock) or rapid
+  // unmount/remount cycles while removeChannel is still settling.
+  const topic = `total-unread-realtime:${++channelSeq}`;
+  try {
+    activeChannel = supabase
+      .channel(topic)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "conversations" },
         (payload) => {
-          const map = countsRef.current;
+          if (gen !== activeGeneration) return;
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as Partial<Conversation>;
-            if (oldRow.id) map.delete(oldRow.id);
+            if (oldRow.id) countsMap.delete(oldRow.id);
           } else {
             const row = payload.new as Conversation;
-            map.set(row.id, row.unread_count ?? 0);
+            countsMap.set(row.id, row.unread_count ?? 0);
           }
-          // Recompute — cheap, conversations per user stay small.
-          let sum = 0;
-          for (const n of map.values()) if (n > 0) sum += 1;
-          setTotal(sum);
+          recomputeTotal();
         },
       )
       .subscribe();
+  } catch (err) {
+    console.error("[useTotalUnread] realtime subscribe failed:", err);
+  }
+}
 
-    return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
-    };
-  }, []);
+function stopSubscription() {
+  activeGeneration += 1;
+  if (activeChannel && activeClient) {
+    void activeClient.removeChannel(activeChannel);
+  }
+  activeChannel = null;
+  activeClient = null;
+  countsMap = new Map();
+  currentTotal = 0;
+}
 
-  return total;
+export function subscribeTotalUnread(listener: () => void): () => void {
+  listeners.add(listener);
+  if (listeners.size === 1) {
+    startSubscription();
+  }
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      stopSubscription();
+    }
+  };
+}
+
+export function getTotalUnreadSnapshot(): number {
+  return currentTotal;
+}
+
+/** Test-only helper to clear module state between unit tests. */
+export function _resetTotalUnreadStoreForTests(): void {
+  listeners.clear();
+  stopSubscription();
+}
+
+/**
+ * Count of conversations with at least one unread inbound message for
+ * the current user. Shared across the sidebar Inbox indicator and the
+ * mobile bottom dock via a single ref-counted Realtime subscription so
+ * concurrent consumers never collide on channel topics or duplicate queries.
+ */
+export function useTotalUnread(): number {
+  return useSyncExternalStore(
+    subscribeTotalUnread,
+    getTotalUnreadSnapshot,
+    serverSnapshot,
+  );
 }

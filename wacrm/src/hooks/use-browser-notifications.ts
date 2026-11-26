@@ -19,6 +19,7 @@ import {
 } from "@/lib/notifications/browser-notify";
 
 const serverSnapshot = () => false;
+let browserNotifyChannelSeq = 0;
 
 /**
  * The device-scoped "browser notifications" opt-in, kept in sync with
@@ -120,7 +121,7 @@ export function useBrowserNotifications(): void {
     };
 
     const channel = supabase
-      .channel("browser-notifications")
+      .channel(`browser-notifications:${++browserNotifyChannelSeq}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },

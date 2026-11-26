@@ -5,18 +5,37 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import type { Notification } from "@/types";
-import { Bell, CheckCheck, Loader2, UserPlus } from "lucide-react";
+import {
+  Bell,
+  BrainCircuit,
+  CheckCheck,
+  Loader2,
+  ShieldAlert,
+  Sparkles,
+  UserPlus,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 
-// Icon per notification type. Only one type exists today
-// (conversation_assigned) but this keeps future types a one-line add.
+let notificationsPageChannelSeq = 0;
+
+// Icon per notification type — includes Jarvis 24/7 AI alert types added in
+// migration 052 alongside classic conversation assignment alerts.
 const TYPE_ICON: Record<Notification["type"], typeof Bell> = {
   conversation_assigned: UserPlus,
+  jarvis_alert: Sparkles,
+  jarvis_briefing: BrainCircuit,
+  jarvis_approval_needed: ShieldAlert,
 };
+
+function formatNotificationTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return formatDistanceToNow(date, { addSuffix: true });
+}
 
 export default function NotificationsPage() {
   const t = useTranslations("Notifications");
@@ -54,7 +73,7 @@ export default function NotificationsPage() {
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
-      .channel("notifications-page")
+      .channel(`notifications-page:${++notificationsPageChannelSeq}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "notifications" },
@@ -118,6 +137,10 @@ export default function NotificationsPage() {
       if (!n.read_at) markRead(n.id);
       if (n.conversation_id) {
         router.push(`/inbox?c=${n.conversation_id}`);
+      } else if (n.type === "jarvis_approval_needed") {
+        router.push("/jarvis?tab=actions");
+      } else if (n.type === "jarvis_alert" || n.type === "jarvis_briefing") {
+        router.push("/jarvis");
       }
     },
     [markRead, router],
@@ -165,7 +188,7 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">{t("title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -253,9 +276,7 @@ export default function NotificationsPage() {
                       </p>
                     )}
                     <p className="mt-1 text-[11px] text-muted-foreground/70">
-                      {formatDistanceToNow(new Date(n.created_at), {
-                        addSuffix: true,
-                      })}
+                      {formatNotificationTime(n.created_at)}
                     </p>
                   </div>
                 </button>

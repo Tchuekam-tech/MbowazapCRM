@@ -220,7 +220,11 @@ export interface Conversation {
 // Notifications (migration 027)
 // ============================================================
 
-export type NotificationType = 'conversation_assigned';
+export type NotificationType =
+  | 'conversation_assigned'
+  | 'jarvis_alert'
+  | 'jarvis_briefing'
+  | 'jarvis_approval_needed';
 
 export interface Notification {
   id: string;

@@ -139,8 +139,8 @@ export function MobileHomeHero({
     }
   };
 
-  const agentName = jarvis?.config.agent_name || "Jarvis";
-  const healthScore = jarvis?.ecosystem.healthScore ?? null;
+  const agentName = jarvis?.config?.agent_name || "Jarvis";
+  const healthScore = jarvis?.ecosystem?.healthScore ?? null;
 
   return (
     <section className="space-y-4">
@@ -342,7 +342,7 @@ export function MobileHomeHero({
                 <BrainCircuit className="h-5 w-5" />
               </div>
               <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300">
-                {jarvis?.config.is_enabled ? "24/7 ONLINE" : "STANDBY"}
+                {jarvis?.config?.is_enabled ? "24/7 ONLINE" : "STANDBY"}
               </span>
             </div>
             <div className="mt-5">
@@ -350,14 +350,14 @@ export function MobileHomeHero({
                 {agentName} AI
               </p>
               <p className="mt-1 text-xs leading-relaxed text-white/70">
-                {jarvis
-                  ? `Health ${jarvis.ecosystem.healthScore}/100 · ${jarvis.todayStats.pendingApprovals} pending approvals`
+                {jarvis?.ecosystem
+                  ? `Health ${jarvis.ecosystem.healthScore}/100 · ${jarvis.todayStats?.pendingApprovals ?? 0} pending approvals`
                   : "Autonomous 24/7 ecosystem employee & Knowledge Hub"}
               </p>
             </div>
             <div className="mt-4 flex items-center justify-between">
               <span className="text-[11px] font-medium text-white/60">
-                Typing Sim {jarvis?.config.typing_simulation_enabled ? "ON" : "OFF"}
+                Typing Sim {jarvis?.config?.typing_simulation_enabled ? "ON" : "OFF"}
               </span>
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-zinc-900">
                 <ChevronRight className="h-4 w-4" />

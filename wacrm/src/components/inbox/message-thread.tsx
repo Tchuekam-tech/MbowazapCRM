@@ -56,6 +56,8 @@ import { renderTemplateBody } from "@/lib/whatsapp/template-body";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
 import { toast } from "sonner";
 
+let reactionChannelSeq = 0;
+
 interface ReplyDraft {
   id: string;
   authorLabel: string;
@@ -373,7 +375,7 @@ export function MessageThread({
     const supabase = createClient();
 
     const channel = supabase
-      .channel(`reactions:${conversationId}`)
+      .channel(`reactions:${conversationId}:${++reactionChannelSeq}`)
       .on(
         "postgres_changes",
         {

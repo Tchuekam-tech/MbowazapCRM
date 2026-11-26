@@ -227,28 +227,28 @@ export default function DashboardPage() {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm font-semibold text-foreground">
-                {jarvis?.config.agent_name || 'Jarvis'} · 24/7 Autonomous AI Employee
+                {jarvis?.config?.agent_name || 'Jarvis'} · 24/7 Autonomous AI Employee
               </p>
               <span
                 className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                  jarvis?.config.is_enabled
+                  jarvis?.config?.is_enabled
                     ? 'bg-emerald-500/15 text-emerald-400'
                     : 'bg-muted text-muted-foreground'
                 }`}
               >
-                {jarvis?.config.is_enabled
-                  ? `ONLINE 24/7 · ${jarvis.config.autonomy_mode.toUpperCase()}`
+                {jarvis?.config?.is_enabled
+                  ? `ONLINE 24/7 · ${(jarvis.config.autonomy_mode || 'copilot').toUpperCase()}`
                   : 'READY TO ACTIVATE'}
               </span>
-              {jarvis && (
+              {jarvis?.ecosystem && (
                 <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
                   Ecosystem Health {jarvis.ecosystem.healthScore}/100
                 </span>
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              {jarvis
-                ? `${jarvis.todayStats.pendingApprovals} pending approvals · ${jarvis.ecosystem.knowledge.companyProfileCompleteness}% Company DNA · ${jarvis.ecosystem.knowledge.totalDocuments} KB sources · Human typing simulation ${jarvis.config.typing_simulation_enabled ? 'ON' : 'OFF'}`
+              {jarvis?.ecosystem
+                ? `${jarvis.todayStats?.pendingApprovals ?? 0} pending approvals · ${jarvis.ecosystem.knowledge?.companyProfileCompleteness ?? 0}% Company DNA · ${jarvis.ecosystem.knowledge?.totalDocuments ?? 0} KB sources · Human typing simulation ${jarvis.config?.typing_simulation_enabled ? 'ON' : 'OFF'}`
                 : 'Connect your Company Bio, websites & docs and let Jarvis analyze and operate your ecosystem 24/7 with realistic WhatsApp typing.'}
             </p>
           </div>

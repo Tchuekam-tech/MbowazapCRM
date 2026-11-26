@@ -18,6 +18,7 @@ import {
 // tab would appear online forever. ~15s keeps "offline" responsive
 // without busy-spinning.
 const RE_DERIVE_MS = 15_000;
+let presenceChannelSeq = 0;
 
 type PresenceMap = Map<string, PresenceRow>;
 
@@ -81,7 +82,7 @@ export function usePresence(enabled = true): UsePresenceResult {
     // rather than replacing the map — so an event that lands while the
     // fetch is in flight isn't clobbered by a staler snapshot row.
     const channel: RealtimeChannel = supabase
-      .channel(`presence:${accountId}`)
+      .channel(`presence:${accountId}:${++presenceChannelSeq}`)
       .on(
         "postgres_changes",
         {

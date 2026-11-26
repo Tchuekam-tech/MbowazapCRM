@@ -18,6 +18,8 @@ interface UseRealtimeOptions {
   enabled?: boolean;
 }
 
+let realtimeChannelSeq = 0;
+
 export function useRealtime({
   channelName,
   onMessageEvent,
@@ -45,7 +47,7 @@ export function useRealtime({
     const supabase = createClient();
 
     const channel = supabase
-      .channel(channelName)
+      .channel(`${channelName}:${++realtimeChannelSeq}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "messages" },
