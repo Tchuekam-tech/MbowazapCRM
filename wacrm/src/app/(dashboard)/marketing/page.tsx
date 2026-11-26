@@ -49,3 +49,11 @@ export default function MarketingStudioPage() {
     </Suspense>
   );
 }
+
+function MarketingStudioInner() {
+  const t = useTranslations('Marketing');
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(
+    initialTab && VALID_TABS.has(initialTab) ? initialTab : 'links'
+  );
