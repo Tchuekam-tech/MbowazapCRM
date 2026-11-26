@@ -82,3 +82,27 @@ export function GrowthLinksTab({
         body: JSON.stringify({
           name,
           slug: slug || undefined,
+          destination_phone: phone,
+          prefill_message: prefill,
+          utm_source: utmSource || undefined,
+          utm_medium: 'whatsapp',
+          utm_campaign: utmCampaign || undefined,
+          auto_tag_id: autoTagId || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to create growth link');
+        return;
+      }
+      toast.success('Click-to-WhatsApp Growth Link created!');
+      setName('');
+      setSlug('');
+      setUtmCampaign('');
+      onRefresh();
+    } catch {
+      toast.error('Network error while creating link');
+    } finally {
+      setCreating(false);
+    }
+  }
