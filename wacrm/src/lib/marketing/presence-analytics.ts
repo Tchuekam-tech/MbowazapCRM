@@ -133,3 +133,31 @@ export function computeDigitalPresenceReport(
       healthStatus,
     };
   });
+
+  // Totals across all connected social channels
+  const activeServices = [...new Set(channelMetrics.map((c) => c.service))];
+  const sentPosts30d = posts.filter((p) => {
+    if (p.status === 'scheduled' || p.status === 'buffer') return false;
+    const ts = p.sent_at || p.due_at;
+    return !ts || Date.parse(ts) >= thirtyDaysAgo;
+  }).length;
+  const scheduledQueueTotal = channelMetrics.reduce((s, c) => s + c.scheduledPosts, 0);
+  const totalImpressions = channelMetrics.reduce((s, c) => s + c.impressions, 0);
+  const totalReach = channelMetrics.reduce((s, c) => s + c.reach, 0);
+  const totalEngagements = channelMetrics.reduce((s, c) => s + c.engagements, 0);
+  const avgDenom = Math.max(totalImpressions, totalReach);
+  const avgEngagementRate =
+    avgDenom > 0 ? Math.round((totalEngagements / avgDenom) * 10000) / 100 : 0;
+
+  let socialDrivenWaClicks = 0;
+  let socialDrivenWaLeads = 0;
+  let socialDrivenRevenue = 0;
+  for (const svc of activeServices) {
+    const wa = waByService.get(svc);
+    if (wa) {
+      socialDrivenWaClicks += wa.clicks;
+      socialDrivenWaLeads += wa.leads;
+      socialDrivenRevenue += wa.revenue;
+    }
+  }
+  const postsWithGrowthLinks = posts.filter((p) => Boolean(p.linked_growth_slug)).length;
