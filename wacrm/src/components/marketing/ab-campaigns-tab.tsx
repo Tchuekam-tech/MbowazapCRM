@@ -286,3 +286,19 @@ export function AbCampaignsTab({
                 </select>
               </div>
             </div>
+
+            <Button
+              type="button"
+              disabled={!canEdit || generating}
+              onClick={handleGenerateCopy}
+              className="w-full"
+            >
+              {generating ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="mr-2 h-4 w-4" />
+              )}
+              Generate Variant A & B Copy
+            </Button>
+          </div>
+        </div>
