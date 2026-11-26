@@ -24,3 +24,24 @@ export async function GET() {
     return toErrorResponse(err);
   }
 }
+
+export async function POST(request: NextRequest) {
+  try {
+    const ctx = await requireRole('agent');
+    const body = await request.json();
+
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const destinationPhone =
+      typeof body.destination_phone === 'string'
+        ? body.destination_phone.replace(/[^0-9]/g, '')
+        : '';
+
+    if (!name) {
+      return NextResponse.json({ error: 'Link name is required' }, { status: 400 });
+    }
+    if (destinationPhone.length < 7 || destinationPhone.length > 15) {
+      return NextResponse.json(
+        { error: 'Valid international WhatsApp phone number is required (7–15 digits)' },
+        { status: 400 }
+      );
+    }
