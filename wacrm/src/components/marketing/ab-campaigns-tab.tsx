@@ -380,3 +380,21 @@ export function AbCampaignsTab({
               />
             </div>
           </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {/* Variant A */}
+            <div className="space-y-1.5 rounded-lg border border-border p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-primary">Variant A</span>
+                {lintA && (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                      lintA.grade === 'A'
+                        ? 'bg-emerald-500/15 text-emerald-400'
+                        : 'bg-amber-500/15 text-amber-400'
+                    }`}
+                  >
+                    {lintA.grade === 'A' ? (
+                      <ShieldCheck className="h-3 w-3" />
+                    ) : (
+                      <AlertTriangle className="h-3 w-3" />
