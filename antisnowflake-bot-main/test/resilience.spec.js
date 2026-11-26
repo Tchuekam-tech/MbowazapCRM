@@ -28,3 +28,15 @@ test('runtimeResilience exposes memory & event loop lag and pings WACRM keepaliv
         assert.equal(seen[0].url, 'https://crm.example.com/api/health');
         assert.equal(seen[1].url, 'https://crm.example.com/api/cron/tick');
         assert.equal(seen[1].headers['x-cron-secret'], 'super-secret');
+
+        const snap = monitor.getSnapshot();
+        assert.equal(typeof snap.uptimeSeconds, 'number');
+        assert.equal(typeof snap.memoryMb.rss, 'number');
+        assert.equal(typeof snap.eventLoopLagMs.p95, 'number');
+        assert.equal(snap.keepAlive.ok, true);
+        assert.equal(snap.cronTicker.ok, true);
+    } finally {
+        monitor.stop();
+    }
+});
+
