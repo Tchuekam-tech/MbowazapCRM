@@ -35,3 +35,14 @@ CREATE INDEX IF NOT EXISTS idx_contacts_account_utm
 CREATE INDEX IF NOT EXISTS idx_deals_account_status_stage
   ON deals (account_id, status, stage_id);
 
+CREATE INDEX IF NOT EXISTS idx_deals_contact_created_desc
+  ON deals (contact_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_recipients_broadcast_status
+  ON broadcast_recipients (broadcast_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_automation_pending_due_fast
+  ON automation_pending_executions (run_at)
+  WHERE status = 'pending';
+
+-- 2. Fast single-roundtrip Dashboard Metrics RPC (RLS-respecting SECURITY INVOKER)
