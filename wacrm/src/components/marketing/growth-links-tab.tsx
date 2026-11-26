@@ -254,3 +254,21 @@ export function GrowthLinksTab({
               />
             </div>
           </div>
+
+          <div>
+            <Label htmlFor="gl-tag" className="text-xs">Auto-Apply Contact Tag on Arrival</Label>
+            <select
+              id="gl-tag"
+              value={autoTagId}
+              onChange={(e) => setAutoTagId(e.target.value)}
+              className="mt-1 h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground"
+            >
+              <option value="">None</option>
+              {tags.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
