@@ -108,3 +108,20 @@ export async function syncBufferForAccount(
     .select('*')
     .eq('account_id', accountId)
     .maybeSingle();
+
+  if (intErr || !integration) {
+    throw new Error('Buffer integration is not connected for this account.');
+  }
+
+  const apiKey = opts.plainApiKey ?? decrypt(integration.api_key_encrypted as string);
+  const orgId = opts.organizationId ?? (integration.organization_id as string);
+  const client = createBufferClient({ apiKey, fetchImpl: opts.fetchImpl });
+
+  try {
+    const [channels, postsRes] = await Promise.all([
+      client.getChannels(orgId),
+      client.getPosts(orgId, { first: 80 }),
+    ]);
+
+    const channelById = new Map(channels.map((c) => [c.id, c]));
+    const nowIso = new Date().toISOString();
