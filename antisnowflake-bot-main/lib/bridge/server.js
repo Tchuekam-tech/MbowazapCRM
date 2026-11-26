@@ -439,10 +439,10 @@ function createBridgeHandler(overrides = {}) {
                 try {
                     await withTimeout(Promise.resolve(sock.logout()), LOGOUT_TIMEOUT_MS);
                 } catch (_) {
-                    try { sock.end(loggedOutError()); } catch (_) {}
+                    try { sock.end(loggedOutError()); } catch (_) { }
                 }
-                try { sock.ev?.removeAllListeners(); } catch (_) {}
-                try { sock.ws?.close(); } catch (_) {}
+                try { sock.ev?.removeAllListeners(); } catch (_) { }
+                try { sock.ws?.close(); } catch (_) { }
                 d.deleteSocket(session);
             }
             d.removeSessionFiles(session);
