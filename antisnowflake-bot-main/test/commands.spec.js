@@ -16,7 +16,7 @@ const warningsCommand = require('../commands/warnings');
 const { handleTicTacToeMove } = require('../commands/tictactoe');
 const { detectIntent } = require('../flows/intentDetector');
 const { createWacrmClient } = require('../lib/bridge/wacrmClient');
-const { handleMessages, resetAntiBanState } = require('../main');
+const { handleMessages, resetAntiBanState, trackBotSentId } = require('../main');
 
 function makeMockSock(overrides = {}) {
     const sent = [];
@@ -247,6 +247,40 @@ test('main.js exact-token router: repeated .ping commands bypass dedup & .aidiag
         sock.sent.length = 0;
         await handleMessages(sock, makeUpdate({ text: '.help', id: 'HELP_1', fromMe: true }));
         assert.ok(sock.sent.some((s) => s.content.text && s.content.text.includes('Quick Commands')));
+    } finally {
+        global.botModeCache = prevMode;
+    }
+});
+
+test('main.js exports every symbol destructured by index.js and tracks bot-sent IDs', async () => {
+    assert.equal(typeof trackBotSentId, 'function');
+
+    const indexSrc = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8');
+    const match = indexSrc.match(/const\s*\{([^}]+)\}\s*=\s*require\(['"]\.\/main['"]\)/);
+    assert.ok(match, 'index.js must destructure exports from ./main');
+
+    const mainExports = require('../main');
+    const importedNames = match[1]
+        .split(',')
+        .map((s) => s.trim().split(':')[0].trim())
+        .filter(Boolean);
+
+    for (const name of importedNames) {
+        assert.notEqual(
+            mainExports[name],
+            undefined,
+            `main.js must export "${name}" required by index.js`
+        );
+    }
+
+    resetAntiBanState();
+    const prevMode = global.botModeCache;
+    global.botModeCache = { isPublic: true };
+    try {
+        const sock = makeMockSock();
+        trackBotSentId('BOT_SELF_ECHO_1');
+        await handleMessages(sock, makeUpdate({ text: '.ping', id: 'BOT_SELF_ECHO_1', fromMe: true }));
+        assert.equal(sock.sent.length, 0, 'tracked bot-sent message ID must be ignored to prevent self-reply loops');
     } finally {
         global.botModeCache = prevMode;
     }

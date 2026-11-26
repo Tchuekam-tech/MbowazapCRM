@@ -545,8 +545,11 @@ async function startXeonBotIncUnlocked(phoneNumber = ownerNum) {
                 }
             }
 
+            if (options?.messageId && typeof trackBotSentId === 'function') {
+                trackBotSentId(options.messageId);
+            }
             const result = await originalSendMessage(jid, content, options);
-            if (result?.key?.id) {
+            if (result?.key?.id && typeof trackBotSentId === 'function') {
                 trackBotSentId(result.key.id);
             }
             lastSentMap.set(jid, Date.now());

@@ -304,7 +304,7 @@ async function reactSafe(sock, chatId, key, emoji) {
     if (!key) return;
     try {
         await sock.sendMessage(chatId, { react: { text: emoji, key } });
-    } catch (_) {}
+    } catch (_) { }
 }
 
 async function groupJidCommand(sock, chatId, message) {
@@ -488,10 +488,10 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 if (pmState.enabled) {
                     await sock.sendMessage(chatId, { text: pmState.message || 'Private messages are blocked. Please contact the owner in groups only.' });
                     await new Promise(r => setTimeout(r, 1500));
-                    try { await sock.updateBlockStatus(chatId, 'block'); } catch (_) {}
+                    try { await sock.updateBlockStatus(chatId, 'block'); } catch (_) { }
                     return;
                 }
-            } catch (_) {}
+            } catch (_) { }
 
             if ((userMessage || hasAudio || hasImage) && !isCommand) {
                 try {
@@ -1417,7 +1417,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
         if (chatId && sock && typeof sock.sendMessage === 'function') {
             try {
                 await sock.sendMessage(chatId, { text: '❌ Failed to process command!', ...channelInfo });
-            } catch (_) {}
+            } catch (_) { }
         }
     }
 }
@@ -1431,7 +1431,7 @@ async function handleGroupParticipantUpdate(sock, update) {
         try {
             if (!global.botModeCache) global.botModeCache = loadJsonFile(MESSAGE_COUNT_FILE, { isPublic: true });
             if (typeof global.botModeCache.isPublic === 'boolean') isPublic = global.botModeCache.isPublic;
-        } catch (_) {}
+        } catch (_) { }
 
         if (action === 'promote') {
             if (!isPublic) return;
@@ -1462,6 +1462,7 @@ module.exports = {
     handleStatus: async (sock, status) => {
         await handleStatusUpdate(sock, status);
     },
+    trackBotSentId,
     resetAntiBanState: () => {
         processedIds.clear();
         console.log('🔄 Anti-ban: processedIds cleared for fresh session');
