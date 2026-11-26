@@ -78,3 +78,38 @@ export function OmnichannelPresenceTab({
   const [syncing, setSyncing] = useState(false);
   const [auditing, setAuditing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+
+  // Cross-channel Composer state
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [postText, setPostText] = useState('');
+  const [publishMode, setPublishMode] = useState<'addToQueue' | 'shareNow'>('addToQueue');
+  const [publishing, setPublishing] = useState(false);
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+
+  async function handleConnect(e: React.FormEvent) {
+    e.preventDefault();
+    if (!apiKey.trim()) {
+      toast.error('Paste your Buffer Personal API Key first.');
+      return;
+    }
+    setConnecting(true);
+    try {
+      const res = await fetch('/api/marketing/buffer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not connect Buffer');
+      toast.success(
+        `Buffer connected! Synced ${data.sync?.channelsSynced ?? 0} channel(s) and ${data.sync?.postsSynced ?? 0} post(s).`
+      );
+      setApiKey('');
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Buffer connection failed');
+    } finally {
+      setConnecting(false);
+    }
+  }
