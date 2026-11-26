@@ -541,3 +541,43 @@ export function RoiCouponsTab({
                 </p>
               </div>
 
+              {/* Bot Gateway */}
+              <div className="space-y-1 rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between font-medium text-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <Bot className="h-3.5 w-3.5 text-amber-400" /> TchuekBot Gateway
+                  </span>
+                  <span
+                    className={
+                      systemHealth.bot.reachable
+                        ? 'text-emerald-400'
+                        : 'text-muted-foreground'
+                    }
+                  >
+                    {systemHealth.bot.reachable
+                      ? `${systemHealth.bot.latencyMs ?? 0} ms`
+                      : systemHealth.bot.configured
+                        ? 'Offline / Reconnecting'
+                        : 'Not configured'}
+                  </span>
+                </div>
+                {systemHealth.bot.metrics ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    Up {formatUptime(systemHealth.bot.metrics.uptimeSeconds)} · Sockets:{' '}
+                    {systemHealth.bot.metrics.connectedSockets}/{systemHealth.bot.metrics.activeSockets} · Event loop p95:{' '}
+                    {systemHealth.bot.metrics.eventLoopLagMs.p95} ms · Outbox queue:{' '}
+                    {systemHealth.bot.metrics.outboxPendingBatches}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    {systemHealth.bot.error || 'Protected by circuit breaker & persistent outbox.'}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
