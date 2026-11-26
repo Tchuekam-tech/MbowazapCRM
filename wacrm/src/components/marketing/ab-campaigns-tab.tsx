@@ -398,3 +398,21 @@ export function AbCampaignsTab({
                       <ShieldCheck className="h-3 w-3" />
                     ) : (
                       <AlertTriangle className="h-3 w-3" />
+                    )}
+                    Safe {lintA.score}%
+                  </span>
+                )}
+              </div>
+              <Textarea
+                value={bodyA}
+                onChange={(e) => setBodyA(e.target.value)}
+                rows={4}
+                placeholder="Variant A WhatsApp message..."
+                className="text-xs"
+                required
+              />
+              {lintA && lintA.warnings.length > 0 && (
+                <p className="text-[10px] text-amber-400">{lintA.warnings[0]}</p>
+              )}
+            </div>
+
