@@ -195,3 +195,29 @@ export function LeadSegmentsTab({
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      {/* Left: AI Lead Intelligence Leaderboard */}
+      <div className="space-y-4 lg:col-span-7">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(['all', 'hot', 'warm', 'cold'] as const).map((tier) => (
+              <button
+                key={tier}
+                type="button"
+                onClick={() => setTierFilter(tier)}
+                className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors ${
+                  tierFilter === tier
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {tier} (
+                {tier === 'all'
+                  ? leads.length
+                  : leads.filter((l) => l.tier === tier).length}
+                )
+              </button>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
