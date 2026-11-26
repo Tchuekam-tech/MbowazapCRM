@@ -360,3 +360,26 @@ export function OmnichannelPresenceTab({
       </div>
     );
   }
+
+  // ============================================================
+  // State 2: Connected — Full Omnichannel Command Center
+  // ============================================================
+  const { integration, totals, scoreBreakdown } = report;
+
+  return (
+    <div className="space-y-6">
+      {/* Connected Header & Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-card p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400">
+            <Globe className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-foreground">
+                Buffer Connected · {integration.organization_name || 'Workspace'}
+              </p>
+              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-400">
+                {totals.connectedChannels} channels live
+              </span>
+              {!integration.insights_available && (
