@@ -85,3 +85,10 @@ export async function GET() {
             }
           }
         }
+
+        const overallHealth =
+          !dbErr && (!env.ok || bot.reachable)
+            ? 'optimal'
+            : !dbErr
+              ? 'degraded'
+              : 'incident';
