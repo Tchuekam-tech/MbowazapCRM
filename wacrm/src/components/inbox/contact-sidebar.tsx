@@ -15,6 +15,11 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  Flame,
+  Zap,
+  Snowflake,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -37,6 +42,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [leadScore, setLeadScore] = useState<ContactLeadScore | null>(null);
+  const [analyzingLead, setAnalyzingLead] = useState(false);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
