@@ -409,3 +409,28 @@ export function OmnichannelPresenceTab({
                 <option key={org.id} value={org.id}>
                   {org.name}
                 </option>
+              ))}
+            </select>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!canEdit || syncing}
+            onClick={handleSyncNow}
+          >
+            {syncing ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Sync Buffer
+          </Button>
+          <Button
+            size="sm"
+            disabled={!canEdit || auditing}
+            onClick={handleRunAudit}
+          >
+            {auditing ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
