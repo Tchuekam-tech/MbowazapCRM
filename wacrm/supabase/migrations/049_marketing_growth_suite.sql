@@ -473,3 +473,24 @@ CREATE TABLE IF NOT EXISTS ab_campaign_recipients (
   error_message TEXT,
   sent_at TIMESTAMPTZ,
   replied_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (campaign_id, contact_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ab_campaign_recipients_campaign_status
+  ON ab_campaign_recipients (campaign_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_ab_campaign_recipients_contact_sent
+  ON ab_campaign_recipients (account_id, contact_id, sent_at DESC)
+  WHERE status IN ('sent', 'delivered', 'read');
+
+ALTER TABLE ab_campaign_recipients ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "ab_campaign_recipients_select" ON ab_campaign_recipients;
+CREATE POLICY "ab_campaign_recipients_select" ON ab_campaign_recipients
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "ab_campaign_recipients_write" ON ab_campaign_recipients;
+CREATE POLICY "ab_campaign_recipients_write" ON ab_campaign_recipients
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
