@@ -98,3 +98,23 @@ export function AbCampaignsTab({
       setGenerating(false);
     }
   }
+
+  async function handleCreateCampaign(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !bodyA.trim() || !bodyB.trim()) {
+      toast.error('Campaign name and both Variant A & B copy are required.');
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await fetch('/api/marketing/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          goal,
+          segment_id: segmentId || undefined,
+          split_ratio: splitRatio,
+          holdout_percent: holdoutPercent,
+          winner_metric: 'reply_rate',
+          variant_a: { label: labelA, body_text: bodyA, coupon_id: couponId || undefined },
