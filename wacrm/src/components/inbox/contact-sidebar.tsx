@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Deal, ContactNote, Tag, ContactLeadScore } from "@/types";
 import {
   Phone,
   Mail,
@@ -15,6 +15,11 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  Flame,
+  Zap,
+  Snowflake,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -37,14 +42,16 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [leadScore, setLeadScore] = useState<ContactLeadScore | null>(null);
+  const [analyzingLead, setAnalyzingLead] = useState(false);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
 
     const supabase = createClient();
 
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    // Fetch deals, notes, tags, and live lead score in parallel
+    const [dealsRes, notesRes, tagsRes, leadRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
@@ -59,10 +66,14 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      fetch(`/api/marketing/leads?contactId=${encodeURIComponent(contact.id)}`)
+        .then((r) => (r.ok ? r.json() : { lead: null }))
+        .catch(() => ({ lead: null })),
     ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
+    setLeadScore((leadRes?.lead as ContactLeadScore | null) ?? null);
     if (tagsRes.data) {
       const mapped = tagsRes.data
         .filter((ct: Record<string, unknown>) => ct.tags)
@@ -123,6 +134,24 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     setAddingNote(false);
   }, [contact, newNote, accountId]);
 
+  const handleAnalyzeLead = useCallback(async () => {
+    if (!contact || analyzingLead) return;
+    setAnalyzingLead(true);
+    try {
+      const res = await fetch("/api/marketing/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "analyze", contact_id: contact.id }),
+      });
+      const data = await res.json();
+      if (res.ok && data.lead) {
+        setLeadScore(data.lead as ContactLeadScore);
+      }
+    } finally {
+      setAnalyzingLead(false);
+    }
+  }, [contact, analyzingLead]);
+
   if (!contact) {
     return (
       <div className="flex h-full w-70 items-center justify-center border-l border-border bg-card">
@@ -181,6 +210,77 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                 <Mail className="h-4 w-4 text-muted-foreground" />
                 <span className="truncate">{contact.email}</span>
               </div>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="my-4 border-t border-border" />
+
+          {/* Lead Intelligence Card */}
+          <div>
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <Flame className="h-3 w-3 text-orange-400" />
+                Lead Score
+              </div>
+              <button
+                type="button"
+                onClick={handleAnalyzeLead}
+                disabled={analyzingLead}
+                className="inline-flex items-center gap-1 text-[10px] font-medium text-primary hover:underline disabled:opacity-50"
+              >
+                {analyzingLead ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3 w-3" />
+                )}
+                AI Analyze
+              </button>
+            </div>
+            {leadScore ? (
+              <div className="mt-2 space-y-2 rounded-lg bg-muted/60 p-2.5">
+                <div className="flex items-center justify-between">
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+                      leadScore.tier === "hot"
+                        ? "bg-orange-500/15 text-orange-400"
+                        : leadScore.tier === "warm"
+                          ? "bg-amber-500/15 text-amber-400"
+                          : "bg-sky-500/15 text-sky-400"
+                    )}
+                  >
+                    {leadScore.tier === "hot" ? (
+                      <Flame className="h-3 w-3" />
+                    ) : leadScore.tier === "warm" ? (
+                      <Zap className="h-3 w-3" />
+                    ) : (
+                      <Snowflake className="h-3 w-3" />
+                    )}
+                    {leadScore.tier} · {leadScore.score}/100
+                  </span>
+                  {leadScore.intent_label && (
+                    <span className="truncate text-[10px] text-muted-foreground">
+                      {leadScore.intent_label}
+                    </span>
+                  )}
+                </div>
+                {leadScore.ai_summary && (
+                  <p className="text-[11px] leading-relaxed text-foreground">
+                    {leadScore.ai_summary}
+                  </p>
+                )}
+                {leadScore.next_best_action && (
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    <span className="font-medium text-primary">Next: </span>
+                    {leadScore.next_best_action}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="mt-2 px-1 text-xs text-muted-foreground">
+                Click AI Analyze to score buying intent.
+              </p>
             )}
           </div>
 
