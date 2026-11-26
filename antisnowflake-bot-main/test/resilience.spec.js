@@ -8,3 +8,14 @@ const { createRuntimeMonitor } = require('../lib/runtimeResilience');
 const store = require('../lib/lightweight_store');
 const { createBridgeHandler } = require('../lib/bridge/server');
 const { signRequest } = require('../lib/bridge/signature');
+
+test('runtimeResilience exposes memory & event loop lag and pings WACRM keepalive/cron', async () => {
+    const seen = [];
+    const monitor = createRuntimeMonitor({
+        env: {},
+        fetchImpl: async (url, init) => {
+            seen.push({ url, headers: init?.headers || {} });
+            return { ok: true, status: 200 };
+        },
+        log: { log() {}, warn() {}, error() {} },
+    });
