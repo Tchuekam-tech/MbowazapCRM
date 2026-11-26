@@ -132,3 +132,19 @@ export function DripSequencesTab({
     }
   }
 
+  async function handleToggleStatus(seq: DripSequence) {
+    const next = seq.status === 'active' ? 'paused' : 'active';
+    try {
+      const res = await fetch('/api/marketing/sequences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: seq.id, status: next }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(`Sequence ${next}`);
+      onRefresh();
+    } catch {
+      toast.error('Failed to update sequence');
+    }
+  }
+
