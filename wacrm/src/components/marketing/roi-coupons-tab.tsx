@@ -52,3 +52,25 @@ export interface SystemHealthSnapshot {
     error: string | null;
   };
 }
+
+interface RoiCouponsTabProps {
+  analytics: MarketingAnalyticsSnapshot | null;
+  coupons: PromoCoupon[];
+  systemHealth: SystemHealthSnapshot | null;
+  currency: string;
+  canEdit: boolean;
+  onRefresh: () => void;
+  onRefreshHealth: () => void;
+}
+
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const BLOCK_SHORT = ['0-4h', '4-8h', '8-12h', '12-16h', '16-20h', '20-24h'];
+
+function formatUptime(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${sec % 60}s`;
+}
+
