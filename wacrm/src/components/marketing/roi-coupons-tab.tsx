@@ -526,3 +526,18 @@ export function RoiCouponsTab({
                 </p>
               </div>
 
+              {/* Supabase DB */}
+              <div className="space-y-1 rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between font-medium text-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <Database className="h-3.5 w-3.5 text-blue-400" /> Supabase Database
+                  </span>
+                  <span className={systemHealth.database.ok ? 'text-emerald-400' : 'text-red-400'}>
+                    {systemHealth.database.ok ? `${systemHealth.database.latencyMs} ms` : 'Error'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Composite indexes + fast SQL RPCs active for low-latency analytics & inbox queries.
+                </p>
+              </div>
+
