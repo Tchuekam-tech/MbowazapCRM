@@ -210,3 +210,17 @@ export function GrowthLinksTab({
               />
             </div>
           </div>
+
+          <div>
+            <Label htmlFor="gl-prefill" className="text-xs">Pre-filled WhatsApp Message</Label>
+            <Textarea
+              id="gl-prefill"
+              value={prefill}
+              onChange={(e) => setPrefill(e.target.value)}
+              rows={2}
+              className="mt-1 text-xs"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              A compact [Ref:CODE] tag is appended automatically for 100% attribution.
+            </p>
+          </div>
