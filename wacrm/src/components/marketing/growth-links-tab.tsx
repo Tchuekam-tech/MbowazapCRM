@@ -121,3 +121,24 @@ export function GrowthLinksTab({
     }
   }
 
+  async function handleDelete(id: string) {
+    try {
+      const res = await fetch(`/api/marketing/links?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Growth link deleted');
+      onRefresh();
+    } catch {
+      toast.error('Failed to delete link');
+    }
+  }
+
+  function handleCopy(link: GrowthLink) {
+    const url = `${origin}/go/${link.slug}`;
+    void navigator.clipboard.writeText(url);
+    setCopiedId(link.id);
+    toast.success('Short link copied to clipboard');
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
