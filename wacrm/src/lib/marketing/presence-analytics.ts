@@ -497,3 +497,45 @@ export async function runAiDigitalPresenceAudit(
           'You are a Chief Digital Growth Officer auditing a business across Buffer social channels AND their WhatsApp CRM funnel. Return ONLY valid JSON (no markdown fences) with keys: "headline" (short punchy verdict), "executiveSummary" (2-3 sharp sentences), "strengths" (2-3 strings), "blindSpots" (2-3 strings), "actionPlan" (array of 3 objects with keys "title", "channel", "impact" ("high"|"medium"), "step"). Be specific with the actual numbers provided.',
         messages: [{ role: 'user', content: digest }],
       });
+
+      const cleaned = llmRes.text.replace(/^```json\s*|\s*```$/g, '').trim();
+      const parsed = JSON.parse(cleaned) as Partial<DigitalPresenceAudit>;
+      if (parsed.headline && parsed.executiveSummary && Array.isArray(parsed.actionPlan)) {
+        audit = {
+          headline: String(parsed.headline).slice(0, 180),
+          executiveSummary: String(parsed.executiveSummary).slice(0, 800),
+          strengths: Array.isArray(parsed.strengths)
+            ? parsed.strengths.map(String).slice(0, 4)
+            : audit.strengths,
+          blindSpots: Array.isArray(parsed.blindSpots)
+            ? parsed.blindSpots.map(String).slice(0, 4)
+            : audit.blindSpots,
+          actionPlan: parsed.actionPlan.slice(0, 4).map((a) => ({
+            title: String(a.title || 'Growth Action').slice(0, 120),
+            channel: String(a.channel || 'omnichannel').slice(0, 40),
+            impact: a.impact === 'high' ? 'high' : 'medium',
+            step: String(a.step || '').slice(0, 350),
+          })),
+          usedAi: true,
+          generatedAt: nowIso,
+        };
+      }
+    } catch {
+      // Keep deterministic fallback audit
+    }
+  }
+
+  if (report.connected) {
+    await db
+      .from('buffer_integrations')
+      .update({
+        ai_audit_summary: audit,
+        ai_audit_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq('account_id', accountId);
+    serverCache.invalidatePrefix(`marketing:presence:${accountId}`);
+  }
+
+  return audit;
+}
