@@ -45,3 +45,13 @@ function createRuntimeMonitor({
     let lastCronTickOk = null;
     let memorySheds = 0;
 
+    function getEventLoopLagMs() {
+        if (!histogram) return { mean: 0, p95: 0, max: 0 };
+        const toMs = (ns) => (Number.isFinite(ns) && ns > 0 ? round1(ns / 1e6) : 0);
+        return {
+            mean: toMs(histogram.mean),
+            p95: toMs(histogram.percentile(95)),
+            max: toMs(histogram.max),
+        };
+    }
+
