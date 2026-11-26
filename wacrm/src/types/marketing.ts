@@ -345,3 +345,34 @@ export interface DigitalPresenceAudit {
   generatedAt: string;
 }
 
+export interface DigitalPresenceReport {
+  connected: boolean;
+  integration: BufferIntegrationPublic | null;
+  presenceScore: number; // 0..100 holistic digital presence score
+  scoreBreakdown: {
+    channelCoverage: number; // /25
+    publishingConsistency: number; // /25
+    audienceEngagement: number; // /25
+    whatsappConversionBridge: number; // /25
+  };
+  totals: {
+    connectedChannels: number;
+    activeServices: string[];
+    sentPosts30d: number;
+    scheduledQueueTotal: number;
+    impressions: number;
+    reach: number;
+    engagements: number;
+    avgEngagementRate: number;
+    socialDrivenWaClicks: number;
+    socialDrivenWaLeads: number;
+    socialDrivenRevenue: number;
+    postsWithGrowthLinks: number;
+  };
+  channels: ChannelBridgeMetric[];
+  topPosts: BufferPostRow[];
+  upcomingQueue: BufferPostRow[];
+  recommendations: DigitalPresenceRecommendation[];
+  audit: DigitalPresenceAudit | null;
+}
+
