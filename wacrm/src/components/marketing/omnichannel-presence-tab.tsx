@@ -744,3 +744,33 @@ export function OmnichannelPresenceTab({
               required
             />
           </div>
+
+          {(links.length > 0 || coupons.length > 0) && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-medium text-muted-foreground">
+                1-Click Inject WhatsApp CTA or Promo Code:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {links.slice(0, 4).map((l) => (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() => injectGrowthLink(l)}
+                    className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] text-primary hover:bg-primary/10"
+                  >
+                    <Link2 className="h-3 w-3" /> /go/{l.slug}
+                  </button>
+                ))}
+                {coupons.slice(0, 3).map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => injectCoupon(c)}
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-[11px] text-foreground hover:bg-muted/80"
+                  >
+                    <TicketPercent className="h-3 w-3" /> {c.code}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
