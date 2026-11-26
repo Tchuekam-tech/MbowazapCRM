@@ -411,3 +411,21 @@ CREATE TABLE IF NOT EXISTS ab_campaigns (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_ab_campaigns_account
+  ON ab_campaigns (account_id, created_at DESC);
+
+ALTER TABLE ab_campaigns ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS set_updated_at ON ab_campaigns;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON ab_campaigns
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP POLICY IF EXISTS "ab_campaigns_select" ON ab_campaigns;
+CREATE POLICY "ab_campaigns_select" ON ab_campaigns
+  FOR SELECT USING (is_account_member(account_id, 'viewer'));
+
+DROP POLICY IF EXISTS "ab_campaigns_write" ON ab_campaigns;
+CREATE POLICY "ab_campaigns_write" ON ab_campaigns
+  FOR ALL USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
+
