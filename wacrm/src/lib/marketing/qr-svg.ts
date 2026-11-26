@@ -55,3 +55,20 @@ export function buildWhatsAppRedirectUrl(
   const base = `https://wa.me/${digits}`;
   return text ? `${base}?text=${encodeURIComponent(text)}` : base;
 }
+
+/**
+ * Extracts a Growth Link attribution ref code (e.g. `[Ref:MW8K2P9]` or
+ * `#MW8K2P9`) from an inbound WhatsApp message.
+ */
+export function extractGrowthRefCode(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const bracketed = text.match(/\[(?:ref|code)\s*[:=]\s*([A-Z0-9_-]{3,24})\]/i);
+  if (bracketed?.[1]) return bracketed[1].toUpperCase();
+  return null;
+}
+
+// ============================================================
+// Pure TypeScript ISO/IEC 18004 QR Code Matrix (ECC Level M)
+// Supports Versions 1–10 (up to 213 UTF-8 bytes — plenty for
+// https://domain.com/go/<slug> short links).
+// ============================================================
