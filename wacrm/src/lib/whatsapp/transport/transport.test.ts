@@ -53,6 +53,7 @@ function fakeClient(send?: MbowazapClient['send']) {
     setBrain: unused,
     setContactAi: unused,
     presence: unused,
+    metrics: unused,
     send: vi.fn<MbowazapClient['send']>(
       send ??
         (async () => ({ messageId: '3EB0SENT', timestamp: 1_700_000_000 }))
