@@ -492,3 +492,23 @@ export function OmnichannelPresenceTab({
             ))}
           </div>
         </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:col-span-7">
+          {[
+            {
+              label: 'Total Impressions',
+              value: totals.impressions.toLocaleString(),
+              sub: `Reach: ${totals.reach.toLocaleString()}`,
+            },
+            {
+              label: 'Total Engagements',
+              value: totals.engagements.toLocaleString(),
+              sub: `Avg rate: ${totals.avgEngagementRate}%`,
+            },
+            {
+              label: 'Posts Published (30d)',
+              value: totals.sentPosts30d.toLocaleString(),
+              sub: `${totals.scheduledQueueTotal} queued next`,
+            },
+            {
+              label: 'Social → WA Clicks',
