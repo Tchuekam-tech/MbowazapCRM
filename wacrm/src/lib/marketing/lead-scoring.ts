@@ -508,3 +508,39 @@ export async function evaluateAccountSegment(
     row.value += Number(d.value ?? 0);
     dealMap.set(d.contact_id, row);
   }
+
+  const tagMap = new Map<string, { ids: string[]; names: string[] }>();
+  for (const row of (tagsRes.data ?? []) as unknown as Array<{
+    contact_id: string;
+    tag_id: string;
+    tags: { name: string } | { name: string }[] | null;
+  }>) {
+    const entry = tagMap.get(row.contact_id) ?? { ids: [], names: [] };
+    entry.ids.push(row.tag_id);
+    const tObj = Array.isArray(row.tags) ? row.tags[0] : row.tags;
+    if (tObj?.name) entry.names.push(tObj.name);
+    tagMap.set(row.contact_id, entry);
+  }
+
+  const matched: string[] = [];
+  for (const c of contacts) {
+    const s = scoreMap.get(c.id);
+    const d = dealMap.get(c.id);
+    const tg = tagMap.get(c.id);
+    const ok = matchesSegmentRules(
+      {
+        id: c.id,
+        utm_source: c.utm_source,
+        utm_campaign: c.utm_campaign,
+        tagIds: tg?.ids ?? [],
+        tagNames: tg?.names ?? [],
+        score: s?.score ?? 0,
+        tier: s?.tier ?? 'cold',
+        lastMessageAt: s?.last_message_at ?? null,
+        openDealsCount: d?.count ?? 0,
+        openDealsValue: d?.value ?? 0,
+      },
+      rules
+    );
+    if (ok) matched.push(c.id);
+  }
