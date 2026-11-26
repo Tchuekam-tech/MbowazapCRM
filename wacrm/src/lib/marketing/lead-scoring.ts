@@ -181,3 +181,21 @@ export function computeLeadScore(input: LeadScoreInput): ComputedLeadScore {
     });
     primaryIntent = 'Opted Out';
   }
+
+  const clamped = Math.max(0, Math.min(100, Math.round(score)));
+  const tier = tierFromScore(clamped);
+
+  let nextBestAction = 'Send a helpful value follow-up or enroll in a light nurture drip.';
+  if (isOptedOut) {
+    nextBestAction = 'Respect opt-out — exclude from all outbound campaigns and sequences.';
+  } else if (tier === 'hot') {
+    nextBestAction =
+      input.openDealsCount === 0
+        ? 'High buying intent detected — send a personalized offer/coupon now and create a deal.'
+        : 'Follow up personally with a time-limited promo code to close the active deal today.';
+  } else if (tier === 'warm') {
+    nextBestAction =
+      'Share social proof, pricing breakdown, or a quick-reply menu to qualify and move to Hot.';
+  } else if (input.lastMessageAt) {
+    nextBestAction = 'Enroll in a 3-step Win-Back Drip Sequence with an exclusive reactivation offer.';
+  }
