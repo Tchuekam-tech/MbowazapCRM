@@ -30,3 +30,26 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+
+interface OmnichannelPresenceTabProps {
+  report: DigitalPresenceReport | null;
+  links: GrowthLink[];
+  coupons: PromoCoupon[];
+  currency: string;
+  canEdit: boolean;
+  canAdmin: boolean;
+  onRefresh: () => void;
+  onJumpToLinks: () => void;
+}
+
+const SERVICE_STYLE: Record<string, { label: string; badge: string }> = {
+  instagram: { label: 'Instagram', badge: 'bg-pink-500/15 text-pink-400 border-pink-500/30' },
+  linkedin: { label: 'LinkedIn', badge: 'bg-sky-500/15 text-sky-400 border-sky-500/30' },
+  facebook: { label: 'Facebook', badge: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
+  twitter: { label: 'X / Twitter', badge: 'bg-slate-500/15 text-slate-300 border-slate-500/30' },
+  tiktok: { label: 'TikTok', badge: 'bg-rose-500/15 text-rose-400 border-rose-500/30' },
+  youtube: { label: 'YouTube', badge: 'bg-red-500/15 text-red-400 border-red-500/30' },
+  threads: { label: 'Threads', badge: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30' },
+  pinterest: { label: 'Pinterest', badge: 'bg-red-500/15 text-red-400 border-red-500/30' },
+  bluesky: { label: 'Bluesky', badge: 'bg-sky-500/15 text-sky-300 border-sky-500/30' },
+};
