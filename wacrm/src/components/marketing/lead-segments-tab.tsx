@@ -289,3 +289,17 @@ export function LeadSegmentsTab({
                       AI Analyze
                     </Button>
                   </div>
+
+                  {/* Score progress bar */}
+                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        lead.tier === 'hot'
+                          ? 'bg-orange-500'
+                          : lead.tier === 'warm'
+                            ? 'bg-amber-400'
+                            : 'bg-sky-500'
+                      }`}
+                      style={{ width: `${lead.score}%` }}
+                    />
+                  </div>
