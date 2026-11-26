@@ -212,3 +212,25 @@ export function encodeQrMatrix(text: string): boolean[][] {
       ecBlocks.push(rsRemainder(slice, spec.ecPerBlock));
     }
   }
+
+  const finalCodewords: number[] = [];
+  const maxBlockLen = Math.max(...dataBlocks.map((b) => b.length));
+  for (let i = 0; i < maxBlockLen; i++) {
+    for (const blk of dataBlocks) {
+      if (i < blk.length) finalCodewords.push(blk[i]!);
+    }
+  }
+  for (let i = 0; i < spec.ecPerBlock; i++) {
+    for (const blk of ecBlocks) finalCodewords.push(blk[i]!);
+  }
+
+  // 3. Draw function patterns
+  const size = spec.size;
+  const modules: boolean[][] = Array.from({ length: size }, () => Array(size).fill(false));
+  const isFunc: boolean[][] = Array.from({ length: size }, () => Array(size).fill(false));
+
+  const setFunc = (r: number, c: number, dark: boolean) => {
+    if (r < 0 || c < 0 || r >= size || c >= size) return;
+    modules[r]![c] = dark;
+    isFunc[r]![c] = true;
+  };
